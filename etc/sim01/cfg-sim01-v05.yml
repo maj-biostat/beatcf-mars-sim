@@ -1,0 +1,42 @@
+default:
+  desc: "Superiority - one test arm reduces risk of failure other equal to soc"
+  nsim: 1000
+  mc_cores: 40
+  # example trials
+  nex: 3
+  # enrolment
+  N_pt: [300, 100, 100, 100]
+  # 40%  (< 70% pFEV1) = 1, (>= 70% pFEV1) = 2
+  lung_alloc: 0.60
+  # 62% chance of pseudo given lung < 70%  ((no pseudo) = 1, (pseudo) = 2 for (< 70% pFEV1) )
+  pseudo_alloc_lt70: 0.63
+  # 33% chance of pseudo given lung >= 70% ((no pseudo) = 1, (pseudo) = 2 for (>= 70% pFEV1))
+  pseudo_alloc_ge70: 0.33
+  
+  # trt - use relative numbers to avoid underflow - not currently used
+  trt_alloc: [1, 1, 1]
+  
+  # model parameters
+  # reference risk from which all others deviate
+  bmu: 0.3 
+  # better lung function relative to low pFEV1 decreases risk of treatment failure
+  blung: [0, -0.03] 
+  # effect of pseudo colonisation to none increases risk of trt failure
+  # assume the effect of pseudo is the same irrespective of lung func
+  bpseudo: [0, 0.05] 
+  # intervention
+  btrt: [0, -0.1, 0] 
+  
+  # priors - remember, these are all for logistic regression
+  pri_a: [-0.84, 0.4] # mean, scale for each par set
+  pri_blung: [0, 3]
+  pri_bpseudo: [0, 3]
+  pri_btrt: [0, 3]
+  
+  # decision reference values
+  dec_delta_ni: 0.05
+  dec_delta_inf: 0.05
+  # decision probability thresholds
+  dec_thresh_ni: 0.985
+  dec_thresh_inf: 0.80
+    

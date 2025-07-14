@@ -1,0 +1,20 @@
+\makeatletter
+\begin{titlepage}
+  \begin{center}
+    % \includegraphics[width=0.7\linewidth, height=0.4\linewidth, keepaspectratio]{etc/logo.png}\\[4ex]
+    {\huge \bfseries  \@title{} }\\[2ex]
+    {\LARGE \bfseries  \@subtitle{} }\\[5ex]
+    {$description$}\\[80ex]
+    \fbox{\begin{tabular}{p{0.30\linewidth}p{0.5\linewidth}}
+        Author:                & $for(by-author)$ {$by-author.name.literal$} $endfor$      \\
+                               &                \\
+        Report version:        & $version$ \\
+                               &                \\
+        Report date:           & \@date         \\
+                               &                \\
+      \end{tabular}}
+  \end{center}
+\end{titlepage}
+\makeatother
+\thispagestyle{empty}
+\newpage
