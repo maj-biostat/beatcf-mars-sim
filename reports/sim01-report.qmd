@@ -189,7 +189,7 @@ where $y$ is a binomial variable for the number of events out of $n$ trials for 
 +	$\gamma_k$ effect of pseudomonas colonisation (not colonised, colonised)
 +	$\delta_l$ effect of treatment (soc, deferred, early discontinuation)
 
-In practice, the log-odds of treatment failure may be differential for locality status within each region, but this has been ignored for now and no interactions are included.
+In practice, the log-odds of treatment failure may be differential within the strata, but this has been ignored for now and no interactions are included.
 
 The model uses priors:
 
@@ -242,8 +242,8 @@ ggplot(d_fig, aes(x = plogis(x))) +
 
 Various alternative modelling perspectives might be considered:
 
-1. Obtain an ordinal representation of the primary outcome
-2. Consider re-randomisation
+1. Ordinal representation of the primary outcome
+2. Integrating re-randomisation into the design
 
 Given that non-inferiority is the main focus of the study, assuming a dose-response perspective could be anti-conservative and is therefore not advised.
 
@@ -372,7 +372,7 @@ gt_tbl <- gt(d_scenarios) |>
     align = "center"
   )  |>
   tab_spanner(
-    label = md("Effect size (risk difference) relative to SoC"),
+    label = md("Risk difference relative to SoC"),
     columns = 3:4
   ) |>
   cols_label(
@@ -631,7 +631,7 @@ g_tbl <- d_tbl_1_cur |>
     columns = 4:ncol(d_tbl_1_cur)
   )  |>
   cols_label(
-    rd = "Risk diff relative to SoC",
+    rd = "RD relative to SoC",
     ni_300 = html("300"),
     ni_400 = html("400"),
     ni_500 = html("500"),
