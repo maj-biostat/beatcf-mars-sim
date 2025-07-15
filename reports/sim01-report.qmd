@@ -152,7 +152,7 @@ We provide the data generation assumptions, modelling approaches, scenarios and 
 Data is generated based on subject matter expertise and while necessarily a simplification of reality, it aims to capture the aspects that are essential to the design.
 The distributional assumptions of each data component follows.
 
-We simulate design variables for lung function (ppFEV1 either >= or <70%), pseudomonas airway colonisation in the 24 months prior to enrolment and treatment assignment.
+We simulate design variables for lung function (ppFEV1 either >= or <70%) and pseudomonas airway colonisation (no pseudo or pseudo) in the 24 months prior to enrolment and treatment assignment.
 
 Lung function is based on a multinomial distribution with two levels with the probability of having good lung function (ppFEV1 >= 70%) being 60%.
 Conditional on lung function, pseudomonas colonisation is simulated based on a multinomial distribution with two levels.
@@ -191,12 +191,61 @@ where $y$ is a binomial variable for the number of events out of $n$ trials for 
 
 In practice, the log-odds of treatment failure may be differential for locality status within each region, but this has been ignored for now and no interactions are included.
 
+The model uses priors:
+
++ $\alpha \sim \text{Logistic}(-0.84, 0.4)$
++ $\beta_j \sim \text{Normal}(0, 3)$
++ $\gamma_k \sim \text{Normal}(0, 3)$
++ $\delta_l \sim \text{Normal}(0, 3)$
+
+all of which are on the log-odds or log-odds ratio scale.
+Transformed to the probability scale, the intercept prior is shown in @fig-prior-intercept and reflects the prior probability of treatment stratergy failure in the reference covariate groups.
+
+```{r, echo = F, eval = T}
+#| label: fig-prior-intercept
+#| fig-cap: 'Prior on intercept'
+#| fig-height: 4
+#| fig-width: 4
+#| fig-pos: H
+
+d_fig <- data.table(
+  x = rlogis(1e6, -0.84, 0.4)
+)
+
+ggplot(d_fig, aes(x = plogis(x))) +
+  geom_density() +
+  scale_x_continuous("Intercept", breaks = seq(0, 1, by = 0.1)) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    legend.box="horizontal",
+    strip.text.y.right = element_text(angle = 0,
+                                      hjust = 0,
+                                      vjust = 0.2,
+                                      size = 7),
+    axis.ticks = element_blank(),
+    strip.text.x.top = element_text(size = 7),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(color = "grey",
+                                  linewidth = 0.1,
+                                  linetype = 1),
+    axis.title.y=element_text(size = 7),
+    axis.text.y = element_text(size = 7),
+    axis.text.x =  element_text(size = 7),
+    axis.title.x = element_text(size = 7),
+    legend.text = element_text(size = 7)
+  ) 
+```
+
+
 ## Alternatives
 
-+ Obtain an ordinal representation of the primary outcome
-+ Consider re-randomisation
+Various alternative modelling perspectives might be considered:
 
-Given the interest in NI, assuming a dose-response perspective could be anti-conservative and is therefore not advised.
+1. Obtain an ordinal representation of the primary outcome
+2. Consider re-randomisation
+
+Given that non-inferiority is the main focus of the study, assuming a dose-response perspective could be anti-conservative and is therefore not advised.
 
 # Decision procedures
 

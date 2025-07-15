@@ -37,6 +37,6 @@ default:
   dec_delta_ni: 0.05
   dec_delta_inf: 0.05
   # decision probability thresholds
-  dec_thresh_ni: 0.985
+  dec_thresh_ni: 0.98
   dec_thresh_inf: 0.80
     
