@@ -1,0 +1,33 @@
+---
+title: "About"
+date: today
+date-modified: last-modified
+---
+
+```{r, echo = FALSE}
+source("./R/init.R")
+log_info("Called about notebook")
+```
+
+# About {.unnumbered}
+
+Version of quarto used for this site is `r system("$(which quarto) --version", intern = TRUE, ignore.stderr = TRUE)`.
+
+::: callout-warning
+There is usually a version of quarto installed with RStudio.
+For example, on my machine this is `/Applications/RStudio.app/Contents/Resources/app/quarto/bin/quarto`.
+But, this is not the latest version.
+I leave the RStudio version alone, install a new version of quarto on my machine, independent to RStudio, and then render everything through the CLI.
+:::
+
+## Repository status {.unnumbered}
+
+Details on GitHub repository files, tags, commits follow:
+
+```{r, echo = is_html}
+repo <- git2r::repository(path = ".")
+summary(repo)
+```
+
+
+
