@@ -1,6 +1,6 @@
 default:
   desc: "Equal chance of treatment failure in all arms"
-  nsim: 100
+  nsim: 1000
   mc_cores: 40
   # example trials
   nex: 3

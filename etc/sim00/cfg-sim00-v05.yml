@@ -1,6 +1,6 @@
 default:
   desc: "Superiority - one test arm reduces risk of failure other equal to soc"
-  nsim: 100
+  nsim: 1000
   mc_cores: 40
   # example trials
   nex: 3
