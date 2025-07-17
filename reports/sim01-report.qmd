@@ -77,6 +77,23 @@ if(toks[length(toks)] == "beatcf-mars-sim"){
   prefix_data <- "../data"
 }
 
+
+# Reference design
+
+sim_lab <- "sim00-01"
+
+flist <- list.files(paste0(prefix_data, "/", sim_lab), pattern = "sim00")
+toks <- list()
+l0 <- list()
+i <- 1
+
+for(i in 1:length(flist)){
+
+  l0[[i]] <- qs::qread(file.path(paste0(prefix_data, "/", sim_lab), flist[i]))
+}
+
+
+
 # Each input file corresponds to the results from a single simulation
 # scenario/configuration.
 # Load all the files into a single list.
@@ -284,7 +301,7 @@ gt_tbl <- gt(d_dec_pars) |>
   ) |>
   tab_options(
     table.width = pct(60),
-    table.font.size = pct(65)) 
+    table.font.size = pct(55)) 
 
 gt_tbl 
 
@@ -384,7 +401,7 @@ gt_tbl <- gt(d_scenarios) |>
   tab_options(
     table.width = pct(90),
     container.width = pct(90),
-    table.font.size = pct(65)) 
+    table.font.size = pct(55)) 
 
 gt_tbl 
 ```
@@ -503,8 +520,10 @@ ggplot(d_fig, aes(x = trt, y = p)) +
 
 ## Probability of triggering decisions
 
-@tbl-cprob-decision provides the cumulative probability of superiority by scenario with the probability of declaring futility in parentheses.
+@tbl-cprob-decision provides the cumulative probability of superiority by scenario with the probability of declaring inferiority in parentheses.
 @fig-cprob-decision gives a visual representation of the same data.
+
+The fixed design result corresponds to a single analysis under the same data generating process, assessing both NI and inferiority at the same decision thresholds and evidential levels.
 
 ```{r, echo = F, eval = T}
 #| label: cum_prob_dec
@@ -548,6 +567,32 @@ for(i in 1:length(l)){
   )
 
 }
+
+
+
+i <- 1
+d_cprob_dec_ref <- data.table()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  # extract the decision matrix - sim, analysis, quantity, domain level decision
+  d_dec_1 <- copy(l0[[i]]$d_pr_dec[par %in% c("rd_2_1", "rd_3_1")])
+  # config for scenario
+  l0_cfg <- copy(l0[[i]]$cfg)
+  
+  d_dec_1[, N := sum(l0_cfg$N_pt)]
+  
+  # cumulative proportion for which each decision quantity has been met by 
+  # analysis and domain
+  d_dec_1 <- d_dec_1[, .(pr_val = mean(dec)), keyby = .(N, rule, par)]
+  
+  d_cprob_dec_ref <- rbind(
+    d_cprob_dec_ref,
+    cbind(scenario = i, desc = l0_cfg$desc, d_dec_1)
+  )
+
+}
 ```
 
 
@@ -566,6 +611,15 @@ d_tbl_1_cur <- dcast(
 d_tbl_1_cur[par == "rd_2_1", par := "Deferred"]
 d_tbl_1_cur[par == "rd_3_1", par := "Discontinued"]
 
+d_tbl_2_cur <- copy(d_cprob_dec_ref)
+d_tbl_2_cur <- dcast(
+  d_tbl_2_cur, scenario + desc + par ~ rule + N, value.var = "pr_val")
+
+d_tbl_2_cur[par == "rd_2_1", par := "Deferred"]
+d_tbl_2_cur[par == "rd_3_1", par := "Discontinued"]
+
+setnames(d_tbl_2_cur, "inf_600", "ref_inf_600")
+setnames(d_tbl_2_cur, "ni_600", "ref_ni_600")
 
 d_b_trt <- data.table()
 
@@ -578,6 +632,9 @@ for(i in 1:length(l)){
 }
 
 d_tbl_1_cur <- merge(d_tbl_1_cur, d_b_trt, by = c("scenario", "par"))
+d_tbl_1_cur <- merge(d_tbl_1_cur, d_tbl_2_cur, by = c(
+  "scenario", "desc", "par"
+))
 
 
 setcolorder(d_tbl_1_cur, c("scenario", "desc", "par", "rd"))
@@ -622,7 +679,12 @@ g_tbl <- d_tbl_1_cur |>
     columns = c("ni_600", "inf_600"
                 ),
     pattern = "<<{1}>><< ({2})>>"
-  )   |>
+  )  |> 
+  cols_merge(
+    columns = c("ref_ni_600", "ref_inf_600"
+                ),
+    pattern = "<<{1}>><< ({2})>>"
+  )  |>
   cols_width(
     starts_with("ni") ~ px(90)
   ) |>
@@ -635,10 +697,11 @@ g_tbl <- d_tbl_1_cur |>
     ni_300 = html("300"),
     ni_400 = html("400"),
     ni_500 = html("500"),
-    ni_600 = html("600")
+    ni_600 = html("600"),
+    ref_ni_600 = html("Fixed design")
   ) |>
   tab_options(
-    table.font.size = pct(65),
+    table.font.size = pct(55),
     latex.use_longtable = TRUE,
     latex.header_repeat = TRUE 
   ) |>
@@ -897,7 +960,7 @@ g_tbl <- d_tbl_1_cur |>
   ) |>
   tab_options(
     # table.width = pct(100),
-    table.font.size = pct(65)
+    table.font.size = pct(55)
   ) 
 
 
@@ -991,6 +1054,8 @@ for(i in 1:length(l)){
 
 @tbl-post-rd and @fig-expected-rd show the expected value of the posterior means (and 95% interval) for the treatment effects by scenario.
 
+The fixed design result corresponds to a single analysis under the same data generating process, assessing both NI and inferiority at the same decision thresholds and evidential levels.
+
 ```{r, echo = F, eval = T}
 #| label: post-means
 #| code-summary: Distributions of posterior means (unconditional)
@@ -1047,6 +1112,36 @@ for(i in 1:length(l)){
 
 d_post_1 <- d_post_1[order(scenario, desc, sim, ia)]
 
+
+
+i <- 1
+d_post_1_ref <- data.table()
+
+for(i in 1:length(l)){
+  
+  # config for scenario
+  l0_cfg <- copy(l0[[i]]$cfg)
+  
+  b_trt <- unlist(l0_cfg$btrt)
+  
+  # params
+  d_pars <- copy(l0[[i]]$d_post_smry_1)
+  d_pars <- d_pars[par %in% c("rd_2_1", "rd_3_1"), .(sim, par, mu)]
+  
+  d_pars[, N:= sum(l0_cfg$N_pt)]
+  
+  
+  d_post_1_ref <- rbind(
+    d_post_1_ref,
+    cbind(
+      scenario = i, desc = l0_cfg$desc, 
+      d_pars
+      )
+  )
+
+}
+
+
 ```
 
 ```{r, eval = T}
@@ -1063,7 +1158,6 @@ d_tbl_1_cur <- d_post_1[,
 # setorderv(d_fig, cols = "scenario", order = -1L)
 d_tbl_1_cur[, desc := factor(desc, levels = unique(d_post_1$desc))]
 
-
 d_tbl_1_cur <- dcast(d_tbl_1_cur, scenario + desc + par + rd_tru ~ N, value.var = list("mu", "q_025", "q_975"))
 
 ci_names <- function(x = 500){
@@ -1076,8 +1170,26 @@ setcolorder(
 
 d_tbl_1_cur[par == "rd_2_1", par := "Deferred"]
 d_tbl_1_cur[par == "rd_3_1", par := "Discontinued"]
-d_tbl_1_cur <- d_tbl_1_cur[, .SD, .SDcols = !c("scenario")]
 
+
+d_tbl_2_cur <- d_post_1_ref[,
+                 .(mu = mean(mu),
+                   q_025 = quantile(mu, prob = 0.025),
+                   q_975 = quantile(mu, prob = 0.975)), 
+                 keyby = .(scenario, desc, par, N)]
+# setorderv(d_fig, cols = "scenario", order = -1L)
+d_tbl_2_cur[, desc := factor(desc, levels = unique(d_post_1$desc))]
+
+d_tbl_2_cur[par == "rd_2_1", par := "Deferred"]
+d_tbl_2_cur[par == "rd_3_1", par := "Discontinued"]
+
+d_tbl_2_cur <- dcast(d_tbl_2_cur, scenario + desc + par ~ N, value.var = list("mu", "q_025", "q_975"))
+
+setnames(d_tbl_2_cur, c("mu_600", "q_025_600", "q_975_600"), c("mu_ref", "q_025_ref", "q_975_ref"))
+
+d_tbl_1_cur <- merge(d_tbl_1_cur, d_tbl_2_cur, by = c("scenario", "desc", "par"))
+
+d_tbl_1_cur <- d_tbl_1_cur[, .SD, .SDcols = !c("scenario")]
 
 
 g_tbl <- d_tbl_1_cur |>
@@ -1109,20 +1221,25 @@ g_tbl <- d_tbl_1_cur |>
   cols_merge(
     columns = c("mu_600", "q_025_600", "q_975_600"),
     pattern = "<<{1}>><< ({2}, {3})>>"
+  )  |> 
+  cols_merge(
+    columns = c("mu_ref", "q_025_ref", "q_975_ref"),
+    pattern = "<<{1}>><< ({2}, {3})>>"
   )  |>
   cols_label(
     par = "Comparison (true RD)",
     mu_300 = "300",
     mu_400 = "400",
     mu_500 = "500",
-    mu_600 = "600"
+    mu_600 = "600",
+    mu_ref = "Fixed design"
   )  |>
   tab_spanner(
     label = html("Risk difference (expectation of posterior means and 95 pct interval)"),
     columns = 2:ncol(d_tbl_1_cur)
     ) |>
   tab_options(
-    table.font.size = pct(65),
+    table.font.size = pct(55),
     latex.use_longtable = TRUE,
     latex.header_repeat = TRUE 
     ) |>
@@ -1145,7 +1262,6 @@ d_fig[, N := factor(N)]
 
 d_fig[par == "rd_2_1", par := paste0("Deferred")]
 d_fig[par == "rd_3_1", par := paste0("Discontinued")]
-
 
 ggplot(data = d_fig, aes(x = N, y = mu, col = par)) +
   geom_boxplot(outlier.size = 0.1, lwd = 0.3) +
@@ -1277,7 +1393,7 @@ g_tbl <- d_tbl_1_cur |>
     columns = starts_with("rd_")
     ) |>
   tab_options(
-    table.font.size = pct(65),
+    table.font.size = pct(55),
     latex.use_longtable = TRUE,
     latex.header_repeat = TRUE 
     ) |>

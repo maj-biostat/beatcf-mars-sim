@@ -8,11 +8,24 @@ cleantmp:
   mkdir tmp
 
 
+sim00 cfg:
+  Rscript --vanilla ./R/sim00.R run_sim00 {{cfg}} 
+  just cleantmp
+
+runsim00:
+  just sim00 ../etc/sim00/cfg-sim00-v01.yml
+  just sim00 ../etc/sim00/cfg-sim00-v02.yml
+  just sim00 ../etc/sim00/cfg-sim00-v03.yml
+  just sim00 ../etc/sim00/cfg-sim00-v04.yml
+  just sim00 ../etc/sim00/cfg-sim00-v05.yml
+  just sim00 ../etc/sim00/cfg-sim00-v06.yml
+  just sim00 ../etc/sim00/cfg-sim00-v07.yml
+
 sim01 cfg:
   Rscript --vanilla ./R/sim01.R run_sim01 {{cfg}} 
   just cleantmp
 
-runsim:
+runsim01:
   just sim01 ../etc/sim01/cfg-sim01-v01.yml
   just sim01 ../etc/sim01/cfg-sim01-v02.yml
   just sim01 ../etc/sim01/cfg-sim01-v03.yml
