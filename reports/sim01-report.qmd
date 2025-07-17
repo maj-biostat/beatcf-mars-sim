@@ -189,7 +189,7 @@ To speed up parameter estimation, we aggregate the number of successes and numbe
 
 ## Overview
 
-While the data are simulated using a linear risk model, the simulation model is specified as a multivariable logistic regression model from which we subsequently transform the parameters back to the risk scale via the inverse link and a g-computation step.
+While the data are simulated using a linear risk model, the simulation model of the adaptive design is specified as a multivariable logistic regression model from which we subsequently transform the parameters back to the risk scale via the inverse link and a g-computation step.
 The model form is:
 
 $$
@@ -253,6 +253,9 @@ ggplot(d_fig, aes(x = plogis(x))) +
     legend.text = element_text(size = 7)
   ) 
 ```
+
+In addition to the target adaptive design, results are provided under a fixed design that adopts a beta-binomial model, independent uniform priors on the proportion of failures in each group and a single analysis at the maximum sample size.
+The reference design uses the same rules, decision thresholds and evidential values as the adaptive design.
 
 
 ## Alternatives
