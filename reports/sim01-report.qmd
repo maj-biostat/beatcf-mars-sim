@@ -630,7 +630,9 @@ for(i in 1:length(l)){
   l_cfg <- copy(l[[i]]$cfg)
   btrt <- unlist(l_cfg$btrt)
   
-  d_tmp <- data.table(scenario = i, par = c("Deferred", "Discontinued"), rd = c(btrt[2]-btrt[1], btrt[3]-btrt[1]))
+  d_tmp <- data.table(scenario = i, 
+                      par = c("Deferred", "Discontinued"), 
+                      rd = c(btrt[2]-btrt[1], btrt[3]-btrt[1]))
   d_b_trt <- rbind(d_b_trt, d_tmp)
 }
 
