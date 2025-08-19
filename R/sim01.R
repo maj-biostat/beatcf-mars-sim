@@ -1,6 +1,7 @@
 # Experiment with independent set of models with reduced linear predictor.
 
 source("./R/init.R")
+source("./R/data.R")
 source("./R/data-sim01.R")
 
 # Command line arguments list scenario (true dose response),
@@ -154,7 +155,7 @@ run_trial <- function(
     d_post <- data.table(f_1$draws(
       variables = c(
         
-        "p_1", "p_2", "p_3", "rd_2_1", "rd_3_1", "rd_3_2"
+        c(g_par_p, g_par_rd)
         
       ),   
       format = "matrix"))

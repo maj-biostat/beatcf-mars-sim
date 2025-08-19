@@ -2,6 +2,7 @@
 
 source("./R/init.R")
 # same data generating process
+source("./R/data.R")
 source("./R/data-sim01.R")
 
 # Command line arguments list scenario (true dose response),
@@ -54,11 +55,11 @@ run_trial00 <- function(
   
   l_spec$N <- N_total
   
-  d <- get_sim01_trial_data(l_spec)
+  d <- get_trial_data(l_spec)
   # d[]
   
   pri_a <- l_spec$prior$p[1]
-  pri_b <- l_spec$prior$p[1]
+  pri_b <- l_spec$prior$p[2]
   d_post <- data.table(
     p_1 = rbeta(2000, pri_a + d[trt == 1, sum(y)], pri_b + d[trt == 1, .N] - d[trt == 1, sum(y)]),
     p_2 = rbeta(2000, pri_a + d[trt == 2, sum(y)], pri_b + d[trt == 2, .N] - d[trt == 2, sum(y)]),
