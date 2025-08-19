@@ -1,0 +1,1355 @@
+---
+title: BEAT CF MARS
+subtitle: Simulation Report
+description: |
+    Three-arm Bayesian adaptive trial nested within BEAT-CF platform evaluating antibiotic-sparing strategies for managing pulmonary exacerbations
+date: last-modified
+date-format: "D MMMM YYYY"
+author: 
+  - name: Mark Jones
+    id: mj
+    email: mark.jones1@sydney.edu.au
+version: 0.1
+sponsor: "University of Sydney, NSW, Australia"
+protocol-number: todo
+registration: todo
+hrec: todo
+ci1: Tom Snelling
+editor: source
+bibliography: ../etc/refs.bib
+csl: ../etc/elsevier-harvard.csl
+# number-sections required otherwise section refs will not render 
+number-sections: true
+toc: true
+toc-depth: 3
+format:
+  pdf: 
+    pdf-engine: xelatex
+    keep-tex: true
+    documentclass: scrreprt
+    papersize: a4
+    fontsize: 12pt
+    mainfont: Libertinus Serif
+    sansfont: Libertinus Sans
+    monofont: Libertinus Mono
+    mathfont: Libertinus Math
+    linestretch: 1.25
+    template-partials: 
+      - "../_extensions/partials/before-body.tex"
+    include-in-header:
+      text: |
+       \usepackage{physics}
+       \setkomafont{chapter}{\fontsize{16}{18}\selectfont}
+       \setkomafont{section}{\fontsize{14}{16}\selectfont}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE
+)
+```
+
+```{r}
+#| echo: false
+
+# uml digs
+suppressPackageStartupMessages(library(nomnoml))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(qs))
+suppressPackageStartupMessages(library(git2r))
+suppressPackageStartupMessages(suppressWarnings(library(gt)))
+suppressPackageStartupMessages(library(ggh4x))
+suppressPackageStartupMessages(library(lubridate))
+suppressPackageStartupMessages(library(scales))
+suppressPackageStartupMessages(library(patchwork))
+
+toks <- unlist(tstrsplit(getwd(), "/")) 
+if(toks[length(toks)] == "beatcf-mars-sim"){
+  prefix_cfg <- "./etc/sim02/"
+  prefix_stan <- "./stan"
+  prefix_fig <- "./fig"
+  prefix_data <- "./data"
+} else {
+  prefix_cfg <- "../etc/sim02/"
+  prefix_stan <- "../stan"
+  prefix_fig <- "../fig"
+  prefix_data <- "../data"
+}
+
+
+# Reference design
+
+sim_lab <- "sim00-01"
+
+flist <- list.files(paste0(prefix_data, "/", sim_lab), pattern = "sim00")
+toks <- list()
+l0 <- list()
+i <- 1
+
+for(i in 1:length(flist)){
+
+  l0[[i]] <- qs::qread(file.path(paste0(prefix_data, "/", sim_lab), flist[i]))
+}
+
+
+
+# Each input file corresponds to the results from a single simulation
+# scenario/configuration.
+# Load all the files into a single list.
+
+# files of interest
+sim_lab <- "sim02-01"
+
+flist <- list.files(paste0(prefix_data, "/", sim_lab), pattern = "sim02")
+toks <- list()
+l <- list()
+i <- 1
+
+for(i in 1:length(flist)){
+
+  l[[i]] <- qs::qread(file.path(paste0(prefix_data, "/", sim_lab), flist[i]))
+  toks[[i]] <-  unlist(tstrsplit(flist[i], "[-.]"))
+}
+
+N_sims <- l[[1]]$cfg$nsim
+
+N_example_sims <- 7
+```
+
+{{< pagebreak >}}
+
+::: summary
+|     |        |
+|:----|:------------|
+|Study title:  |  BEAT-CF MARS |
+|Reference intervention: |  Standard airway clearance therapy at least twice per day for 14 days, plus 14 days of oral antibiotics commencing as soon as practicable (and ≥ 72 hours and < 7 days) after onset of new or acute worsening of cough. |   
+|Intervention: | (1) Deferred antibiotic strategy (2) Early discontinuation antibiotic strategy. |   
+|Outcome: | ppFev1 at 12 months |   
+|Study design:  |   Bayesian adaptive trial with early stopping rules | 
+|Sponsor:  |    University of Sydney, NSW, Australia | 
+Protocol: |  todo |
+|Registration:  |    todo | 
+|HREC:  |   todo | 
+|Study date of first consent:  |   todo | 
+|Principal coordinating investigators:  |   Tom Snelling | 
+:::
+
+<!-- 
+Note that the above relies on the pandoc extension implemented in the lua file 
+in the etc directory. It additionally relies on the presence of a custom style
+in word called study summary. It will currently only work for word (because I
+cannot be bothered to implement it in anything else at the moment).
+-->
+
+
+{{< pagebreak >}}
+
+# Version history {.unlisted .unnumbered}
+
+| Version    |   Date     | Change    |   Reason     |
+|:----|:------------|:----|:------------|
+| 0.1 | 2025-07-11 | First version | N/A |
+
+
+{{< pagebreak >}}
+
+
+
+# Introduction
+
+This report documents the simulation approach and results for the operating characteristics for the BEAT-CF MARS study.
+The report is an operational document that will be updated, as necessary, over the course of the study.
+It should be read in conjunction with the relevant version of the statistical analysis plan.
+
+We provide the data generation assumptions, modelling approaches, scenarios and results that were used to explore the design.
+
+These results are based on simulation `r sim_lab` with `r N_sims` simulated trials run per scenario.
+
+# Design overview
+
+The study adopts a pre/post design measuring outcomes in the treatment strategies and control group both before and after the intervention.
+Participants are randomised with equal allocation to one of the three strategies at enrolment and this allocation is assumed to hold over the following 12 month period, i.e. whenever an exacerbation occurs the treatment regime is assumed to be that which was assigned.
+The outcome (ppFEV1) is measured at baseline and 12 months followup on individual participants.
+Adaptations are included so that any of the treatment arms may be stopped for non-inferiority or inferiority.
+The control arm of standard of care remains the reference arm throughout.
+
+## Alternatives
+
+Several modifications could be made to the design, for example:
+
+1. Some account for the number/frequency/severity of exacerbation could be made
+2. A re-randomisation design could be considered; patients would be randomised on each exacerbation
+3. Some level of stratification may be considered
+4. ...
+
+# Data generation {#sec-data-generation}
+
+Data is generated based on subject matter expertise and while necessarily a simplification of reality, it aims to capture the aspects that are essential to the design.
+The distributional assumptions of each data component follows.
+
+The outcome measure, ppFEV1 (percent predicted forced expiratory volume in one second) characterises lung function on how well a person can exhale air in one second compared to what is expected for someone of their age, height, sex, and race.
+When the lungs are working properly, the values should be close to 100%.
+
+The participant characteristics and their outcome variables are generated as cohorts prior to each analysis such that the data accrues sequentially.
+As the trial progresses, decisions may be made which lead to early stopping of treatment arms.
+
+We simulate ppFEV1 at baseline and 12 months follow up, assuming the population mean of ppFEV1 at baseline is normal with a mean of `r l[[1]]$cfg$b_0` and a 1% decline (in absolute terms) per year.
+Missingness is assumed to follow MCAR across all treatment groups with a `r l[[1]]$cfg$pr_ymis` missing probability.
+
+Patient level heterogeneity is assumed to be multivariate normal with standard deviations `r l[[1]]$cfg$b_s0` and `r l[[1]]$cfg$b_s1` on the intercept (baseline) and slope (followup increment) respectively with `r l[[1]]$cfg$b_rho` correlation between them.
+Treatment arms are assumed to have a range of small deviations on the slope relative to the standard of care group (see @sec-scenarios).
+Finally, the residual standard deviation is assumed to be `r l[[1]]$cfg$b_se`.
+The above values were arbitrarily selected.
+
+Treatment status was allocated 1:1:1, which is updated to 1:1 if a decision threshold is reached for non-inferiority or inferiority.
+The initial standard of care would remain the reference group throughout and the trial would stop once all questions are resolved or the maximum sample size of `r sum(l[[1]]$cfg$N_pt)` reached.
+
+Accrual is assumed to follow a non-homogenous poisson process with linear ramp up over three months configured such that the target enrolment would be completed within around 12 months. 
+
+
+# Modelling {#sec-modelling}
+
+## Overview
+
+As discussed in @sec-data-generation, the data are simulated using a saturated linear model with terms for intercept and slope (with the intercept giving the population average mean ppFEV1 and the sum of the two yielding the mean ppFEV1 at 12 month follow up) along with participant level deviations on both the intercept and slope.
+However, the outcome is modelled using the standard pre/post linear model that includes a term for treatment assignment (ANCOVA).
+The groups level means and group differences in means are computed via a g-computation step.
+The analysis is conducted for complete cases (missing values are not imputed).
+
+The model form is:
+
+$$
+\begin{aligned}
+y_{\text{post}} &\sim \text{Normal}(\mu, \sigma_e) \\
+\mu &=  \alpha + \beta y_0 + \delta_{[\text{trt}]}  \\
+\end{aligned}
+$$
+
+where $y_{\text{post}}$ is a normally distributed random variable for the ppFEV1 at 12 months and $y_0$ is the (mean centred) baseline measure of ppFEV1.
+
++ $\alpha$ mean ppFEV1 at baseline in standard of care group
++	$\beta$ effect of pre treatment ppFEV1 (assumed to be linear)
++	$\delta_l$ effect of treatment (soc, deferred, early discontinuation) with the reference group fixed to zero
+
+The model adjustment for pre-treatment ppFEV1 transforms this into an autoregressive form that accounts for the within participant correlation between ppFEV1 at the baseline and followup.
+
+The model uses priors:
+
++ $\alpha \sim \text{Normal}(80, 10)$
++ $\beta \sim \text{Normal}(0, 10)$
++ $\delta_l \sim \text{Normal}(0, 10) \quad l \in \{\text{deferred}, \text{discontinued} \}$ 
+
+The intercept prior is shown in @fig-prior-intercept and reflects the prior probability of treatment stratergy failure in the reference covariate groups.
+A mixture of normals may be more appropriate prior model.
+
+```{r, echo = F, eval = T}
+#| label: fig-prior-intercept
+#| fig-cap: 'Prior on intercept'
+#| fig-height: 4
+#| fig-width: 4
+#| fig-pos: H
+
+
+
+d_fig <- data.table(
+  x = rnorm(1e6, l[[1]]$cfg$pri_b_0[1], l[[1]]$cfg$pri_b_0[2])
+)
+
+ggplot(d_fig, aes(x = x)) +
+  geom_density() +
+  scale_x_continuous("Intercept") +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    legend.box="horizontal",
+    strip.text.y.right = element_text(angle = 0,
+                                      hjust = 0,
+                                      vjust = 0.2,
+                                      size = 7),
+    axis.ticks = element_blank(),
+    strip.text.x.top = element_text(size = 7),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(color = "grey",
+                                  linewidth = 0.1,
+                                  linetype = 1),
+    axis.title.y=element_text(size = 7),
+    axis.text.y = element_text(size = 7),
+    axis.text.x =  element_text(size = 7),
+    axis.title.x = element_text(size = 7),
+    legend.text = element_text(size = 7)
+  ) 
+```
+
+# Decision procedures
+
+The decision processes are based on the current data and are interpreted with reference to the current available evidence.
+This approach is simple and offers a transparent interpretation, but it ignores the possibility that accumulating data may shift the posterior.
+The decision thresholds and evidential thresholds are shown in @tbl-dec-thresholds.
+
+```{r}
+#| echo: FALSE
+#| label: tbl-dec-thresholds
+#| tbl-pos: H
+#| tbl-cap: "Decision threshold parameters"
+
+
+
+d_dec_pars <- data.table(
+  desc = c("NI", "Inferiority"),
+  ref_value = c(l[[1]]$cfg$dec_delta_ni, l[[1]]$cfg$dec_delta_inf),
+  threshold = c(l[[1]]$cfg$dec_thresh_ni, l[[1]]$cfg$dec_thresh_inf)
+)
+
+
+gt_tbl <- gt(d_dec_pars) |>
+  cols_align(
+    columns = 1,
+    align = "left"
+  ) |>
+  cols_align(
+    columns = 2:3,
+    align = "center"
+  )  |>
+  cols_label(
+    desc = "Decision type",
+    ref_value = "Reference value",
+    threshold = "Threshold"
+  ) |>
+  tab_options(
+    table.width = pct(60),
+    table.font.size = pct(55)) 
+
+gt_tbl 
+
+```
+
+In the current implementation, we evaluate non-inferiority and inferiority at each interim and, if a decision threshold is met, then we will stop recruitment into the relevant arm, but the standard of care remains the reference arm throughout.
+This approach is adopted for each interim and the final analysis and is reflected in the current set of results.
+
+The trial setup is such that if the intervention were beneficial, it would reduce the rate of decline for ppFEV1 and we are therefore considering negative non-inferiority margins.
+Specifically, if an intervention arm is non-inferior to the reference arm, then the follow up ppFEV1 on the intervention will be reduced by no more than the non-inferiority margin.
+Equally, if the ppFEV1 on the intervention arm falls below the non-inferiority margin with very high probability, then we conclude inferiority.
+
++ For non-inferiority, we evaluate $\text{Pr}(\delta > \epsilon_{NI}) > \zeta_{NI}$ where $\delta$ is the relevant difference in mean ppFEV1, $\epsilon_{NI}$ and $\zeta_{NI}$ correspond to a non-inferiority margin and an evidential requirement in terms of a probability threshold.
++ For inferiority, we evaluate $\text{Pr}(\delta < \epsilon_{inf}) > \zeta_{inf}$ where $\epsilon_{inf}$ and $\zeta_{inf}$ correspond to a reference value (currently we set $\epsilon_{inf} = \epsilon_{NI}$) and an evidential minimum in terms of a probability threshold.
+
+# Scenarios {#sec-scenarios}
+
+Each scenario adopts a maximum sample size of 600 with interim analyses run after 300 enrolments have reached their primary endpoint and every 100 thereafter.
+Given the use of a linear risk model in the data generation process, the treatment effects were specified as risk differences.
+
+All scenarios used fixed covariate distributions and effects over the duration of the study. 
+Additionally, all simulations used the same reference values and decision thresholds.
+
+```{r, echo = F, eval = T}
+#| label: scenario_list
+#| code-summary: Scenarios
+
+# Cumulative probability of decisions:
+
+# Traverse the list of simulation results and for each one summarise the 
+# cumulative probability of each decision type.
+
+i <- 1
+d_scenarios <- data.table()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  l_cfg <- copy(l[[i]]$cfg)
+  
+  btrt <- unlist(l_cfg$b_trt)
+  
+  d_scenarios <- rbind(
+    d_scenarios,
+    data.table(
+      id = i,
+      desc = l_cfg$desc,
+      delta_2_1 = btrt[2] - btrt[1],
+      delta_3_1 = btrt[3] - btrt[1]
+    )
+  )
+}
+
+
+```
+
+```{r, eval = T}
+#| echo: FALSE
+#| label: tbl-scenarios
+#| tbl-pos: H
+#| tbl-cap: "Simulation scenarios"
+
+gt_tbl <- gt(d_scenarios) |>
+  cols_width(
+    id ~ pct(10),
+    desc ~ pct(50),
+    delta_2_1 ~ pct(20),
+    delta_3_1 ~ pct(20)
+  ) |>
+  cols_align(
+    columns = 1:2,
+    align = "left"
+  ) |>
+  cols_align(
+    columns = 3:4,
+    align = "center"
+  )  |>
+  tab_spanner(
+    label = md("Risk difference relative to SoC"),
+    columns = 3:4
+  ) |>
+  cols_label(
+    id = "ID",
+    desc = "Scenario",
+    delta_2_1 = "Deferred",
+    delta_3_1 = "Discontinue"
+  ) |>
+  tab_options(
+    table.width = pct(90),
+    container.width = pct(90),
+    table.font.size = pct(55)) 
+
+gt_tbl 
+```
+
+
+
+
+# Results
+
+## Example trial data
+
+### Accrual
+
+@fig-accrual shows the enrolment progression by treatment arm and scenario for a random selection of `r N_example_sims` simulated trials.
+
+```{r, echo = F, eval = T}
+#| label: accrual
+#| code-summary: Accrual by treatment arm
+
+# Average observed accrual by trt.
+
+i <- 1
+d_acc <- data.table()
+sim_ex <- NULL
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  # extract the decision matrix - sim, analysis, quantity, domain level decision
+  d_all <- copy(l[[i]]$d_all[, .SD[1], keyby = .(sim, id)])
+  # form a discrete version of enrolment time so that we can aggregate the 
+  # progression to whole days
+  d_all[, t0 := ceiling(t0)]
+  # number of entrants by day
+  d_all <- d_all[, .N, keyby = .(sim, trt, t0)]
+  # cumulative view by trt
+  d_all[, N := cumsum(N), keyby = .(sim, trt)]
+  
+  # fill in the blanks - form a grid of all days
+  d_grid <- CJ(sim = 1:max(d_all$sim), 
+               trt = 1:max(d_all$trt),
+               t0 = 0:max(d_all$t0))
+  
+  # merge the grid and data
+  d_all <- merge(d_grid, d_all, by = c("sim", "trt", "t0"), all.x = T)
+  # fill in those where no enrolments on day 0
+  d_all[is.na(N) & t0 == 0, N := 0]
+  # carry forward
+  d_all[, N := nafill(N, "locf")]
+  
+  l_cfg <- copy(l[[i]]$cfg)
+  
+  if(is.null(sim_ex)){
+    sim_ex <- sort(sample(1:max(d_all$sim), size = N_example_sims, replace = F))  
+  }
+  
+  d_all <- d_all[sim %in% sim_ex]
+  
+  d_acc <- rbind(
+    d_acc,
+    cbind(scenario = i, desc = l_cfg$desc, d_all)
+  )
+
+}
+
+d_acc[, desc := factor(desc, levels = unique(d_acc$desc))]
+```
+
+```{r, echo = F, eval = T}
+#| label: fig-accrual
+#| fig-cap: 'Cumulative probability of decision at each interim (enrolment by interim)'
+#| fig-height: 7
+#| fig-width: 7
+#| fig-pos: H
+
+
+
+
+ggplot(d_acc, aes(x = t0, y = N, group = factor(sim))) +
+  geom_step(aes(col = factor(sim)), alpha = 1, lwd = 0.4) +
+  scale_x_continuous("Day of enrolment") + 
+  scale_y_continuous("Cumulative enrolments") + 
+  scale_color_discrete("Simulation") + 
+  ggh4x::facet_grid2(
+    desc ~ trt, 
+    axes = "x",
+    labeller = labeller(
+      trt = label_both,
+      desc = label_wrap_gen(30))) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    # this and the guide call below ensures that you get
+    # legends for decision type and trt on different rows
+    legend.box="vertical",
+    legend.title = element_text(size = 8) ,
+    strip.text.y.right = element_text(angle = 0,
+                                      hjust = 0,
+                                      vjust = 0.2,
+                                      size = 7),
+    axis.ticks = element_blank(),
+    strip.text.x.top = element_text(size = 7),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(color = "grey",
+                                  linewidth = 0.1,
+                                  linetype = 1),
+    axis.title.y=element_text(size = 7),
+    axis.text.y = element_text(size = 7), 
+    axis.text.x = element_text(size = 7), 
+    axis.title.x = element_text(size = 7),
+    legend.text = element_text(size = 7)
+  ) +
+  guides(
+    colour = guide_legend(nrow = 1),
+    linetype = guide_legend(nrow = 1)
+  )
+
+
+
+
+```
+
+
+
+### Participant level ppFEV1
+
+@fig-ppfev1 shows the participant ppFEV1 for the whole cohort in an single simulation for each scenario.
+Further calibration of the baseline and followup ppFEV1 may be required.
+In the current version, the baseline population mean is `r l[[1]]$cfg$b_0` and the slope is `r l[[1]]$cfg$b_time` ppFEV1 change (in absolute terms) per year.
+The unit level variation at baseline is normally distributed around the population mean with standard deviation `r l[[1]]$cfg$b_s0`; the unit level slope has a standard deviation of `r l[[1]]$cfg$b_s1` and the correlation between the two is `r l[[1]]$cfg$b_rho`.
+The residual noise is set to have a standard deviation of `r l[[1]]$cfg$b_se`.
+
+```{r, echo = F, eval = T}
+#| label: ppfev1
+#| code-summary: Participant ppFEV1
+
+l[[1]]$cfg$b_0
+
+i <- 1
+d_ppfev1 <- data.table()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  d_all <- copy(l[[i]]$d_all[sim == 1, .(sim, ia, id, trt, t, y, y_mis)])
+  
+  d_all[, t := factor(t, levels = c(0, 1), labels = c("baseline", "12 months"))]
+  d_all[, y_mis := factor(y_mis, levels = c(0, 1), labels = c("observed", "missing"))]
+  
+  
+  
+  l_cfg <- copy(l[[i]]$cfg)
+  
+  # sim_ex <- sort(sample(1:max(d_all$sim), size = N_example_sims, replace = F))
+  # d_all <- d_all[sim %in% sim_ex]
+  # 
+  d_ppfev1 <- rbind(
+    d_ppfev1,
+    cbind(scenario = i, desc = l_cfg$desc, d_all)
+  )
+
+}
+
+
+d_ppfev1[, desc := factor(desc, levels = unique(d_ppfev1$desc))]
+```
+
+```{r, echo = F, eval = T}
+#| label: fig-ppfev1
+#| fig-cap: 'Pre and post values for ppfev1'
+#| fig-height: 6
+#| fig-width: 7
+#| fig-pos: H
+
+
+d_fig_1 <- copy(d_ppfev1)
+d_fig_2 <- d_ppfev1[y_mis == "observed", .(y_mu = mean(y)), keyby = .(scenario, desc, trt, t)]
+
+ggplot(data = d_fig_1, aes(x = t, y = y, group = id)) +
+  geom_line(alpha = 0.5, lwd = 0.2) +
+  geom_line(
+    data = d_fig_2,
+    aes(x = t, y = y_mu, group = trt),
+    col = 2, lwd = 0.8, inherit.aes = F
+  ) + 
+  scale_x_discrete("Timepoint") + 
+  scale_y_continuous("Observed ppFEV1") + 
+  ggh4x::facet_grid2(
+    desc ~ trt, 
+    axes = "x",
+    labeller = labeller(
+      trt = label_both,
+      desc = label_wrap_gen(30))) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    # this and the guide call below ensures that you get
+    # legends for decision type and trt on different rows
+    legend.box="vertical",
+    legend.title = element_text(size = 8) ,
+    strip.text.y.right = element_text(angle = 0,
+                                      hjust = 0,
+                                      vjust = 0.2,
+                                      size = 7),
+    axis.ticks = element_blank(),
+    strip.text.x.top = element_text(size = 7),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(color = "grey",
+                                  linewidth = 0.1,
+                                  linetype = 1),
+    axis.title.y=element_text(size = 7),
+    axis.text.y = element_text(size = 7), 
+    axis.text.x = element_text(size = 7), 
+    axis.title.x = element_text(size = 7),
+    legend.text = element_text(size = 7)
+  ) +
+  guides(
+    colour = guide_legend(nrow = 1),
+    linetype = guide_legend(nrow = 1)
+  )
+
+
+
+
+  
+```
+
+
+
+## Probability of triggering decisions
+
+@tbl-cprob-decision provides the cumulative probability of superiority by scenario with the probability of declaring inferiority in parentheses.
+@fig-cprob-decision gives a visual representation of the same data; each of the columns of plots give the results for a specific difference in means and each row is aligns with a scenario.
+
+```{r, echo = F, eval = T}
+#| label: cum_prob_dec
+#| code-summary: Cumulative probability of each decision type
+
+# Cumulative probability of decisions:
+
+# Traverse the list of simulation results and for each one summarise the 
+# cumulative probability of each decision type.
+
+i <- 1
+d_cprob_dec <- data.table()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  # extract the decision matrix - sim, analysis, quantity, domain level decision
+  d_dec_1 <- copy(l[[i]]$d_pr_dec[par %in% c("delta_2_1", "delta_3_1")])
+  # config for scenario
+  l_cfg <- copy(l[[i]]$cfg)
+  
+  # number of enrolments at each interim (interim sample size sequence)
+  d_N <- data.table(ia = seq_along(l_cfg$N_pt), N = cumsum(l_cfg$N_pt))
+  
+  
+  # compute the cumulative instances of a decision being made by sim, each 
+  # decision type and by parameter
+  d_dec_1[, cdec := as.integer(cumsum(dec)>0), keyby = .(sim, rule, par)]
+  d_dec_1[, cdec := nafill(cdec, type = "locf"), keyby = .(sim, rule, par)]
+  d_dec_1[, cdec := as.logical(cdec)]
+  
+  d_dec_1 <- merge(d_dec_1, d_N, by = "ia")
+  # cumulative proportion for which each decision quantity has been met by 
+  # analysis and domain
+  d_dec_1 <- d_dec_1[, .(pr_val = mean(cdec)), keyby = .(ia, N, rule, par)]
+  
+  
+  d_cprob_dec <- rbind(
+    d_cprob_dec,
+    cbind(scenario = i, desc = l_cfg$desc, d_dec_1)
+  )
+
+}
+
+```
+
+
+```{r, eval = T}
+#| echo: FALSE
+#| label: tbl-cprob-decision
+#| tbl-cap: 'Cumulative probability of decision at each interim'
+#| tbl-pos: H
+
+
+
+d_tbl_1_cur <- copy(d_cprob_dec)
+d_tbl_1_cur <- dcast(
+  d_tbl_1_cur, scenario + desc + par ~ rule + N, value.var = "pr_val")
+
+d_tbl_1_cur[par == "delta_2_1", par := "Deferred"]
+d_tbl_1_cur[par == "delta_3_1", par := "Discontinued"]
+
+# d_tbl_2_cur <- copy(d_cprob_dec_ref)
+# d_tbl_2_cur <- dcast(
+#   d_tbl_2_cur, scenario + desc + par ~ rule + N, value.var = "pr_val")
+# 
+# d_tbl_2_cur[par == "rd_2_1", par := "Deferred"]
+# d_tbl_2_cur[par == "rd_3_1", par := "Discontinued"]
+# 
+# setnames(d_tbl_2_cur, "inf_600", "ref_inf_600")
+# setnames(d_tbl_2_cur, "ni_600", "ref_ni_600")
+
+d_b_trt <- data.table()
+
+for(i in 1:length(l)){
+  l_cfg <- copy(l[[i]]$cfg)
+  btrt <- unlist(l_cfg$b_trt)
+  
+  d_tmp <- data.table(scenario = i, 
+                      par = c("Deferred", "Discontinued"), 
+                      delta = c(btrt[2]-btrt[1], btrt[3]-btrt[1]))
+  d_b_trt <- rbind(d_b_trt, d_tmp)
+}
+
+d_tbl_1_cur <- merge(d_tbl_1_cur, d_b_trt, by = c("scenario", "par"))
+# d_tbl_1_cur <- merge(d_tbl_1_cur, d_tbl_2_cur, by = c(
+#   "scenario", "desc", "par"
+# ))
+
+
+setcolorder(d_tbl_1_cur, c("scenario", "desc", "par", "delta"))
+setorderv(d_tbl_1_cur, cols = c("scenario"))
+
+d_tbl_1_cur <- d_tbl_1_cur[, .SD, .SDcols = !c("scenario")]
+
+g_tbl <- d_tbl_1_cur |> 
+  gt(groupname_col = "desc") |> 
+  gt::text_transform(
+    locations = cells_row_groups(),
+    fn = function(x) {
+      lapply(x, function(x) {
+        gt::md(paste0("*", x, "*"))
+      })
+    }
+  ) |>
+  cols_align(
+    columns = 1:2,
+    align = "left"
+  )  |> 
+  cols_align(
+    columns = 3:ncol(d_tbl_1_cur),
+    align = "center"
+  )  |> 
+  cols_merge(
+    columns = c("ni_400", "inf_400"
+                ),
+    pattern = "<<{1}>><< ({2})>>"
+  )   |> 
+  cols_merge(
+    columns = c("ni_500", "inf_500"
+                ),
+    pattern = "<<{1}>><< ({2})>>"
+  ) |> 
+  cols_merge(
+    columns = c("ni_600", "inf_600"
+                ),
+    pattern = "<<{1}>><< ({2})>>"
+  )   |>
+  cols_width(
+    starts_with("ni") ~ px(90)
+  ) |>
+  tab_spanner(
+    label = md("Participants having reached primary endpoint"),
+    columns = 4:ncol(d_tbl_1_cur)
+  )  |>
+  cols_label(
+    delta = "Difference in means at 12 month",
+    ni_400 = html("400"),
+    ni_500 = html("500"),
+    ni_600 = html("600")
+  ) |>
+  tab_options(
+    table.font.size = pct(55),
+    latex.use_longtable = TRUE,
+    latex.header_repeat = TRUE 
+  ) |>
+  fmt_number(decimals = 2, drop_trailing_zeros = F)
+
+g_tbl
+```
+
+
+{{< pagebreak >}}
+
+```{r, echo = F, eval = T}
+#| label: fig-cprob-decision
+#| fig-cap: 'Cumulative probability of decision at each interim (enrolment by interim)'
+#| fig-height: 7
+#| fig-width: 7
+#| fig-pos: H
+
+
+d_fig_1 <- copy(d_cprob_dec)
+
+d_fig_1 <- merge(
+  d_fig_1, 
+  melt(d_scenarios[, .(id, delta_2_1, delta_3_1)], id.vars = "id", value.name = "delta") ,
+  by.x = c("scenario", "par"),
+  by.y = c("id", "variable")
+)
+
+d_fig_1[, rule := factor(
+  rule, levels = c("ni", "inf"), labels = c("NI", "Inferiority"))]
+
+
+d_fig_1[, par := factor(
+  par, levels = c("delta_2_1", "delta_3_1"), labels = c("Deferred", "Discontinued"))]
+
+
+
+d_fig_1[, group := paste0(par, " - ", rule)]
+
+ggplot(d_fig_1, aes(x = N, y = pr_val, group = group , 
+                    col = par, lty =  rule)) +
+  geom_line(lwd = 0.25) +
+  scale_linetype_manual("Decision type", 
+                        values = c("solid", "dashed")) +
+  scale_color_manual("Treatment stratergy", 
+                     values = c("#E66100", "#5D3A9B")) +
+  scale_x_continuous("Enrolment") +
+  scale_y_continuous("Pr(decision)", breaks = seq(0, 1, by = 0.2)) +
+  facet_grid2(
+    desc ~ paste0("Delta = ", delta) ,
+    labeller = labeller(desc = label_wrap_gen(30))) + 
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    # this and the guide call below ensures that you get
+    # legends for decision type and trt on different rows
+    legend.box="vertical",
+    legend.title = element_text(size = 8) ,
+    strip.text.y.right = element_text(angle = 0,
+                                      hjust = 0,
+                                      vjust = 0.2,
+                                      size = 7),
+    axis.ticks = element_blank(),
+    strip.text.x.top = element_text(size = 7),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(color = "grey",
+                                  linewidth = 0.1,
+                                  linetype = 1),
+    axis.title.y=element_text(size = 7),
+    axis.text.y = element_text(size = 7), 
+    axis.text.x = element_text(size = 7), 
+    axis.title.x = element_text(size = 7),
+    legend.text = element_text(size = 7)
+  ) +
+  guides(
+    colour = guide_legend(nrow = 1),
+    linetype = guide_legend(nrow = 1)
+  )
+
+
+```
+
+
+{{< pagebreak >}}
+
+## Sample size
+
+@tbl-n-1 shows the expected number of participants on each treatment for a stopping decision (either NI or inferiority) to occur.
+
+```{r, echo = F, eval = T}
+#| label: sample_size_1
+#| code-summary: Compute expected sample size
+
+
+i <- 1
+d_N_by_rand <- data.table()
+
+for(i in 1:length(l)){
+  
+  # config for scenario
+  l_cfg <- copy(l[[i]]$cfg)
+  
+  N_analysis <- length(l_cfg$N_pt)
+  N_trt <- length(l_cfg$b_trt)
+  # 
+  d_grid <- CJ(
+    sim = 1:l_cfg$nsim,
+    ia = 1:N_analysis,
+    trt = 1:N_trt
+  )
+    
+  # pick up the baseline obs only, i.e. when the number enrolled
+  d_all <- copy(l[[i]]$d_all[t == 0, ])
+  
+  d_all <- merge(
+    d_grid,
+    d_all[, .(.N), keyby = .(sim, ia, trt)],
+    by = c("sim", "ia", "trt"),
+    all.x = T
+  )
+  
+  # some arms stop and so there is no suubsequent enrolment
+  d_all[is.na(N), N := 0]
+  d_all[, N_cmtv := cumsum(N), keyby = .(sim, trt)]
+  
+  d_N_by_rand <- rbind(
+    d_N_by_rand,
+    cbind(
+      scenario = i, desc = l_cfg$desc, 
+      d_all
+    )
+  )
+  
+}
+```
+
+```{r, eval = T}
+#| echo: FALSE
+#| label: tbl-n-1
+#| tbl-cap: 'Expected number of participants by treatment group for each scenario'
+#| tbl-pos: H
+
+# DONT assume that all arms ran to the final interim. The result is just an
+# artefact of imputation. Nevertheless it gives the true sample size by arm.
+d_N_trt <- d_N_by_rand[, .SD[.N], keyby = .(scenario, desc, sim, trt)]
+d_N_tot <- d_N_trt[, .(N_cmtv = sum(N_cmtv)), keyby = .(scenario, desc, sim) ]
+
+# add in total sample size
+d_tbl_1_cur <- rbind(
+  d_N_trt[, .(N_mu = mean(N_cmtv), N_sd = sd(N_cmtv)), keyby = .(scenario, desc, trt)],
+  d_N_tot[, .(trt = "all", N_mu = mean(N_cmtv), N_sd = sd(N_cmtv)), keyby = .(scenario, desc)]
+)
+
+d_tbl_1_cur[trt == 1, trt := "SoC"]
+d_tbl_1_cur[trt == 2, trt := "Deferred"]
+d_tbl_1_cur[trt == 3, trt := "Discontinued"]
+
+# extract the true risk differences by comparison 
+# we are only interested in Deferred vs soc and Discontinued vs soc
+d_b_trt <- data.table()
+
+for(i in 1:length(l)){
+  l_cfg <- copy(l[[i]]$cfg)
+  btrt <- unlist(l_cfg$b_trt)
+  d_tmp <- data.table(
+    scenario = i, 
+    trt = c("Deferred", "Discontinued"), 
+    delta = c(btrt[2]-btrt[1], btrt[3]-btrt[1]))
+  d_b_trt <- rbind(d_b_trt, d_tmp)
+}
+
+d_tbl_1_cur <- merge(
+  d_tbl_1_cur, 
+  d_b_trt, 
+  by = c("scenario", "trt"),
+  all.x = T)
+
+d_tbl_1_cur <- dcast(
+  d_tbl_1_cur, 
+  scenario + desc ~ trt , 
+  value.var = list("N_mu", "N_sd", "delta"))
+
+d_tbl_1_cur[, `:=`(delta_SoC = NULL, delta_all = NULL)]
+
+setcolorder(d_tbl_1_cur, c("scenario", "desc", "delta_Deferred", "delta_Discontinued"))
+
+d_tbl_1_cur <- d_tbl_1_cur[order(scenario, desc)]
+d_tbl_1_cur <- d_tbl_1_cur[, .SD, .SDcols = !c("scenario")]
+
+
+
+g_tbl <- d_tbl_1_cur |> 
+  gt(groupname_col = "desc")  |>
+  fmt_number(
+    columns = starts_with("N_"),
+    decimals = 0, drop_trailing_zeros = TRUE) |>
+  fmt_number(
+    columns = starts_with("delta"),
+    decimals = 2, drop_trailing_zeros = TRUE) |> 
+  tab_spanner(
+    label = md("Difference in means (ref SoC)"),
+    columns = starts_with("delta"),
+  ) |>
+  tab_spanner(
+    label = md("Sample size, mean (sd)"),
+    columns =  starts_with("N_mu")
+  ) |>
+  cols_align(
+    columns = starts_with("delta"),
+    align = "center"
+  ) |>
+  cols_align(
+    columns = starts_with("N_mu"),
+    align = "center"
+  )  |>
+  cols_merge(
+    columns = c("N_mu_Deferred", "N_sd_Deferred"
+                ),
+    pattern = "<<{1}>><< ({2})>>"
+  ) |>
+  cols_merge(
+    columns = c("N_mu_Discontinued", "N_sd_Discontinued"
+                ),
+    pattern = "<<{1}>><< ({2})>>"
+  ) |>
+  cols_merge(
+    columns = c("N_mu_SoC", "N_sd_SoC"
+                ),
+    pattern = "<<{1}>><< ({2})>>"
+  ) |>
+  cols_merge(
+    columns = c("N_mu_all", "N_sd_all"
+                ),
+    pattern = "<<{1}>><< ({2})>>"
+  ) |>
+  cols_label(
+    delta_Deferred = "Deferred",
+    delta_Discontinued = "Discontinued",
+    N_mu_Deferred = "Deferred",
+    N_mu_Discontinued = "Discontinued",
+    N_mu_SoC = "SoC",
+    N_mu_all = "Total"
+  ) |>
+  tab_options(
+    # table.width = pct(100),
+    table.font.size = pct(55)
+  ) 
+
+
+g_tbl
+```
+
+
+
+
+
+
+{{< pagebreak >}}
+## Parameter estimation
+
+@tbl-post-delta and @fig-expected-delta show the expected value of the posterior means (and 95% interval) for the treatment effects by scenario.
+
+```{r, echo = F, eval = T}
+#| label: post-means
+#| code-summary: Distributions of posterior means (unconditional)
+
+# Distribution of posterior means for parameters of interest.
+
+# Some simulated trials will have stopped prior to the maximum sample size and
+# these will have NA for their posterior means. If you were to summarise these 
+# posterior means, they would be conditional on the trial having 'survived' 
+# until the relevant interim. This means that you have missing data at later 
+# interims, which creates a selection bias in that your selection of sims at any
+# given interim are not a random sample, but rather a sample conditioned on the 
+# stopping rules. 
+
+# If you do not account for this in some way then a summary can be either 
+# optimistic or pessimistic depending on how the stopping rules interact 
+# with the data. Here we try to account for this missingness by imputing the 
+# missing posterior means with locf within each simulation.
+# Note that this is really only a partial 'fix' to get a sense of whether 
+# our estimates is representative of the parameter values we used to simulate
+# the data.
+
+i <- 1
+d_post_1 <- data.table()
+
+for(i in 1:length(l)){
+  
+  # config for scenario
+  l_cfg <- copy(l[[i]]$cfg)
+  
+  b_trt <- unlist(l_cfg$b_trt)
+  
+  # params
+  d_pars <- copy(l[[i]]$d_post_smry_1)
+  d_pars <- d_pars[par %in% c("delta_2_1", "delta_3_1"), .(sim, ia, par, mu)]
+  d_pars[, mu :=  nafill(mu, type = "locf"), keyby = .(sim, par)]
+  
+  # interim looks
+  d_N <- data.table(ia = seq_along(l_cfg$N_pt), N = cumsum(l_cfg$N_pt))
+  d_pars <- base::merge(d_pars, d_N, by = "ia")
+  
+  d_pars[par == "delta_2_1", delta_tru := b_trt[2] - b_trt[1]]
+  d_pars[par == "delta_3_1", delta_tru := b_trt[3] - b_trt[1]]
+  
+  d_post_1 <- rbind(
+    d_post_1,
+    cbind(
+      scenario = i, desc = l_cfg$desc, 
+      d_pars
+      )
+  )
+
+}
+
+d_post_1 <- d_post_1[order(scenario, desc, sim, ia)]
+
+
+
+
+
+```
+
+```{r, eval = T}
+#| echo: FALSE
+#| label: tbl-post-delta
+#| tbl-cap: 'Parameter estimation - risk difference (expectation of posterior means and 95% interval)'
+#| tbl-pos: H
+
+d_tbl_1_cur <- d_post_1[,
+                 .(mu = mean(mu),
+                   q_025 = quantile(mu, prob = 0.025),
+                   q_975 = quantile(mu, prob = 0.975)), 
+                 keyby = .(scenario, desc, ia, par, delta_tru, N)]
+# setorderv(d_fig, cols = "scenario", order = -1L)
+d_tbl_1_cur[, desc := factor(desc, levels = unique(d_post_1$desc))]
+
+d_tbl_1_cur <- dcast(
+  d_tbl_1_cur, 
+  scenario + desc + par + delta_tru ~ N, value.var = list("mu", "q_025", "q_975"))
+
+ci_names <- function(x = 500){
+  paste0(c("mu_","q_025_", "q_975_"), x)
+}
+setcolorder(
+  d_tbl_1_cur, 
+  c("scenario", "desc",  "par", "delta_tru",
+    ci_names(400), ci_names(500), ci_names(600)))
+
+d_tbl_1_cur[par == "delta_2_1", par := "Deferred"]
+d_tbl_1_cur[par == "delta_3_1", par := "Discontinued"]
+
+
+d_tbl_1_cur <- d_tbl_1_cur[, .SD, .SDcols = !c("scenario")]
+
+
+g_tbl <- d_tbl_1_cur |>
+  gt(groupname_col = "desc")  |>
+  cols_align(
+    columns = 1:2,
+    align = "left"
+  ) |>
+  cols_align(
+    columns = 3:ncol(d_tbl_1_cur),
+    align = "right"
+  )   |> 
+  cols_merge(
+    columns = c("par", "delta_tru"),
+    pattern = "<<{1}>><< ({2})>>"
+  )  |> 
+  cols_merge(
+    columns = c("mu_400", "q_025_400", "q_975_400"),
+    pattern = "<<{1}>><< ({2}, {3})>>"
+  )  |> 
+  cols_merge(
+    columns = c("mu_500", "q_025_500", "q_975_500"),
+    pattern = "<<{1}>><< ({2}, {3})>>"
+  )  |> 
+  cols_merge(
+    columns = c("mu_600", "q_025_600", "q_975_600"),
+    pattern = "<<{1}>><< ({2}, {3})>>"
+  )  |> 
+  cols_label(
+    par = "Comparison (true difference in means)",
+    mu_400 = "400",
+    mu_500 = "500",
+    mu_600 = "600"
+  )  |>
+  tab_spanner(
+    label = html("Difference in means (expectation of posterior means and 95 pct interval)"),
+    columns = 2:ncol(d_tbl_1_cur)
+    ) |>
+  tab_options(
+    table.font.size = pct(55),
+    latex.use_longtable = TRUE,
+    latex.header_repeat = TRUE 
+    ) |>
+   fmt_number(decimals = 2, drop_trailing_zeros = F)
+
+g_tbl
+
+```
+
+```{r, eval = T, echo = F}
+#| label: fig-expected-delta
+#| fig-cap: 'Distribution of posterior means for risk difference treatment effects by interim and  simulation scenario'
+#| fig-height: 8
+#| fig-width: 7
+#| fig-pos: H
+
+d_fig <- copy(d_post_1)
+d_fig[, desc := factor(desc, levels = unique(d_fig$desc))]
+d_fig[, N := factor(N)]
+
+d_fig[par == "delta_2_1", par := paste0("Deferred")]
+d_fig[par == "delta_3_1", par := paste0("Discontinued")]
+
+ggplot(data = d_fig, aes(x = N, y = mu, col = par)) +
+  geom_boxplot(outlier.size = 0.1, lwd = 0.3) +
+  ggh4x::facet_grid2(desc ~ . , 
+             labeller = labeller(
+               desc = label_wrap_gen(25)
+               # ,
+               # par = label_wrap_gen(15)
+               ), 
+             scales = "free",
+             axes = "y",
+             independent = "y")  +
+  scale_color_manual("", values = c("#E66100", "#5D3A9B")) +
+  scale_x_discrete("") +
+  scale_y_continuous("Difference in means") +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+        text = element_text(size = 6),
+        strip.text.y.right = element_text(angle = 0,
+                                      hjust = 0,
+                                      vjust = 0.2,
+                                      size = 6),
+        strip.text.x = element_text(angle = 0, size = 6),
+        axis.ticks = element_blank(),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1, size = 6),
+        axis.text.y = element_text(size = 6),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_line(color = "grey",
+                                  linewidth = 0.1,
+                                  linetype = 1))
+
+
+```
+
+## Observed proportion with treatment success
+
+@tbl-obs-prop shows the observed proportion with treatment success by scenario, strata and treatment arm.
+
+```{r, echo = F, eval = T}
+#| label: empirical-risk
+#| code-summary: Summaries of empirical probability of treatment success
+
+i <- 1
+d_ppfev1_obs <- data.table()
+
+for(i in 1:length(l)){
+  
+  # config for scenario
+  l_cfg <- copy(l[[i]]$cfg)
+  
+  # interim looks
+  d_enrolment <- data.table(
+    ia = seq_along(l_cfg$N_pt), N_enrol = cumsum(l_cfg$N_pt))
+
+  # observed data
+  d_all <- copy(l[[i]]$d_all)
+  d_all <- base::merge(d_all, d_enrolment , by = "ia")
+  d_all <- d_all[t == 1 & y_mis == 0, .(mu_obs = mean(y)), keyby = .(sim, trt)]
+  d_all <- d_all[, .(mu_obs = mean(mu_obs)), keyby = .(trt)]
+  
+  d_all <- dcast(d_all, 1 ~ trt, value.var = "mu_obs")
+  
+  d_all[, delta_2_1 := `2` - `1`]
+  d_all[, delta_3_1 := `3` - `1`]
+  
+  d_ppfev1_obs <- rbind(
+    d_ppfev1_obs, 
+    cbind(
+      scenario = i, 
+      desc = l_cfg$desc, 
+      d_all
+      )
+  )
+  
+}
+
+d_ppfev1_obs[, `.`:= NULL]
+setnames(d_ppfev1_obs, paste0(1:3), paste0("mu_obs_", 1:3))
+
+
+```
+
+
+```{r}
+#| echo: FALSE
+#| label: tbl-obs-prop
+#| tbl-cap: 'Observed proportion of failures and differences by scenario, treatment and strata'
+#| tbl-pos: H
+
+d_tbl_1_cur <- copy(d_ppfev1_obs)
+# setorderv(d_fig, cols = "scenario", order = -1L)
+d_tbl_1_cur[, desc := factor(desc, levels = unique(d_post_1$desc))]
+
+d_tbl_1_cur[, `:=`(scenario = NULL)]
+
+g_tbl <- d_tbl_1_cur |>
+  gt(groupname_col = "desc")  |>
+  cols_align(
+    columns = 1:3,
+    align = "left"
+  ) |>
+  cols_align(
+    columns = 4:ncol(d_tbl_1_cur),
+    align = "right"
+  )   |> 
+  cols_label(
+    mu_obs_1 = "SoC",
+    mu_obs_2 = "Deferred",
+    mu_obs_3 = "Discontinued",
+    delta_2_1 = "Deferred",
+    delta_3_1 = "Discontinued"
+  )  |>
+  tab_spanner(
+    label = html("Mean ppFev1 at 12 months"),
+    columns = starts_with("mu_obs")
+    ) |>
+  tab_spanner(
+    label = html("Difference in means"),
+    columns = starts_with("delta_")
+    ) |>
+  tab_options(
+    table.font.size = pct(55),
+    latex.use_longtable = TRUE,
+    latex.header_repeat = TRUE 
+    ) |>
+   fmt_number(decimals = 2, drop_trailing_zeros = F)
+
+g_tbl
+
+```
+
+
+{{< pagebreak >}}
+# Repository status {.unlisted .unnumbered}
+
+\footnotesize
+```{r}
+#| echo: false
+repo <- repository(path = ".")
+summary(repo)
+```
+\normalsize
+
+
+{{< pagebreak >}}
+## References
+
+<!-- Needs to have a citation for this to work otherwise you will get the old \end{CSLReferences} error  -->
+
+
