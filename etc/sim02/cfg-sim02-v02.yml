@@ -1,0 +1,46 @@
+default:
+  desc: "Boundary case - both test arms increase decline of ppFEV1"
+  nsim: 1000
+  mc_cores: 40
+  # example trials
+  nex: 3
+  # enrolment
+  N_pt: [400, 100, 100]
+  
+  # probability of missingness
+  pr_ymis: 0.1
+  
+  # trt - use relative numbers to avoid underflow - not currently used
+  trt_alloc: [1, 1, 1]
+  
+  # model parameters ppfev
+  # reference level
+  b_0: 75
+  # backgroun temporal change per year
+  b_time: -1
+  # intervention
+  b_trt: [0, -0.5, -0.5] 
+  
+  # pt level variation in baseline
+  b_s0: 7.5
+  b_s1: 1
+  # correlation between intercept and slope
+  # high intercepts mildly assoc with weaker slopes
+  b_rho: -0.1
+
+  # system noise
+  b_se: 1
+  
+  
+  # priors
+  pri_b_0: [75, 7]
+  pri_b_trt: [0, 10]
+  pri_b_pre: [0, 10]
+  
+  # decision reference values
+  dec_delta_ni: -0.5
+  dec_delta_inf: -0.5
+  # decision probability thresholds
+  dec_thresh_ni: 0.98
+  dec_thresh_inf: 0.70
+    
