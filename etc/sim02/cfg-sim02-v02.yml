@@ -6,6 +6,11 @@ default:
   nex: 3
   # enrolment
   N_pt: [400, 100, 100]
+  pt_per_day: 0.57
+  ramp_up_days: 120
+  fu_days: 365
+  fu_days_lwr: 351
+  fu_days_upr: 379
   
   # probability of missingness
   pr_ymis: 0.1

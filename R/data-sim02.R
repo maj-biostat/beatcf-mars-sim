@@ -9,10 +9,11 @@ get_sim02_trial_data <- function(
     l_spec
 ){
   
-  if(is.null(l_spec$ia)){
-    ia <- 1
+  # cohort
+  if(is.null(l_spec$ic)){
+    ic <- 1
   } else {
-    ia <- l_spec$ia
+    ic <- l_spec$ic
   }
   if(is.null(l_spec$is)){
     is <- 1
@@ -29,6 +30,11 @@ get_sim02_trial_data <- function(
   } else {
     t0 <- l_spec$t0
   }
+  if(is.null(l_spec$tfu)){
+    tfu <- 1
+  } else {
+    tfu <- l_spec$tfu
+  }
   
   trt_opts <- 1:length(l_spec$p_trt_alloc)
   
@@ -39,12 +45,13 @@ get_sim02_trial_data <- function(
   
   d_ref <- data.table(
     # interim id
-    ia = ia, 
+    ic = ic, 
     # unit id
     id = is:ie,
-    trt = sample(trt_opts, size = l_spec$N[ia], replace = T, prob = l_spec$p_trt_alloc),
+    trt = sample(trt_opts, size = l_spec$N[ic], replace = T, prob = l_spec$p_trt_alloc),
     t0 = t0,
-    MASS::mvrnorm(l_spec$N[ia], mu = c(0, 0), Sigma = sigma))
+    tfu = tfu,
+    MASS::mvrnorm(l_spec$N[ic], mu = c(0, 0), Sigma = sigma))
   
   setnames(d_ref, c("V1", "V2"), c("u_0", "u_1"))
   
@@ -54,37 +61,44 @@ get_sim02_trial_data <- function(
   d_ref[, b_0 := l_spec$b_0 + u_0]
   d_ref[, b_1 := l_spec$b_time + u_1 + l_spec$b_trt[trt]]
   
-  times <- c(0, 1)
-  d <- d_ref[, .(t = times), by = .(ia, id, trt, t0, b_0, b_1)]
-  d[, y := b_0 + b_1 * t + rnorm(.N, 0, l_spec$b_se)]
+  fu <- c(0, 1)
+  d <- d_ref[, .(fu = fu), by = .(ic, id, trt, t0, tfu, b_0, b_1)]
+  
+  d[, ia := NA_integer_]
+  d[, t_anlys := NA_real_]
+  
+  d[, y := b_0 + b_1 * fu + rnorm(.N, 0, l_spec$b_se)]
   
   d[, y_mis := rbinom(.N, 1, l_spec$pr_ymis)]
+  
+  setcolorder(d, c("ic", "ia", "id", "trt", "t0", "tfu", "t_anlys"))
   
   d
 }
 
 
 
-get_sim02_stan_data <- function(d_all){
+get_sim02_stan_data <- function(d_mod){
   
-  d_mod <- dcast(
-    d_all[!(id %in% d_all[y_mis == 1, id])], 
-    ia + id + t0 + trt ~ t, value.var = "y")
-  setnames(d_mod, c("0", "1"), c("y_pre", "y"))
+  # all pts with any missingness are dropped
+  dd <- dcast(
+    d_mod[!(id %in% d_mod[y_mis == 1, id])], 
+    ic + id + t0 + trt ~ fu, value.var = "y")
+  setnames(dd, c("0", "1"), c("y_pre", "y"))
   
   # mean centre pre so that the intercept makes a bit more sense.
-  d_mod[, y_pre := y_pre - mean(y_pre)]
+  dd[, y_pre := y_pre - mean(y_pre)]
   
   ld <- list(
-    N = nrow(d_mod),
-    y = d_mod$y,
-    y_pre = d_mod$y_pre,
-    trt = d_mod$trt,
+    N = nrow(dd),
+    y = dd$y,
+    y_pre = dd$y_pre,
+    trt = dd$trt,
     prior_only = 0
   )
   
   list(
-    d_mod = d_mod,
+    dd = dd,
     ld = ld
   )
   

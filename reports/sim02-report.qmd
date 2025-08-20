@@ -63,6 +63,8 @@ suppressPackageStartupMessages(library(ggh4x))
 suppressPackageStartupMessages(library(lubridate))
 suppressPackageStartupMessages(library(scales))
 suppressPackageStartupMessages(library(patchwork))
+suppressPackageStartupMessages(library(pbapply))
+
 
 toks <- unlist(tstrsplit(getwd(), "/")) 
 if(toks[length(toks)] == "beatcf-mars-sim"){
@@ -70,13 +72,17 @@ if(toks[length(toks)] == "beatcf-mars-sim"){
   prefix_stan <- "./stan"
   prefix_fig <- "./fig"
   prefix_data <- "./data"
+  prefix_r <- "./r"
 } else {
   prefix_cfg <- "../etc/sim02/"
   prefix_stan <- "../stan"
   prefix_fig <- "../fig"
   prefix_data <- "../data"
+  prefix_r <- "../r"
 }
 
+
+source(paste0(prefix_r, "/data.R"))
 
 # Reference design
 
@@ -179,9 +185,11 @@ The control arm of standard of care remains the reference arm throughout.
 Several modifications could be made to the design, for example:
 
 1. Some account for the number/frequency/severity of exacerbation could be made
-2. A re-randomisation design could be considered; patients would be randomised on each exacerbation
-3. Some level of stratification may be considered
-4. ...
+2. Follow up at multiple timepoints rather than just pre/post
+3. A re-randomisation design could be considered; patients would be randomised on each exacerbation
+4. Some level of stratification may be considered
+5. Alternative followup timepoint
+6. ...
 
 # Data generation {#sec-data-generation}
 
@@ -203,17 +211,23 @@ Finally, the residual standard deviation is assumed to be `r l[[1]]$cfg$b_se`.
 The above values were arbitrarily selected.
 
 Treatment status was allocated 1:1:1, which is updated to 1:1 if a decision threshold is reached for non-inferiority or inferiority.
-The initial standard of care would remain the reference group throughout and the trial would stop once all questions are resolved or the maximum sample size of `r sum(l[[1]]$cfg$N_pt)` reached.
+The initial standard of care remains the reference group throughout and the trial stops once all questions are resolved or the maximum sample size of `r sum(l[[1]]$cfg$N_pt)` reached.
 
-Accrual is assumed to follow a non-homogenous poisson process with linear ramp up over three months configured such that the target enrolment would be completed within around 12 months. 
+Accrual is assumed to follow a non-homogenous poisson process with linear ramp up over `r l[[1]]$cfg$ramp_up_days` days with around `r l[[1]]$cfg$pt_per_day` enrolments per day.
+Follow up is assumed to occur within a window of `r l[[1]]$cfg$fu_days_lwr` to `r l[[1]]$cfg$fu_days_upr` days.
 
 
 # Modelling {#sec-modelling}
 
 ## Overview
 
-As discussed in @sec-data-generation, the data are simulated using a saturated linear model with terms for intercept and slope (with the intercept giving the population average mean ppFEV1 and the sum of the two yielding the mean ppFEV1 at 12 month follow up) along with participant level deviations on both the intercept and slope.
-However, the outcome is modelled using the standard pre/post linear model that includes a term for treatment assignment (ANCOVA).
+The data are simulated using a saturated linear model with terms for intercept and slope (with the intercept giving the population average mean ppFEV1 and the sum of the two yielding the mean ppFEV1 at follow up) along with participant level deviations on both the intercept and slope.
+
+The interim analyses are based on the available complete baseline and followup data.
+For example, out of 400 enrolments, there might be 260 that have reached their follow up at the time when the 400th patient is enrolled and thus 260 would enter into the interim analysis.
+The final analysis is run after followup is complete on all participants.
+
+The outcome is modelled using a pre/post linear model that includes a term for treatment assignment (ANCOVA).
 The groups level means and group differences in means are computed via a g-computation step.
 The analysis is conducted for complete cases (missing values are not imputed).
 
@@ -228,11 +242,17 @@ $$
 
 where $y_{\text{post}}$ is a normally distributed random variable for the ppFEV1 at 12 months and $y_0$ is the (mean centred) baseline measure of ppFEV1.
 
-+ $\alpha$ mean ppFEV1 at baseline in standard of care group
++ $\alpha$ mean ppFEV1 at baseline
 +	$\beta$ effect of pre treatment ppFEV1 (assumed to be linear)
 +	$\delta_l$ effect of treatment (soc, deferred, early discontinuation) with the reference group fixed to zero
 
 The model adjustment for pre-treatment ppFEV1 transforms this into an autoregressive form that accounts for the within participant correlation between ppFEV1 at the baseline and followup.
+
+## Alternatives
+
+An alternative way in which to analyse the data would be to adopt a linear mixed model including all enrolments and imputing those that have not completed followup at the time of the analysis.
+
+## Priors
 
 The model uses priors:
 
@@ -240,7 +260,7 @@ The model uses priors:
 + $\beta \sim \text{Normal}(0, 10)$
 + $\delta_l \sim \text{Normal}(0, 10) \quad l \in \{\text{deferred}, \text{discontinued} \}$ 
 
-The intercept prior is shown in @fig-prior-intercept and reflects the prior probability of treatment stratergy failure in the reference covariate groups.
+The intercept prior is shown in @fig-prior-intercept and reflects the prior on the mean ppFEV1 at baseline.
 A mixture of normals may be more appropriate prior model.
 
 ```{r, echo = F, eval = T}
@@ -249,8 +269,6 @@ A mixture of normals may be more appropriate prior model.
 #| fig-height: 4
 #| fig-width: 4
 #| fig-pos: H
-
-
 
 d_fig <- data.table(
   x = rnorm(1e6, l[[1]]$cfg$pri_b_0[1], l[[1]]$cfg$pri_b_0[2])
@@ -283,7 +301,7 @@ ggplot(d_fig, aes(x = x)) +
 
 # Decision procedures
 
-The decision processes are based on the current data and are interpreted with reference to the current available evidence.
+The decision processes are based on the available complete baseline and followup data.
 This approach is simple and offers a transparent interpretation, but it ignores the possibility that accumulating data may shift the posterior.
 The decision thresholds and evidential thresholds are shown in @tbl-dec-thresholds.
 
@@ -292,8 +310,6 @@ The decision thresholds and evidential thresholds are shown in @tbl-dec-threshol
 #| label: tbl-dec-thresholds
 #| tbl-pos: H
 #| tbl-cap: "Decision threshold parameters"
-
-
 
 d_dec_pars <- data.table(
   desc = c("NI", "Inferiority"),
@@ -329,15 +345,15 @@ This approach is adopted for each interim and the final analysis and is reflecte
 
 The trial setup is such that if the intervention were beneficial, it would reduce the rate of decline for ppFEV1 and we are therefore considering negative non-inferiority margins.
 Specifically, if an intervention arm is non-inferior to the reference arm, then the follow up ppFEV1 on the intervention will be reduced by no more than the non-inferiority margin.
-Equally, if the ppFEV1 on the intervention arm falls below the non-inferiority margin with very high probability, then we conclude inferiority.
+Conversely, if the ppFEV1 on the intervention arm falls below the non-inferiority margin with very high probability, then we conclude inferiority.
 
 + For non-inferiority, we evaluate $\text{Pr}(\delta > \epsilon_{NI}) > \zeta_{NI}$ where $\delta$ is the relevant difference in mean ppFEV1, $\epsilon_{NI}$ and $\zeta_{NI}$ correspond to a non-inferiority margin and an evidential requirement in terms of a probability threshold.
 + For inferiority, we evaluate $\text{Pr}(\delta < \epsilon_{inf}) > \zeta_{inf}$ where $\epsilon_{inf}$ and $\zeta_{inf}$ correspond to a reference value (currently we set $\epsilon_{inf} = \epsilon_{NI}$) and an evidential minimum in terms of a probability threshold.
 
 # Scenarios {#sec-scenarios}
 
-Each scenario adopts a maximum sample size of 600 with interim analyses run after 300 enrolments have reached their primary endpoint and every 100 thereafter.
-Given the use of a linear risk model in the data generation process, the treatment effects were specified as risk differences.
+Each scenario adopts a maximum sample size of 600 with interim analyses run when `r paste0(cumsum(l[[1]]$cfg$N_pt)[-length(l[[1]]$cfg$N_pt)], collapse = ", ")` enrolments have occurred.
+The treatment effects were specified as differences in mean ppFEV1 at followup.
 
 All scenarios used fixed covariate distributions and effects over the duration of the study. 
 Additionally, all simulations used the same reference values and decision thresholds.
@@ -396,7 +412,7 @@ gt_tbl <- gt(d_scenarios) |>
     align = "center"
   )  |>
   tab_spanner(
-    label = md("Risk difference relative to SoC"),
+    label = md("Difference in mean ppFEV1 relative to SoC"),
     columns = 3:4
   ) |>
   cols_label(
@@ -418,86 +434,81 @@ gt_tbl
 
 # Results
 
-## Example trial data
+## Simulated trial data
+
 
 ### Accrual
 
-@fig-accrual shows the enrolment progression by treatment arm and scenario for a random selection of `r N_example_sims` simulated trials.
+As noted in the data generation section (@sec-data-generation), accrual is assumed to follow a non-homogenous poisson process with linear ramp up over `r l[[1]]$cfg$ramp_up_days` days with around `r l[[1]]$cfg$pt_per_day` enrolments per day (around `r round(365 * l[[1]]$cfg$pt_per_day)` per year).
+Follow up is assumed to occur within a window of `r l[[1]]$cfg$fu_days_lwr` to `r l[[1]]$cfg$fu_days_upr` days.
 
-```{r, echo = F, eval = T}
-#| label: accrual
-#| code-summary: Accrual by treatment arm
-
-# Average observed accrual by trt.
-
-i <- 1
-d_acc <- data.table()
-sim_ex <- NULL
-
-# For each scenario that was simulated
-for(i in 1:length(l)){
-  
-  # extract the decision matrix - sim, analysis, quantity, domain level decision
-  d_all <- copy(l[[i]]$d_all[, .SD[1], keyby = .(sim, id)])
-  # form a discrete version of enrolment time so that we can aggregate the 
-  # progression to whole days
-  d_all[, t0 := ceiling(t0)]
-  # number of entrants by day
-  d_all <- d_all[, .N, keyby = .(sim, trt, t0)]
-  # cumulative view by trt
-  d_all[, N := cumsum(N), keyby = .(sim, trt)]
-  
-  # fill in the blanks - form a grid of all days
-  d_grid <- CJ(sim = 1:max(d_all$sim), 
-               trt = 1:max(d_all$trt),
-               t0 = 0:max(d_all$t0))
-  
-  # merge the grid and data
-  d_all <- merge(d_grid, d_all, by = c("sim", "trt", "t0"), all.x = T)
-  # fill in those where no enrolments on day 0
-  d_all[is.na(N) & t0 == 0, N := 0]
-  # carry forward
-  d_all[, N := nafill(N, "locf")]
-  
-  l_cfg <- copy(l[[i]]$cfg)
-  
-  if(is.null(sim_ex)){
-    sim_ex <- sort(sample(1:max(d_all$sim), size = N_example_sims, replace = F))  
-  }
-  
-  d_all <- d_all[sim %in% sim_ex]
-  
-  d_acc <- rbind(
-    d_acc,
-    cbind(scenario = i, desc = l_cfg$desc, d_all)
-  )
-
-}
-
-d_acc[, desc := factor(desc, levels = unique(d_acc$desc))]
-```
+@fig-accrual shows the average accrual and followup for patients within the study assuming no decision rules are triggered and enrolment progresses to the maximum sample size with the initial balanced treatment allocation. 
+All scenarios use the same accrual and followup time.
+The interim analyses, occurring after fixed number of enrolments, are marked by the dashed lines from which the expected number of participants with followup data and the day at which the analysis is assumed to occur can be seen.
+The final analysis is assumed to occur at the maximum followup time.
 
 ```{r, echo = F, eval = T}
 #| label: fig-accrual
-#| fig-cap: 'Cumulative probability of decision at each interim (enrolment by interim)'
-#| fig-height: 7
-#| fig-width: 7
+#| fig-cap: 'Average accrual and followup'
+#| fig-height: 5
+#| fig-width: 5
 #| fig-pos: H
 
+# Average observed accrual by trt.
 
+# events per day
+lambda <- l[[1]]$cfg$pt_per_day
+# ramp up over x months 
+rho <- function(t) pmin(t/l[[1]]$cfg$ramp_up_days, 1)
 
+d_acc_t <- rbindlist(pblapply(1:100, cl = 4, FUN=function(ii){
+  t0 <- get_enrol_time(sum(l[[1]]$cfg$N), lambda, rho)
+  tfu <- t0 +  runif(length(t0), l[[1]]$cfg$fu_days_lwr, l[[1]]$cfg$fu_days_upr)
+  data.table(ii, id = 1:sum(l[[1]]$cfg$N), t0, tfu)
+}))
 
-ggplot(d_acc, aes(x = t0, y = N, group = factor(sim))) +
-  geom_step(aes(col = factor(sim)), alpha = 1, lwd = 0.4) +
-  scale_x_continuous("Day of enrolment") + 
-  scale_y_continuous("Cumulative enrolments") + 
-  scale_color_discrete("Simulation") + 
-  ggh4x::facet_grid2(
-    desc ~ trt, 
-    axes = "x",
-    labeller = labeller(
-      trt = label_both,
-      desc = label_wrap_gen(30))) +
+d_acc_t <- d_acc_t[, .(t0 = mean(t0), tfu = mean(tfu)), keyby = id]
+d_fig_1 <- melt(d_acc_t, id.vars = "id")
+
+d_fig_1[, variable := factor(
+  variable, 
+  levels = c("t0", "tfu"),
+  labels = c("Entry", "Followup"))]
+# 
+N <- cumsum(l[[1]]$cfg$N_pt)[-length(l[[1]]$cfg$N_pt)]
+
+d_tmp <- d_acc_t[N, .(id = .I, analysis_time = t0)]
+d_tmp <- d_tmp[
+  , .(N = d_acc_t[tfu <= analysis_time, .N]), 
+  by = .(id, analysis_time)]
+
+d_fig_2 <- data.table(
+  x = rep(0, length(l[[1]]$cfg$N_pt)-1),
+  y = N ,
+  xend = d_acc_t[id %in% N, t0],
+  yend = d_tmp$N
+)
+
+ggplot(d_fig_1, aes(x = value, y = id, 
+                    group = variable, 
+                    col = variable)) +
+  geom_step() +
+  geom_segment(
+    data = d_fig_2,
+    aes(x = x, y = y, xend = xend, yend = y), 
+    inherit.aes = F, lty = 2, lwd = 0.3) +
+  geom_segment(
+    data = d_fig_2,
+    aes(x = xend, y = y, xend = xend, yend = yend), 
+    arrow = arrow(type = "open", length = unit(0.2, "cm")),
+    lineend = "round",
+    linejoin = "mitre",
+    inherit.aes = F, lty = 2, lwd = 0.3) +
+  scale_x_continuous("Study day",
+                     breaks = seq(0, max(d_acc_t$tfu), by = 100)) +
+  scale_y_continuous("Cumulative enrolments",
+                     breaks = seq(0, sum(l[[1]]$cfg$N_pt), by = 100)) +
+  scale_color_discrete("")+
   theme_minimal() +
   theme(
     legend.position = "bottom",
@@ -526,12 +537,9 @@ ggplot(d_acc, aes(x = t0, y = N, group = factor(sim))) +
     linetype = guide_legend(nrow = 1)
   )
 
-
-
+  
 
 ```
-
-
 
 ### Participant level ppFEV1
 
@@ -545,7 +553,6 @@ The residual noise is set to have a standard deviation of `r l[[1]]$cfg$b_se`.
 #| label: ppfev1
 #| code-summary: Participant ppFEV1
 
-l[[1]]$cfg$b_0
 
 i <- 1
 d_ppfev1 <- data.table()
@@ -553,9 +560,9 @@ d_ppfev1 <- data.table()
 # For each scenario that was simulated
 for(i in 1:length(l)){
   
-  d_all <- copy(l[[i]]$d_all[sim == 1, .(sim, ia, id, trt, t, y, y_mis)])
+  d_all <- copy(l[[i]]$d_all[sim == 1, .(sim, ia, id, trt, fu, y, y_mis)])
   
-  d_all[, t := factor(t, levels = c(0, 1), labels = c("baseline", "12 months"))]
+  d_all[, fu := factor(fu, levels = c(0, 1), labels = c("baseline", "followup"))]
   d_all[, y_mis := factor(y_mis, levels = c(0, 1), labels = c("observed", "missing"))]
   
   
@@ -579,19 +586,20 @@ d_ppfev1[, desc := factor(desc, levels = unique(d_ppfev1$desc))]
 ```{r, echo = F, eval = T}
 #| label: fig-ppfev1
 #| fig-cap: 'Pre and post values for ppfev1'
-#| fig-height: 6
+#| fig-height: 8
 #| fig-width: 7
 #| fig-pos: H
 
 
 d_fig_1 <- copy(d_ppfev1)
-d_fig_2 <- d_ppfev1[y_mis == "observed", .(y_mu = mean(y)), keyby = .(scenario, desc, trt, t)]
+d_fig_2 <- d_ppfev1[
+  y_mis == "observed", .(y_mu = mean(y)), keyby = .(scenario, desc, trt, fu)]
 
-ggplot(data = d_fig_1, aes(x = t, y = y, group = id)) +
+ggplot(data = d_fig_1, aes(x = fu, y = y, group = id)) +
   geom_line(alpha = 0.5, lwd = 0.2) +
   geom_line(
     data = d_fig_2,
-    aes(x = t, y = y_mu, group = trt),
+    aes(x = fu, y = y_mu, group = trt),
     col = 2, lwd = 0.8, inherit.aes = F
   ) + 
   scale_x_discrete("Timepoint") + 
@@ -664,7 +672,7 @@ for(i in 1:length(l)){
   l_cfg <- copy(l[[i]]$cfg)
   
   # number of enrolments at each interim (interim sample size sequence)
-  d_N <- data.table(ia = seq_along(l_cfg$N_pt), N = cumsum(l_cfg$N_pt))
+  d_N <- data.table(ic = seq_along(l_cfg$N_pt), N = cumsum(l_cfg$N_pt))
   
   
   # compute the cumulative instances of a decision being made by sim, each 
@@ -673,10 +681,10 @@ for(i in 1:length(l)){
   d_dec_1[, cdec := nafill(cdec, type = "locf"), keyby = .(sim, rule, par)]
   d_dec_1[, cdec := as.logical(cdec)]
   
-  d_dec_1 <- merge(d_dec_1, d_N, by = "ia")
+  d_dec_1 <- merge(d_dec_1, d_N, by = "ic")
   # cumulative proportion for which each decision quantity has been met by 
   # analysis and domain
-  d_dec_1 <- d_dec_1[, .(pr_val = mean(cdec)), keyby = .(ia, N, rule, par)]
+  d_dec_1 <- d_dec_1[, .(pr_val = mean(cdec)), keyby = .(ic, N, rule, par)]
   
   
   d_cprob_dec <- rbind(
@@ -692,7 +700,7 @@ for(i in 1:length(l)){
 ```{r, eval = T}
 #| echo: FALSE
 #| label: tbl-cprob-decision
-#| tbl-cap: 'Cumulative probability of decision at each interim'
+#| tbl-cap: 'Cumulative probability of decision for each enrolment cohort'
 #| tbl-pos: H
 
 
@@ -779,6 +787,7 @@ g_tbl <- d_tbl_1_cur |>
   )  |>
   cols_label(
     delta = "Difference in means at 12 month",
+    par = "",
     ni_400 = html("400"),
     ni_500 = html("500"),
     ni_600 = html("600")
@@ -798,7 +807,7 @@ g_tbl
 
 ```{r, echo = F, eval = T}
 #| label: fig-cprob-decision
-#| fig-cap: 'Cumulative probability of decision at each interim (enrolment by interim)'
+#| fig-cap: 'Cumulative probability of decision based on enrolments with follow up at each interim'
 #| fig-height: 7
 #| fig-width: 7
 #| fig-pos: H
@@ -820,9 +829,12 @@ d_fig_1[, rule := factor(
 d_fig_1[, par := factor(
   par, levels = c("delta_2_1", "delta_3_1"), labels = c("Deferred", "Discontinued"))]
 
-
-
 d_fig_1[, group := paste0(par, " - ", rule)]
+d_fig_1[, lab := paste0("Delta = ", delta)]
+
+d_fig_1[, lab := factor(
+  lab, levels = paste0("Delta = ", sort(unique(d_fig_1$delta))) )]
+
 
 ggplot(d_fig_1, aes(x = N, y = pr_val, group = group , 
                     col = par, lty =  rule)) +
@@ -834,7 +846,7 @@ ggplot(d_fig_1, aes(x = N, y = pr_val, group = group ,
   scale_x_continuous("Enrolment") +
   scale_y_continuous("Pr(decision)", breaks = seq(0, 1, by = 0.2)) +
   facet_grid2(
-    desc ~ paste0("Delta = ", delta) ,
+    desc ~ lab ,
     labeller = labeller(desc = label_wrap_gen(30))) + 
   theme_minimal() +
   theme(
@@ -892,17 +904,17 @@ for(i in 1:length(l)){
   # 
   d_grid <- CJ(
     sim = 1:l_cfg$nsim,
-    ia = 1:N_analysis,
+    ic = 1:N_analysis,
     trt = 1:N_trt
   )
     
   # pick up the baseline obs only, i.e. when the number enrolled
-  d_all <- copy(l[[i]]$d_all[t == 0, ])
+  d_all <- copy(l[[i]]$d_all[fu == 0, ])
   
   d_all <- merge(
     d_grid,
-    d_all[, .(.N), keyby = .(sim, ia, trt)],
-    by = c("sim", "ia", "trt"),
+    d_all[, .(.N), keyby = .(sim, ic, trt)],
+    by = c("sim", "ic", "trt"),
     all.x = T
   )
   
@@ -924,7 +936,7 @@ for(i in 1:length(l)){
 ```{r, eval = T}
 #| echo: FALSE
 #| label: tbl-n-1
-#| tbl-cap: 'Expected number of participants by treatment group for each scenario'
+#| tbl-cap: 'Expected number of participants **enrolled** by treatment group for each scenario'
 #| tbl-pos: H
 
 # DONT assume that all arms ran to the final interim. The result is just an
@@ -942,7 +954,6 @@ d_tbl_1_cur[trt == 1, trt := "SoC"]
 d_tbl_1_cur[trt == 2, trt := "Deferred"]
 d_tbl_1_cur[trt == 3, trt := "Discontinued"]
 
-# extract the true risk differences by comparison 
 # we are only interested in Deferred vs soc and Discontinued vs soc
 d_b_trt <- data.table()
 
@@ -1081,12 +1092,12 @@ for(i in 1:length(l)){
   
   # params
   d_pars <- copy(l[[i]]$d_post_smry_1)
-  d_pars <- d_pars[par %in% c("delta_2_1", "delta_3_1"), .(sim, ia, par, mu)]
+  d_pars <- d_pars[par %in% c("delta_2_1", "delta_3_1"), .(sim, ic, par, mu)]
   d_pars[, mu :=  nafill(mu, type = "locf"), keyby = .(sim, par)]
   
   # interim looks
-  d_N <- data.table(ia = seq_along(l_cfg$N_pt), N = cumsum(l_cfg$N_pt))
-  d_pars <- base::merge(d_pars, d_N, by = "ia")
+  d_N <- data.table(ic = seq_along(l_cfg$N_pt), N = cumsum(l_cfg$N_pt))
+  d_pars <- base::merge(d_pars, d_N, by = "ic")
   
   d_pars[par == "delta_2_1", delta_tru := b_trt[2] - b_trt[1]]
   d_pars[par == "delta_3_1", delta_tru := b_trt[3] - b_trt[1]]
@@ -1101,7 +1112,7 @@ for(i in 1:length(l)){
 
 }
 
-d_post_1 <- d_post_1[order(scenario, desc, sim, ia)]
+d_post_1 <- d_post_1[order(scenario, desc, sim, ic)]
 
 
 
@@ -1112,14 +1123,14 @@ d_post_1 <- d_post_1[order(scenario, desc, sim, ia)]
 ```{r, eval = T}
 #| echo: FALSE
 #| label: tbl-post-delta
-#| tbl-cap: 'Parameter estimation - risk difference (expectation of posterior means and 95% interval)'
+#| tbl-cap: 'Parameter estimation - difference in mean ppFEV1 (expectation of posterior means and 95% interval)'
 #| tbl-pos: H
 
 d_tbl_1_cur <- d_post_1[,
                  .(mu = mean(mu),
                    q_025 = quantile(mu, prob = 0.025),
                    q_975 = quantile(mu, prob = 0.975)), 
-                 keyby = .(scenario, desc, ia, par, delta_tru, N)]
+                 keyby = .(scenario, desc, ic, par, delta_tru, N)]
 # setorderv(d_fig, cols = "scenario", order = -1L)
 d_tbl_1_cur[, desc := factor(desc, levels = unique(d_post_1$desc))]
 
@@ -1191,7 +1202,7 @@ g_tbl
 
 ```{r, eval = T, echo = F}
 #| label: fig-expected-delta
-#| fig-cap: 'Distribution of posterior means for risk difference treatment effects by interim and  simulation scenario'
+#| fig-cap: 'Distribution of posterior means for treatment effects by interim and simulation scenario'
 #| fig-height: 8
 #| fig-width: 7
 #| fig-pos: H
@@ -1237,13 +1248,13 @@ ggplot(data = d_fig, aes(x = N, y = mu, col = par)) +
 
 ```
 
-## Observed proportion with treatment success
+## Observed ppFEV1
 
-@tbl-obs-prop shows the observed proportion with treatment success by scenario, strata and treatment arm.
+@tbl-obs-ppFev1 shows the mean observed ppFEV1 (and differences) by scenario and treatment arm.
 
 ```{r, echo = F, eval = T}
 #| label: empirical-risk
-#| code-summary: Summaries of empirical probability of treatment success
+#| code-summary: Summaries of empirical ppFEV1
 
 i <- 1
 d_ppfev1_obs <- data.table()
@@ -1255,12 +1266,12 @@ for(i in 1:length(l)){
   
   # interim looks
   d_enrolment <- data.table(
-    ia = seq_along(l_cfg$N_pt), N_enrol = cumsum(l_cfg$N_pt))
+    ic = seq_along(l_cfg$N_pt), N_enrol = cumsum(l_cfg$N_pt))
 
   # observed data
   d_all <- copy(l[[i]]$d_all)
-  d_all <- base::merge(d_all, d_enrolment , by = "ia")
-  d_all <- d_all[t == 1 & y_mis == 0, .(mu_obs = mean(y)), keyby = .(sim, trt)]
+  d_all <- base::merge(d_all, d_enrolment , by = "ic")
+  d_all <- d_all[fu == 1 & y_mis == 0, .(mu_obs = mean(y)), keyby = .(sim, trt)]
   d_all <- d_all[, .(mu_obs = mean(mu_obs)), keyby = .(trt)]
   
   d_all <- dcast(d_all, 1 ~ trt, value.var = "mu_obs")
@@ -1288,8 +1299,8 @@ setnames(d_ppfev1_obs, paste0(1:3), paste0("mu_obs_", 1:3))
 
 ```{r}
 #| echo: FALSE
-#| label: tbl-obs-prop
-#| tbl-cap: 'Observed proportion of failures and differences by scenario, treatment and strata'
+#| label: tbl-obs-ppFev1
+#| tbl-cap: 'Observed mean ppFEV1 (and differences) by scenario, treatment and strata'
 #| tbl-pos: H
 
 d_tbl_1_cur <- copy(d_ppfev1_obs)

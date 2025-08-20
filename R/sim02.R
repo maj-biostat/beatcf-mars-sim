@@ -50,29 +50,44 @@ run_trial <- function(
   # incrementally with a non-hom pp.
   
   # events per day
-  lambda = 1.85
-  # ramp up over 3 months 
-  rho = function(t) pmin(t/90, 1)
+  lambda = l_spec$pt_per_day
+  # ramp up over x months 
+  rho = function(t) pmin(t/l_spec$ramp_up_days, 1)
   
-  # day of enrolment
-  loc_t0 <- get_enrol_time(sum(l_spec$N), lambda, rho)
-  
+  # lambda = 0.57
+  # # ramp up over x months 
+  # rho = function(t) pmin(t/120, 1)
+  # 
   # rr <- unlist(pblapply(1:100, cl = 4, FUN=function(ii){
   #   ttt <- get_enrol_time(sum(l_spec$N), lambda, rho)
   #   max(ttt)
   # }))
-  # mean(rr)
+  # mean(rr) / 365
+  
+  # day of enrolment
+  loc_t0 <- get_enrol_time(sum(l_spec$N), lambda, rho)
+  # follow up time
+  loc_t <- loc_t0 + runif(length(loc_t0), l_spec$fu_days_lwr, l_spec$fu_days_upr)
+  
+  # d_fig <- data.table(id = 1:length(loc_t0), loc_t0, loc_t)
+  # d_fig <- melt(d_fig, id.vars = "id")
+  # 
+  # ggplot(d_fig, aes(x = value, y = id, group = variable)) +
+  #   geom_step()
+  #
+  
+  
   
   # loop controls
   stop_enrol <- FALSE
-  l_spec$ia <- 1 # interim number
+  l_spec$ic <- 1 # interim number
   N_analys <- length(l_spec$N)
   
   # posterior summaries
   g_par_mu = c("mu_1", "mu_2", "mu_3")
   g_par_delta = c("delta_2_1", "delta_3_1", "delta_3_2")
   d_post_smry_1 <- CJ(
-    ia = 1:N_analys,
+    ic = 1:N_analys,
     par = factor(c(g_par_mu, g_par_delta))
   )
   d_post_smry_1[, mu := NA_real_]
@@ -86,7 +101,7 @@ run_trial <- function(
   g_rule_type <- c("ni",  "inf")
   
   d_pr_dec <- CJ(
-    ia = 1:N_analys,
+    ic = 1:N_analys,
     rule = factor(g_rule_type),
     par = factor(g_par_delta),
     p = NA_real_,
@@ -104,32 +119,61 @@ run_trial <- function(
   ## LOOP -------
   while(!stop_enrol){
     
-    log_info("Trial ", ix, " analysis ", l_spec$ia)
+    log_info("Trial ", ix, " cohort ", l_spec$ic)
     
     # next chunk of data on pts.
-    if(l_spec$ia == 1){
+    if(l_spec$ic == 1){
       # starting pt index in data
       l_spec$is <- 1
-      l_spec$ie <- l_spec$is + l_spec$N[l_spec$ia] - 1
+      l_spec$ie <- l_spec$is + l_spec$N[l_spec$ic] - 1
     } else {
       l_spec$is <- l_spec$ie + 1
-      l_spec$ie <- l_spec$is + l_spec$N[l_spec$ia] - 1
+      l_spec$ie <- l_spec$is + l_spec$N[l_spec$ic] - 1
     }
     
     # id and time
-    l_spec$t0 = loc_t0[l_spec$is:l_spec$ie]
+    l_spec$t0 <- loc_t0[l_spec$is:l_spec$ie]
+    l_spec$tfu <- loc_t[l_spec$is:l_spec$ie]
     
     # We are assuming that the analysis takes place on pt having reached endpoint
     
     d <- get_sim02_trial_data(l_spec)
     
-    log_info("Trial ", ix, " new data generated ", l_spec$ia)
+    # if(l_spec$ie == sum(l_spec$N)){
+    #   log_info("Trial ", ix, " final analysis, using all pt")
+    #   # analysis time is after all are followed up to x months and 
+    #   # all are included in analysis
+    #   d[, t_anlys := max(d$tfu)]
+    # } else {
+    #   # analysis time is at most recent enrolment (only those reaching
+    #   # follow up are included in analysis)
+    #   d[, t_anlys := max(d$t0)]
+    # }
+    
+    log_info("Trial ", ix, " cohort ", l_spec$ic, " generated")
     
     # combine the existing and new data
     d_all <- rbind(d_all, d)
     
+    if(l_spec$ie == sum(l_spec$N)){
+      log_info("Trial ", ix, " final analysis, using all pt")
+      t_now <- d_all[, max(tfu)]
+      d_mod <- copy(d_all)
+      
+      d_all[is.na(ia) & id %in% d_mod$id, ia := l_spec$ic]
+      d_all[is.na(t_anlys) & id %in% d_mod$id, t_anlys := t_now]
+      
+    } else {
+      t_now <- d_all[, max(t0)]
+      d_mod <- d_all[tfu <= t_now]
+      
+      d_all[is.na(ia) & id %in% d_mod$id, ia := l_spec$ic]
+      d_all[is.na(t_anlys) & id %in% d_mod$id, t_anlys := t_now]
+    }
+    
     # create stan data format based on the relevant subsets of pt
-    lsd <- get_sim02_stan_data(d_all)
+    # also removes missingness, but should factor that out into this loop
+    lsd <- get_sim02_stan_data(d_mod)
     
     lsd$ld$pri_b_0 <- l_spec$prior$pri_b_0
     lsd$ld$pri_b_trt <- l_spec$prior$pri_b_pre
@@ -138,13 +182,13 @@ run_trial <- function(
     # str(lsd$ld)
     foutname <- paste0(
       format(Sys.time(), format = "%Y%m%d%H%M%S"),
-      "-sim-", ix, "-intrm-", l_spec$ia)
+      "-sim-", ix, "-intrm-", l_spec$ic)
     
     
     
     # fit model - does it matter that I continue to fit the model after the
     # decision is made...?
-    snk <- capture.output(
+    # snk <- capture.output(
       # f_1 <- m1$sample(
       #   lsd$ld, iter_warmup = 1000, iter_sampling = 2000,
       #   parallel_chains = 1, chains = 1, refresh = 0, show_exceptions = F,
@@ -158,7 +202,7 @@ run_trial <- function(
       #   single_path_draws=200,
       #   history_size=50, max_lbfgs_iters=100,
       #   refresh = 0, draws = 2000)
-    )
+    # )
     
     snk <- capture.output(
       f_1_mode <- m1$optimize(data = lsd$ld, jacobian = TRUE)
@@ -167,7 +211,7 @@ run_trial <- function(
       f_1 <- m1$laplace(data = lsd$ld)
     )
     
-    log_info("Trial ", ix, " fitted models ", l_spec$ia)
+    log_info("Trial ", ix, " fitted models ", l_spec$ic)
     
     # extract posterior - marginal probability of outcome by trt group
     # higher values of p indicate higher risk of treatment failure
@@ -182,7 +226,7 @@ run_trial <- function(
     if(return_posterior){
       d_post_all <- rbind(
         d_post_all,
-        cbind(ia = l_spec$ia, d_post)
+        cbind(ic = l_spec$ic, d_post)
       )
     }
     
@@ -203,14 +247,14 @@ run_trial <- function(
     
     # merge posterior summaries for current interim
     d_post_smry_1[
-      d_post_long[, .(ia = l_spec$ia,
+      d_post_long[, .(ic = l_spec$ic,
                       mu = mean(value),
                       med = median(value),
                       se = sd(value),
                       q_025 = quantile(value, prob = 0.025),
                       q_975 = quantile(value, prob = 0.975)
                       ), keyby = par], 
-      on = .(ia, par), `:=`(
+      on = .(ic, par), `:=`(
         mu = i.mu,
         med = i.med,
         se = i.se,
@@ -218,7 +262,7 @@ run_trial <- function(
         q_975 = i.q_975
         )]
 
-    log_info("Trial ", ix, " extracted posterior ", l_spec$ia)
+    log_info("Trial ", ix, " extracted posterior ", l_spec$ic)
     
     
     # compute and merge the current probability and decision trigger status
@@ -235,31 +279,31 @@ run_trial <- function(
       
       rbind(
         d_post_long[par %in% g_par_delta, .(
-          ia = l_spec$ia,
+          ic = l_spec$ic,
           rule = factor("ni", levels = g_rule_type),
           p = mean(value > l_spec$delta$ni),
           dec = as.integer(mean(value > l_spec$delta$ni) > l_spec$thresh$ni)
         ), keyby = par],
         d_post_long[par %in% g_par_delta, .(
-          ia = l_spec$ia,
+          ic = l_spec$ic,
           rule = factor("inf", levels = g_rule_type),
           p = mean(value < l_spec$delta$inf),
           dec = as.integer(mean(value < l_spec$delta$inf) > l_spec$thresh$inf)
         ), keyby = par]
       ),
       
-      on = .(ia, rule, par), `:=`(
+      on = .(ic, rule, par), `:=`(
         p = i.p, dec = i.dec  
       )
     ]
     
-    log_info("Trial ", ix, " compared to thresholds ", l_spec$ia)
+    log_info("Trial ", ix, " compared to thresholds ", l_spec$ic)
     
     # For trial stopping we only consider the comparisons to the
     # soc. In order to stop the study both need to have been resolved, either
     # NI or inferior.
     d_stop <- d_pr_dec[
-      ia <= l_spec$ia & par %in% c(g_par_delta[1:2]), 
+      ic <= l_spec$ic & par %in% c(g_par_delta[1:2]), 
       .(resolved = as.integer(sum(dec) > 0)), keyby = .(par)]
     
     
@@ -284,22 +328,34 @@ run_trial <- function(
       stop_enrol <- T    
     }
     
-    log_info("Trial ", ix, " updated allocation control ", l_spec$ia)
+    log_info("Trial ", ix, " updated allocation control ", l_spec$ic)
     
     # next interim
-    l_spec$ia <- l_spec$ia + 1
+    l_spec$ic <- l_spec$ic + 1
     
-    if(l_spec$ia > N_analys){
+    if(l_spec$ic > N_analys){
       stop_enrol <- T  
     }
   }
   
   # did we stop (for any reason) prior to the final interim?
-  stop_at <- l_spec$ia - 1
+  stop_at <- l_spec$ic - 1
   
   
   l_ret <- list(
     # data collected in the trial
+    
+    # ic - enrolment cohort
+    # ia - analysis in which pt is first analysed
+    # id - pt id
+    # trt - trt alloc
+    # t0 - enrol day
+    # tfu - fu day
+    # fu - stage (0 = pre, 1 = post)
+    # y - ppfev1
+    # y_mis - missingness indicator
+    # t_anlys - day on pt first enters their first analysis (early enrolments
+    # will enter multiple analyses)
     d_all = d_all,
     
     d_post_smry_1 = d_post_smry_1,
@@ -334,6 +390,14 @@ run_sim02 <- function(){
   l_spec <- list()
   # N by analysis
   l_spec$N <- g_cfgsc$N_pt
+  
+  l_spec$pt_per_day <-  g_cfgsc$pt_per_day
+  l_spec$ramp_up_days <-  g_cfgsc$ramp_up_days
+  
+  
+  l_spec$fu_days <- g_cfgsc$fu_days
+  l_spec$fu_days_lwr <- g_cfgsc$fu_days_lwr
+  l_spec$fu_days_upr <- g_cfgsc$fu_days_upr
   
   # missingness
   l_spec$pr_ymis <- g_cfgsc$pr_ymis
@@ -377,14 +441,14 @@ run_sim02 <- function(){
   }
   return_posterior <- F
   str(l_spec)
-  
+  e = NULL
+  ix <- 1
   
   ## LOOP -------
   
   
-  e = NULL
   log_info("Start simulation")
-  ix <- 1
+  
   r <- pbapply::pblapply(
     X=1:g_cfgsc$nsim, cl = g_cfgsc$mc_cores, FUN=function(ix) {
       # X=1:5, mc.cores = g_cfgsc$mc_cores, FUN=function(ix) {

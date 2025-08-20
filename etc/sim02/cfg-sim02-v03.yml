@@ -1,5 +1,5 @@
 default:
-  desc: "Equal decline in ppFEV1 in all treatment arms"
+  desc: "Opposites - one test arm equal to SoC and one test arm harmful"
   nsim: 1000
   mc_cores: 40
   # example trials
@@ -24,7 +24,7 @@ default:
   # backgroun temporal change per year
   b_time: -1
   # intervention
-  b_trt: [0, 0, 0] 
+  b_trt: [0, 0, -1] 
   
   # pt level variation in baseline
   b_s0: 7.5
