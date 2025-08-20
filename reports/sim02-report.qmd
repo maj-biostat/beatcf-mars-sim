@@ -439,22 +439,10 @@ gt_tbl
 
 ### Accrual
 
-As noted in the data generation section (@sec-data-generation), accrual is assumed to follow a non-homogenous poisson process with linear ramp up over `r l[[1]]$cfg$ramp_up_days` days with around `r l[[1]]$cfg$pt_per_day` enrolments per day (around `r round(365 * l[[1]]$cfg$pt_per_day)` per year).
-Follow up is assumed to occur within a window of `r l[[1]]$cfg$fu_days_lwr` to `r l[[1]]$cfg$fu_days_upr` days.
-
-@fig-accrual shows the average accrual and followup for patients within the study assuming no decision rules are triggered and enrolment progresses to the maximum sample size with the initial balanced treatment allocation. 
-All scenarios use the same accrual and followup time.
-The interim analyses, occurring after fixed number of enrolments, are marked by the dashed lines from which the expected number of participants with followup data and the day at which the analysis is assumed to occur can be seen.
-The final analysis is assumed to occur at the maximum followup time.
-
 ```{r, echo = F, eval = T}
-#| label: fig-accrual
-#| fig-cap: 'Average accrual and followup'
-#| fig-height: 5
-#| fig-width: 5
-#| fig-pos: H
+#| label: accrual_calc
+#| code-summary: Accrual calc
 
-# Average observed accrual by trt.
 
 # events per day
 lambda <- l[[1]]$cfg$pt_per_day
@@ -476,6 +464,27 @@ d_fig_1[, variable := factor(
   labels = c("Entry", "Followup"))]
 # 
 N <- cumsum(l[[1]]$cfg$N_pt)[-length(l[[1]]$cfg$N_pt)]
+```
+
+
+As noted in the data generation section (@sec-data-generation), accrual is assumed to follow a non-homogenous poisson process with linear ramp up over `r l[[1]]$cfg$ramp_up_days` days with around `r l[[1]]$cfg$pt_per_day` enrolments per day (around `r round(365 * l[[1]]$cfg$pt_per_day)` per year).
+Follow up is assumed to occur within a window of `r l[[1]]$cfg$fu_days_lwr` to `r l[[1]]$cfg$fu_days_upr` days.
+
+@fig-accrual shows the average accrual and followup for patients within the study assuming no decision rules are triggered and enrolment progresses to the maximum sample size with the initial balanced treatment allocation. 
+All scenarios use the same accrual and followup time.
+The interim analyses, occurring after fixed number of enrolments, are marked by the dashed lines from which the expected number of participants with followup data and the day at which the analysis is assumed to occur can be seen.
+The final analysis is assumed to occur at the maximum followup time (around `r round(max(d_acc_t$tfu)/365, 2)` years).
+
+```{r, echo = F, eval = T}
+#| label: fig-accrual
+#| fig-cap: 'Average accrual and followup'
+#| fig-height: 5
+#| fig-width: 5
+#| fig-pos: H
+
+# Average observed accrual by trt.
+
+
 
 d_tmp <- d_acc_t[N, .(id = .I, analysis_time = t0)]
 d_tmp <- d_tmp[
