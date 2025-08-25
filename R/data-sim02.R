@@ -5,45 +5,34 @@ library(data.table)
 
 
 
-get_sim02_trial_data <- function(
+get_sim02_trial_data_orig <- function(
     l_spec
 ){
   
   # cohort
-  if(is.null(l_spec$ic)){
-    ic <- 1
-  } else {
-    ic <- l_spec$ic
-  }
-  if(is.null(l_spec$is)){
-    is <- 1
-  } else {
-    is <- l_spec$is
-  }
-  if(is.null(l_spec$ie)){
-    ie <- 1
-  } else {
-    ie <- l_spec$ie
-  }
-  if(is.null(l_spec$t0)){
-    t0 <- 1
-  } else {
-    t0 <- l_spec$t0
-  }
-  if(is.null(l_spec$tfu)){
-    tfu <- 1
-  } else {
-    tfu <- l_spec$tfu
-  }
+  if(is.null(l_spec$ic)){ ic <- 1 } else { ic <- l_spec$ic }
+  if(is.null(l_spec$is)){ is <- 1 } else { is <- l_spec$is }
+  if(is.null(l_spec$ie)){ ie <- 1 } else { ie <- l_spec$ie }
+  if(is.null(l_spec$t0)){ t0 <- 1 } else { t0 <- l_spec$t0 }
+  if(is.null(l_spec$tfu)){ tfu <- 1 } else { tfu <- l_spec$tfu }
   
   trt_opts <- 1:length(l_spec$p_trt_alloc)
   
-  sigmas <- c(l_spec$b_s0, l_spec$b_s1)
-  s <- diag(sigmas)
-  r <- matrix(c(1, l_spec$b_rho, l_spec$b_rho, 1), nrow = 2)
-  sigma <- s %*% r %*% s
   
-  d_ref <- data.table(
+  # intercept and slope offsets
+  mu <- c(0, 0)
+  sigmas <- c(l_spec$u_s0, l_spec$u_s1)
+  s <- diag(sigmas)
+  r <- matrix(c(1, l_spec$u_rho, l_spec$u_rho, 1), nrow = 2)
+  Sigma <- s %*% r %*% s
+  
+  u <- MASS::mvrnorm(l_spec$N[ic], mu = mu, Sigma = Sigma)
+  
+  bi_0 <- l_spec$b_0 + u[, 1]
+  bi_1 <- l_spec$b_1 + u[, 2]
+  
+  # Progression from pre to post assuming soc occurs for everyone
+  d <- data.table(
     # interim id
     ic = ic, 
     # unit id
@@ -51,49 +40,260 @@ get_sim02_trial_data <- function(
     trt = sample(trt_opts, size = l_spec$N[ic], replace = T, prob = l_spec$p_trt_alloc),
     t0 = t0,
     tfu = tfu,
-    MASS::mvrnorm(l_spec$N[ic], mu = c(0, 0), Sigma = sigma))
+    bi_0 = bi_0,
+    bi_1 = bi_1)
   
-  setnames(d_ref, c("V1", "V2"), c("u_0", "u_1"))
-  
-  # unit specific int and slope over 1 year.
-  # but i don't think you could meaningfully extrapolate a 
-  # year on year impact?
-  d_ref[, b_0 := l_spec$b_0 + u_0]
-  d_ref[, b_1 := l_spec$b_time + u_1 + l_spec$b_trt[trt]]
-  
-  fu <- c(0, 1)
-  d <- d_ref[, .(fu = fu), by = .(ic, id, trt, t0, tfu, b_0, b_1)]
+  d[, y_pre := bi_0 + rnorm(.N, 0, l_spec$b_se)]
+  d[, y_post := y_pre + l_spec$b_trt[trt] +  rnorm(.N, 0, l_spec$b_se)]
   
   d[, ia := NA_integer_]
   d[, t_anlys := NA_real_]
   
-  d[, y := b_0 + b_1 * fu + rnorm(.N, 0, l_spec$b_se)]
-  
+  # missingness only applies for fu measure
   d[, y_mis := rbinom(.N, 1, l_spec$pr_ymis)]
-  
   setcolorder(d, c("ic", "ia", "id", "trt", "t0", "tfu", "t_anlys"))
+  
+  # cor(d$y_pre, d$y_post)
+  # cor(u[, 1], u[, 2])
+  
+  
+  # d_fig_1 <- melt(d, measure.vars = c("y_pre", "y_post"))
+  # ggplot(d_fig_1, aes(x = variable, y = value)) +
+  #   geom_boxplot() +
+  #   facet_wrap(~trt)
+  # 
+  # ggplot(d_fig_1, aes(x = variable, y = value, group = id)) +
+  #   geom_line() +
+  #   scale_y_continuous(breaks = seq(50, 100, by = 2)) +
+  #   facet_wrap(~trt)
+  # 
+  # ggplot(d_fig_1, aes(x = value)) +
+  #   geom_density() +
+  #   facet_wrap(~trt)
+  #  
+  # d_fig_2 <- copy(d)
+  # ggplot(d_fig_2, aes(x = y_pre, y = y_post)) +
+  #   geom_point() +
+  #   geom_smooth(method = "lm") +
+  #   facet_wrap(~trt)
+  # 
+  # d_fig_2[, delta := y_post - y_pre]
+  # ggplot(d_fig_2, aes(x = delta)) +
+  #   geom_density() +
+  #   facet_wrap(~trt)
+  
+  # d_fig_2[, cor(pre, post), by = trt]
+  
   
   d
 }
+
+data_example_a <- function(){
+  
+  ll <- list()
+  ll$N <- 1000; ll$ic <- 1; ll$is <- 1; ll$ie <- ll$N
+  ll$p_trt_alloc <- numeric(3)
+  ll$p_trt_alloc[1:2] <- rep(1/3, 2)
+  ll$p_trt_alloc[3] <- 1 - sum(ll$p_trt_alloc[1:2])
+  ll$b_0 <- 75; ll$b_1 <- -1
+  ll$u_s0 <- 4; ll$u_s1 <- 1
+  ll$u_rho <- -0.1
+  ll$b_se <- 1
+  ll$b_trt <- c(0, 0, 0)
+  ll$pr_ymis <- 0
+  
+  d <- get_sim02_trial_data(ll)
+  d[]
+  
+  d[, delta := y_post - y_pre]
+  # hist(d$delta)
+  # plot(d$y_pre, d$y_post)
+  
+  d_fig_1 <- copy(d)
+  d_fig_1 <- melt(
+    d_fig_1, measure.vars = c("y_pre", "y_post"), variable.name = "timepoint")
+  d_fig_1[, timepoint := fifelse(timepoint == "y_pre", "baseline", "followup")]
+  d_fig_1[, timepoint := factor(timepoint, levels =c("baseline", "followup"))]
+  
+  d_fig_2 <- d_fig_1[, .(y_mu = mean(value)), keyby = .(trt, timepoint)]
+  
+  ggplot(data = d_fig_1, aes(x = timepoint, y = value, group = id)) +
+    geom_line(alpha = 0.5, lwd = 0.2) +
+    geom_line(
+      data = d_fig_2,
+      aes(x = timepoint, y = y_mu, group = trt),
+      col = 2, lwd = 0.8, inherit.aes = F
+    ) + 
+    ggrepel::geom_text_repel(
+      data = d_fig_2,
+      aes(x = timepoint, y = y_mu, group = trt, label = round(y_mu, 1)),
+      box.padding = 2,
+      inherit.aes = F
+    ) +
+    scale_x_discrete("Timepoint") + 
+    scale_y_continuous("Observed ppFEV1", breaks = seq(50, 100, by = 10)) + 
+    ggh4x::facet_grid2(
+      . ~ trt, 
+      axes = "y",
+      labeller = labeller(
+        trt = label_both)
+    ) +
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      # this and the guide call below ensures that you get
+      # legends for decision type and trt on different rows
+      legend.box="vertical",
+      legend.title = element_text(size = 8) ,
+      strip.text.y.right = element_text(angle = 0,
+                                        hjust = 0,
+                                        vjust = 0.2,
+                                        size = 7),
+      axis.ticks = element_blank(),
+      strip.text.x.top = element_text(size = 7),
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "grey",
+                                      linewidth = 0.1,
+                                      linetype = 1),
+      axis.title.y=element_text(size = 7),
+      axis.text.y = element_text(size = 7), 
+      axis.text.x = element_text(size = 7), 
+      axis.title.x = element_text(size = 7),
+      legend.text = element_text(size = 7)
+    ) +
+    guides(
+      colour = guide_legend(nrow = 1),
+      linetype = guide_legend(nrow = 1)
+    )
+  
+} 
+
+
+get_sim02_trial_data <- function(
+    l_spec
+){
+  # cohort
+  if(is.null(l_spec$ic)){ ic <- 1 } else { ic <- l_spec$ic }
+  if(is.null(l_spec$is)){ is <- 1 } else { is <- l_spec$is }
+  if(is.null(l_spec$ie)){ ie <- 1 } else { ie <- l_spec$ie }
+  if(is.null(l_spec$t0)){ t0 <- 1 } else { t0 <- l_spec$t0 }
+  if(is.null(l_spec$tfu)){ tfu <- 1 } else { tfu <- l_spec$tfu }
+  
+  trt_opts <- 1:length(l_spec$p_trt_alloc)
+ 
+  # intercept and slope offsets
+  mu <- c(0, 0)
+  sigmas <- c(l_spec$u_s0, l_spec$u_s1)
+  s <- diag(sigmas)
+  r <- matrix(c(1, l_spec$u_rho, l_spec$u_rho, 1), nrow = 2)
+  Sigma <- s %*% r %*% s
+  
+  u <- MASS::mvrnorm(l_spec$N[ic], mu = mu, Sigma = Sigma)
+  
+  # Progression from pre to post assuming soc occurs for everyone
+  d <- data.table(
+    # interim id
+    ic = ic, 
+    # unit id
+    id = is:ie,
+    trt = sample(trt_opts, size = l_spec$N[ic], replace = T, prob = l_spec$p_trt_alloc),
+    t0 = t0,
+    tfu = tfu, 
+    u_0 = u[, 1],
+    u_1 = u[, 2])
+  
+  d <- d[, .(timept = c("pre", "post")), by = .(ic, id, trt, t0, tfu, u_0, u_1)]
+  
+  d[, mu := l_spec$b_0 + u_0 + 
+      (l_spec$b_1 + u_1) * (timept == "post") +
+      # treatment effect is indexed into vector of three with first value
+      # fixed at zero
+      l_spec$b_trt[trt] * (timept == "post")]
+  
+  d[, y := rnorm(.N, mu, l_spec$b_se)]
+  
+  d <- dcast(d, ic + id + trt + t0 + tfu ~ timept, value.var = "y")
+  
+  d[, ia := NA_integer_]
+  d[, t_anlys := NA_real_]
+  
+  # missingness only applies for fu measure
+  d[, y_mis := rbinom(.N, 1, l_spec$pr_ymis)]
+  setnames(d, c("post", "pre"), c("y_post", "y_pre"))
+  setcolorder(d, c("ic", "ia", "id", "trt", "t0", "tfu", "t_anlys", "y_pre", "y_post"))
+ 
+  d
+}
+
+
+data_example_b <- function(){
+  
+  ll <- list()
+  ll$N <- 1000; ll$ic <- 1; ll$is <- 1; ll$ie <- ll$N
+  ll$p_trt_alloc <- numeric(3)
+  ll$p_trt_alloc[1:2] <- rep(1/3, 2)
+  ll$p_trt_alloc[3] <- 1 - sum(ll$p_trt_alloc[1:2])
+  ll$b_0 <- 75; ll$b_1 <- -1
+  ll$u_s0 <- 4; ll$u_s1 <- 1
+  ll$u_rho <- -0.1
+  ll$b_se <- 1
+  ll$b_trt <- c(0, 0, 0)
+  ll$pr_ymis <- 0
+  
+  d <- get_sim02_trial_data(ll)
+  d[]
+  
+  d[, delta := y_post - y_pre]
+  # hist(d$delta)
+  # plot(d$y_pre, d$y_post)
+  
+  cor(d$y_pre, d$y_post)
+  
+  d_fig_1 <- melt(d, measure.vars = c("y_pre", "y_post"))
+  ggplot(d_fig_1, aes(x = variable, y = value)) +
+    geom_boxplot() +
+    scale_y_continuous(breaks = seq(50, 100, by = 2)) +
+    facet_wrap(~trt)
+   
+  ggplot(d_fig_1, aes(x = variable, y = value, group = id)) +
+    geom_line() +
+    scale_y_continuous(breaks = seq(50, 100, by = 2)) +
+    facet_wrap(~trt)
+
+  ggplot(d_fig_1, aes(x = value, group = variable)) +
+    geom_density() +
+    facet_wrap(~trt)
+    
+  d_fig_2 <- copy(d)
+  ggplot(d_fig_2, aes(x = y_pre, y = y_post)) +
+    geom_point() +
+    geom_smooth(method = "lm") +
+    facet_wrap(~trt)
+
+  d_fig_2[, delta := y_post - y_pre]
+  ggplot(d_fig_2, aes(x = delta)) +
+    geom_density() +
+    facet_wrap(~trt)
+  
+  
+  
+} 
 
 
 
 get_sim02_stan_data <- function(d_mod){
   
-  # all pts with any missingness are dropped
-  dd <- dcast(
-    d_mod[!(id %in% d_mod[y_mis == 1, id])], 
-    ic + id + t0 + trt ~ fu, value.var = "y")
-  setnames(dd, c("0", "1"), c("y_pre", "y"))
-  
   # mean centre pre so that the intercept makes a bit more sense.
-  dd[, y_pre := y_pre - mean(y_pre)]
+  dd <- copy(d_mod)
+  dd[, trt := factor(trt)]
+  
+  X <- model.matrix(~y_pre + trt, data = dd)
   
   ld <- list(
     N = nrow(dd),
-    y = dd$y,
-    y_pre = dd$y_pre,
-    trt = dd$trt,
+    y = dd$y_post,
+    Kx = ncol(X) - 1,
+    X = X[, 2:ncol(X)],
     prior_only = 0
   )
   

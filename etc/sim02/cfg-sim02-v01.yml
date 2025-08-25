@@ -1,6 +1,6 @@
 default:
   desc: "Equal decline in ppFEV1 in all treatment arms"
-  nsim: 1000
+  nsim: 200
   mc_cores: 40
   # example trials
   nex: 3
@@ -21,26 +21,29 @@ default:
   # model parameters ppfev
   # reference level
   b_0: 75
-  # backgroun temporal change per year
-  b_time: -1
+  # backgroun temporal change reduces the population level ppfev1
+  b_1: -1
+  
+  # pt level variation in baseline
+  u_s0: 5
+  u_s1: 1
+  # correlation between pre and post
+  u_rho: -0.1
+  
+  # system residual
+  b_se: 1
+  
   # intervention
   b_trt: [0, 0, 0] 
   
-  # pt level variation in baseline
-  b_s0: 7.5
-  b_s1: 1
-  # correlation between intercept and slope
-  # high intercepts mildly assoc with weaker slopes
-  b_rho: -0.1
-
-  # system noise
-  b_se: 1
-  
-  
-  # priors
+  # priors 
+  # intercept assuming centred design matrix for covs
   pri_b_0: [75, 7]
-  pri_b_trt: [0, 10]
-  pri_b_pre: [0, 10]
+  # means and sds for normal on pre, trt2, trt3
+  pri_b_mu: [0, 0, 0]
+  pri_b_sd: [10, 10, 10]
+  # for exponential on residual error
+  pri_b_se: 0.25
   
   # decision reference values
   dec_delta_ni: -0.5

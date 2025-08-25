@@ -139,17 +139,6 @@ run_trial <- function(
     
     d <- get_sim02_trial_data(l_spec)
     
-    # if(l_spec$ie == sum(l_spec$N)){
-    #   log_info("Trial ", ix, " final analysis, using all pt")
-    #   # analysis time is after all are followed up to x months and 
-    #   # all are included in analysis
-    #   d[, t_anlys := max(d$tfu)]
-    # } else {
-    #   # analysis time is at most recent enrolment (only those reaching
-    #   # follow up are included in analysis)
-    #   d[, t_anlys := max(d$t0)]
-    # }
-    
     log_info("Trial ", ix, " cohort ", l_spec$ic, " generated")
     
     # combine the existing and new data
@@ -171,38 +160,22 @@ run_trial <- function(
       d_all[is.na(t_anlys) & id %in% d_mod$id, t_anlys := t_now]
     }
     
+    # only analyse the data we observe
+    d_mod <- d_mod[y_mis == 0]
+    
     # create stan data format based on the relevant subsets of pt
     # also removes missingness, but should factor that out into this loop
     lsd <- get_sim02_stan_data(d_mod)
     
     lsd$ld$pri_b_0 <- l_spec$prior$pri_b_0
-    lsd$ld$pri_b_trt <- l_spec$prior$pri_b_pre
-    lsd$ld$pri_b_pre <- l_spec$prior$pri_b_trt
+    lsd$ld$pri_b_mu <- l_spec$prior$pri_b_mu
+    lsd$ld$pri_b_sd <- l_spec$prior$pri_b_sd
+    lsd$ld$pri_se <- l_spec$prior$pri_b_se
     
     # str(lsd$ld)
     foutname <- paste0(
       format(Sys.time(), format = "%Y%m%d%H%M%S"),
       "-sim-", ix, "-intrm-", l_spec$ic)
-    
-    
-    
-    # fit model - does it matter that I continue to fit the model after the
-    # decision is made...?
-    # snk <- capture.output(
-      # f_1 <- m1$sample(
-      #   lsd$ld, iter_warmup = 1000, iter_sampling = 2000,
-      #   parallel_chains = 1, chains = 1, refresh = 0, show_exceptions = F,
-      #   max_treedepth = 11,
-      #   output_dir = output_dir_mcmc,
-      #   output_basename = foutname
-      # )
-      
-      # f_1 <- m1$pathfinder(
-      #   lsd$ld, num_paths=20,
-      #   single_path_draws=200,
-      #   history_size=50, max_lbfgs_iters=100,
-      #   refresh = 0, draws = 2000)
-    # )
     
     snk <- capture.output(
       f_1_mode <- m1$optimize(data = lsd$ld, jacobian = TRUE)
@@ -211,17 +184,25 @@ run_trial <- function(
       f_1 <- m1$laplace(data = lsd$ld)
     )
     
+    # d_tmp <- copy(d_mod)
+    # d_tmp[, trt := factor(trt, levels = 1:3)]
+    # ff <- lm(y_post ~ y_pre + trt, data = d_tmp)
+    # summary(ff)
+    # summary(ff)$sigma
+    # cbind(summary(ff)$coef, confint(ff, level = 0.9))
+    # 
+    # f_1$summary(variables = c(
+    #   "b_0_tmp", "b_0", "b", "se"
+    # ))
+    
     log_info("Trial ", ix, " fitted models ", l_spec$ic)
     
     # extract posterior - marginal probability of outcome by trt group
     # higher values of p indicate higher risk of treatment failure
     d_post <- data.table(f_1$draws(
-      variables = c(
-        
-        c(g_par_mu, g_par_delta)
-        
-      ),   
+      variables = c(g_par_mu, g_par_delta),   
       format = "matrix"))
+    
     
     if(return_posterior){
       d_post_all <- rbind(
@@ -231,20 +212,7 @@ run_trial <- function(
     }
     
     d_post_long <- melt(d_post, measure.vars = names(d_post), variable.name = "par")
-    
-    # d_fig <- copy(d_post_long)
-    # d_fig[par %like% "mu", par_type := "mu"]
-    # d_fig[par %like% "delta", par_type := "delta"]
-    # 
-    # p1 <- ggplot(d_fig[par %like% "mu", ],
-    #              aes(x = value, group = par, col = par)) +
-    #   geom_density()
-    # p2 <- ggplot(d_fig[par %in% c(g_par_delta[1:2]), ],
-    #              aes(x = value, group = par, col = par)) +
-    #   geom_density()
-    # p1/p2
 
-    
     # merge posterior summaries for current interim
     d_post_smry_1[
       d_post_long[, .(ic = l_spec$ic,
@@ -300,8 +268,8 @@ run_trial <- function(
     log_info("Trial ", ix, " compared to thresholds ", l_spec$ic)
     
     # For trial stopping we only consider the comparisons to the
-    # soc. In order to stop the study both need to have been resolved, either
-    # NI or inferior.
+    # soc. In order to stop the study both need to have been resolved (either 
+    # NI or inferiority have been concluded).
     d_stop <- d_pr_dec[
       ic <= l_spec$ic & par %in% c(g_par_delta[1:2]), 
       .(resolved = as.integer(sum(dec) > 0)), keyby = .(par)]
@@ -405,15 +373,13 @@ run_sim02 <- function(){
   # trt alloc
   l_spec$p_trt_alloc <- unlist(g_cfgsc$trt)/length(unlist(g_cfgsc$trt))
   
-  # model parameters
-  # model params (are on the risk scale)
   l_spec$b_0 <- g_cfgsc$b_0
-  l_spec$b_time <- unlist(g_cfgsc$b_time)
+  l_spec$b_1 <- g_cfgsc$b_1
   l_spec$b_trt <- unlist(g_cfgsc$b_trt)
   
-  l_spec$b_s0 <- unlist(g_cfgsc$b_s0)
-  l_spec$b_s1 <- unlist(g_cfgsc$b_s1)
-  l_spec$b_rho <- unlist(g_cfgsc$b_rho)
+  l_spec$u_s0 <- unlist(g_cfgsc$u_s0)
+  l_spec$u_s1 <- unlist(g_cfgsc$u_s1)
+  l_spec$u_rho <- unlist(g_cfgsc$u_rho)
   
   l_spec$b_se <- unlist(g_cfgsc$b_se)
   
@@ -423,7 +389,13 @@ run_sim02 <- function(){
   l_spec$prior$pri_b_0 <- unlist(g_cfgsc$pri_b_0)
   l_spec$prior$pri_b_pre <- unlist(g_cfgsc$pri_b_pre)
   l_spec$prior$pri_b_trt <- unlist(g_cfgsc$pri_b_trt)
+  l_spec$prior$pri_b_se <- g_cfgsc$pri_b_se
   
+  l_spec$prior$pri_b_0 <- unlist(g_cfgsc$pri_b_0)
+  l_spec$prior$pri_b_mu <- unlist(g_cfgsc$pri_b_mu)
+  l_spec$prior$pri_b_sd <- unlist(g_cfgsc$pri_b_sd)
+  l_spec$prior$pri_b_se <- g_cfgsc$pri_b_se
+ 
   # decision hurdle
   l_spec$delta <- list()
   l_spec$delta$ni <- g_cfgsc$dec_delta_ni
@@ -567,3 +539,125 @@ main_sim02 <- function(){
 main_sim02()
 
 
+# d_fig_1 <- melt(d_post, measure.vars = names(d_post))
+# 
+# d_fig_1[, .(mean(value), sd(value)), keyby = variable]
+# ggplot(d_fig_1, aes(x = value)) +
+#   geom_density() +
+#   facet_wrap(~variable, scales = "free_x")
+# 
+# d_fig_2 <- data.table(f_1$draws(
+#   variables = c(
+#     
+#     "b_trt[2]", "b_trt[3]", "b_pre", "se"
+#     
+#   ),   
+#   format = "matrix"))
+# d_fig_2 <- melt(d_fig_2, measure.vars = names(d_fig_2))
+# d_fig_2[, .(mean(value), sd(value)), keyby = variable]
+# ggplot(d_fig_2, aes(x = value)) +
+#   geom_density() +
+#   facet_wrap(~variable, scales = "free_x")
+#
+
+# d_fig_3 <- rbind(
+#   d_fig_1[variable %in% c("delta_2_1", "delta_3_1")]  ,
+#   d_fig_2[variable %in% c("b_trt[2]", "b_trt[3]")]  
+# )
+# d_fig_3[variable %in% c("delta_2_1", "b_trt[2]"), par := "delta_2_1"]
+# d_fig_3[variable %in% c("delta_3_1", "b_trt[3]"), par := "delta_3_1"]
+# 
+# ggplot(d_fig_3, aes(x = value, group = variable, col = variable)) +
+#   geom_density() +
+#   facet_wrap(variable~par, scales = "free_x")
+
+# d_mu <- data.table(f_1$draws(
+#   variables = c(
+# 
+#     c("mu")
+# 
+#   ),
+#   format = "matrix"))
+# d_mu <- melt(d_mu, measure.vars = names(d_mu))
+
+# d_fig_1 <- copy(d_mod)
+# d_fig_1[, y_pred := d_mu[, mean(value), keyby = variable][, V1]]
+# ggplot(d_fig_1, aes(x = y_post, y = y_pred)) +
+#   geom_point()
+
+
+
+# snk <- capture.output(
+#   f_1_mode <- m1$optimize(data = lsd$ld, jacobian = TRUE)
+# )
+# snk <- capture.output(
+#   f_1 <- m1$laplace(data = lsd$ld)
+# )
+
+
+# f_1 <- m1$sample(
+#   lsd$ld, iter_warmup = 1000, iter_sampling = 1000,
+#   parallel_chains = 1, chains = 1, refresh = 0, show_exceptions = T,
+#   max_treedepth = 11,
+#   output_dir = output_dir_mcmc,
+#   output_basename = foutname
+# )
+
+
+
+
+# d_fig_1 <- melt(d_post, measure.vars = names(d_post))
+# d_fig_1[, .(mean(value), sd(value)), keyby = variable]
+# ggplot(d_fig_1, aes(x = value)) +
+#   geom_density() +
+#   facet_wrap(~variable, scales = "free_x")
+
+# d_fig_2 <- data.table(f_1$draws(
+#   variables = c("b", "se"),
+#   format = "matrix"))
+# d_fig_2 <- melt(d_fig_2, measure.vars = names(d_fig_2))
+# d_fig_2[, .(mean(value), sd(value)), keyby = variable]
+# ggplot(d_fig_2, aes(x = value)) +
+#   geom_density() +
+#   facet_wrap(~variable, scales = "free")
+
+# b_0 <- as.numeric(f_1$draws(variables = c("b_0"), format = "matrix"))
+# b <- f_1$draws(variables = c("b"), format = "matrix")
+# X <- model.matrix(~ y_pre + factor(trt), data = d_mod)[, -1]
+
+# d_fig_3 <- data.table(b_0 + t(X %*% t(b)))
+# d_fig_3 <- data.table(
+#   mu = apply(d_fig_3, 2, mean),
+#   q_lwr = apply(d_fig_3, 2, FUN = quantile, prob = 0.025),
+#   q_upr = apply(d_fig_3, 2, FUN = quantile, prob = 0.975)
+# )
+
+# d_fig_4 <- data.table(
+#   mu_f = predict(ff)
+# )
+
+# d_fig_5 <- copy(d_mod[y_mis == 0])
+# d_fig_5 <- cbind(d_fig_5, d_fig_3[, .(mu, q_lwr, q_upr)])
+# d_fig_5 <- cbind(d_fig_5, d_fig_4)
+
+# ggplot(d_fig_5, aes(x = id, y = y_post)) +
+#   geom_point(size = 0.5) +
+#   geom_point(aes(x = id, y = mu), col = 2, size = 1.5) +
+#   geom_linerange(
+#     aes(x = id, ymin = q_lwr, ymax = q_upr), , col = 2
+#   ) +
+#   geom_point(aes(x = id, y = mu_f), col = 3, size = 0.5) 
+
+# ggplot(d_fig_5, aes(x = y_pre, y = y_post, col = factor(trt), group = trt)) +
+#   geom_point(size = 0.5) +
+#   geom_point(aes(y = mu), size = 1.5) 
+# geom_linerange(
+#   aes(x = id, ymin = q_lwr, ymax = q_upr), , col = 2
+# ) +
+# geom_point(aes(x = id, y = mu_f), col = 3, size = 0.5) 
+#
+
+# d_fig_2[, .(mean(value), sd(value)), keyby = variable]
+# ggplot(d_fig_2, aes(x = value)) +
+#   geom_density() +
+#   facet_wrap(~variable, scales = "free_x")

@@ -1,54 +1,66 @@
 data{
   int N;
   vector[N] y;
-  vector[N] y_pre;
   
-  // intervention
-  array[N] int trt;
+  int Kx;
+  // y_pre and trt indicators
+  matrix[N, Kx] X;
   
   // priors
+  // mean, sd
   vector[2] pri_b_0;
-  vector[2] pri_b_trt;
-  vector[2] pri_b_pre;
+  // means for each beta
+  vector[Kx] pri_b_mu;
+  // sd for each beta
+  vector[Kx] pri_b_sd;
+  // rho for exponential
+  real pri_se;
   
   int prior_only;
 }
+transformed data {
+  matrix[N, Kx] Xc;  
+  vector[Kx] mu_X;
+  for (i in 1:Kx) {
+    mu_X[i] = mean(X[, i]);
+    Xc[, i] = X[, i] - mu_X[i];
+  }
+}
 parameters{
-  real b_0;
-  vector[2] b_trt_raw;
+  real b_0_tmp;
+  vector[Kx] b;
   real<lower=0> se;
-  real b_pre;
 }
 transformed parameters{
   
-  vector[3] b_trt;
-  vector[N] eta;
+  vector[N] mu;
+  mu = b_0_tmp + Xc * b;
   
-  b_trt[1] = 0.0;
-  
-  b_trt[2:3] = b_trt_raw;
-  
-  // in practice would assume a non linear effect on pre
-  eta = b_0 + b_pre*y_pre + b_trt[trt];
 }
 model{
   
-  target += normal_lpdf(b_0 | pri_b_0[1], pri_b_0[2]);
-  target += normal_lpdf(b_trt_raw | pri_b_trt[1], pri_b_trt[2]);
-  target += normal_lpdf(b_trt_raw | pri_b_pre[1], pri_b_pre[2]);
+  target += normal_lpdf(b_0_tmp | pri_b_0[1], pri_b_0[2]);
+  for(i in 1:Kx){
+    target += normal_lpdf(b | pri_b_mu[i], pri_b_sd[i]);  
+  }
+  target += exponential_lpdf(se | pri_se);
   
   if(!prior_only){
-    target += normal_lpdf(y | eta, se);  
+    target += normal_lpdf(y | mu, se);  
   }
   
 }
 generated quantities{
   
+  real b_0 = b_0_tmp - dot_product(mu_X, b);
+
   vector[N] w = dirichlet_rng(rep_vector(1, N));
 
-  vector[N] eta_1 = b_0 + b_pre*y_pre + b_trt[1];
-  vector[N] eta_2 = b_0 + b_pre*y_pre + b_trt[2];
-  vector[N] eta_3 = b_0 + b_pre*y_pre + b_trt[3];
+  // In this setting, b_trt[2] and b_trt[3] will be identical to
+  // delta_2_1 and delta_3_1.
+  vector[N] eta_1 = b_0 + b[1]*X[, 1] ;
+  vector[N] eta_2 = b_0 + b[1]*X[, 1] + b[2];
+  vector[N] eta_3 = b_0 + b[1]*X[, 1] + b[3];
 
   real mu_1;
   real mu_2;

@@ -105,7 +105,7 @@ for(i in 1:length(flist)){
 # Load all the files into a single list.
 
 # files of interest
-sim_lab <- "sim02-01"
+sim_lab <- "sim02-02"
 
 flist <- list.files(paste0(prefix_data, "/", sim_lab), pattern = "sim02")
 toks <- list()
@@ -569,9 +569,8 @@ d_ppfev1 <- data.table()
 # For each scenario that was simulated
 for(i in 1:length(l)){
   
-  d_all <- copy(l[[i]]$d_all[sim == 1, .(sim, ia, id, trt, fu, y, y_mis)])
+  d_all <- copy(l[[i]]$d_all[sim == 1, .(sim, ia, id, trt, y_pre, y_post, y_mis)])
   
-  d_all[, fu := factor(fu, levels = c(0, 1), labels = c("baseline", "followup"))]
   d_all[, y_mis := factor(y_mis, levels = c(0, 1), labels = c("observed", "missing"))]
   
   
@@ -601,21 +600,32 @@ d_ppfev1[, desc := factor(desc, levels = unique(d_ppfev1$desc))]
 
 
 d_fig_1 <- copy(d_ppfev1)
-d_fig_2 <- d_ppfev1[
-  y_mis == "observed", .(y_mu = mean(y)), keyby = .(scenario, desc, trt, fu)]
+d_fig_1 <- melt(
+  d_fig_1, measure.vars = c("y_pre", "y_post"), variable.name = "timepoint")
+d_fig_1[, timepoint := fifelse(timepoint == "y_pre", "baseline", "followup")]
+d_fig_1[, timepoint := factor(timepoint, levels =c("baseline", "followup"))]
 
-ggplot(data = d_fig_1, aes(x = fu, y = y, group = id)) +
+d_fig_2 <- d_fig_1[
+  y_mis == "observed", .(y_mu = mean(value)), keyby = .(scenario, desc, trt, timepoint)]
+
+ggplot(data = d_fig_1, aes(x = timepoint, y = value, group = id)) +
   geom_line(alpha = 0.5, lwd = 0.2) +
   geom_line(
     data = d_fig_2,
-    aes(x = fu, y = y_mu, group = trt),
+    aes(x = timepoint, y = y_mu, group = trt),
     col = 2, lwd = 0.8, inherit.aes = F
   ) + 
+  ggrepel::geom_text_repel(
+    data = d_fig_2,
+    aes(x = timepoint, y = y_mu, group = trt, label = round(y_mu, 1)),
+    box.padding = 2,
+    inherit.aes = F
+  ) +
   scale_x_discrete("Timepoint") + 
-  scale_y_continuous("Observed ppFEV1") + 
+  scale_y_continuous("Observed ppFEV1", breaks = seq(50, 100, by = 10)) + 
   ggh4x::facet_grid2(
     desc ~ trt, 
-    axes = "x",
+    axes = "y",
     labeller = labeller(
       trt = label_both,
       desc = label_wrap_gen(30))) +
@@ -918,7 +928,7 @@ for(i in 1:length(l)){
   )
     
   # pick up the baseline obs only, i.e. when the number enrolled
-  d_all <- copy(l[[i]]$d_all[fu == 0, ])
+  d_all <- copy(l[[i]]$d_all[, ])
   
   d_all <- merge(
     d_grid,
@@ -1280,7 +1290,7 @@ for(i in 1:length(l)){
   # observed data
   d_all <- copy(l[[i]]$d_all)
   d_all <- base::merge(d_all, d_enrolment , by = "ic")
-  d_all <- d_all[fu == 1 & y_mis == 0, .(mu_obs = mean(y)), keyby = .(sim, trt)]
+  d_all <- d_all[y_mis == 0, .(mu_obs = mean(y_post)), keyby = .(sim, trt)]
   d_all <- d_all[, .(mu_obs = mean(mu_obs)), keyby = .(trt)]
   
   d_all <- dcast(d_all, 1 ~ trt, value.var = "mu_obs")
