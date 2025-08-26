@@ -184,12 +184,13 @@ The control arm of standard of care remains the reference arm throughout.
 
 Several modifications could be made to the design, for example:
 
-1. Some account for the number/frequency/severity of exacerbation could be made
-2. Follow up at multiple timepoints rather than just pre/post
-3. A re-randomisation design could be considered; patients would be randomised on each exacerbation
-4. Some level of stratification may be considered
-5. Alternative followup timepoint
-6. ...
+1. Repeat the data collection step a multiple times on each participant at baseline and followup, e.g. one reading per day over three days or three readings in one-day
+2. Attempt to account for the number/frequency/severity of exacerbations to improve precision
+3. Follow up at multiple timepoints rather than just pre/post
+4. Re-randomisation participants to alternative treatments over the 12 month period; patients would be randomised on each exacerbation
+5. Some level of stratification may be considered
+6. Alternative followup timepoint
+7. ...
 
 # Data generation {#sec-data-generation}
 
@@ -205,13 +206,31 @@ As the trial progresses, decisions may be made which lead to early stopping of t
 We simulate ppFEV1 at baseline and 12 months follow up, assuming the population mean of ppFEV1 at baseline is normal with a mean of `r l[[1]]$cfg$b_0` and a 1% decline (in absolute terms) per year.
 Missingness is assumed to follow MCAR across all treatment groups with a `r l[[1]]$cfg$pr_ymis` missing probability.
 
-Patient level heterogeneity is assumed to be multivariate normal with standard deviations `r l[[1]]$cfg$b_s0` and `r l[[1]]$cfg$b_s1` on the intercept (baseline) and slope (followup increment) respectively with `r l[[1]]$cfg$b_rho` correlation between them.
+Patient level heterogeneity is assumed to be multivariate normal with standard deviations `r l[[1]]$cfg$u_s0` and `r l[[1]]$cfg$u_s1` on the intercept (baseline) and slope (followup increment) respectively with `r l[[1]]$cfg$u_rho` correlation between them.
 Treatment arms are assumed to have a range of small deviations on the slope relative to the standard of care group (see @sec-scenarios).
 Finally, the residual standard deviation is assumed to be `r l[[1]]$cfg$b_se`.
 The above values were arbitrarily selected.
 
+The linear combination of terms used to simulate the outcome variable at baseline and followup is:
+
+$$
+\begin{aligned}
+\mu_i &=  (\beta_0 + u_{i0}) + (\beta_1 + u_{i1}) \times \text{post}_i + \\
+  &\quad \gamma_1 \times  \text{defer}_i \times  \text{post}_i +    
+         \gamma_2 \times  \text{discontinue}_i \times  \text{post}_i
+\end{aligned}
+$$
+
+where 
+
++ $\beta_0$ and $\beta_1$ are the population intercept and slope
++ $u_{i0}$ and $u_{i1}$ are the participant level offset from the intercept and slope
++ $\gamma_1$ and $\gamma_2$ are the effects of the deferred and discontinued treatment at followup
+
+Taking *post*, *defer* and *discontinue* as indicator variables, we then simulate a value for the observed outcome under a normal model with mean $\mu_i$ and standard error $\sigma_\epsilon$.
+
 Treatment status was allocated 1:1:1, which is updated to 1:1 if a decision threshold is reached for non-inferiority or inferiority.
-The initial standard of care remains the reference group throughout and the trial stops once all questions are resolved or the maximum sample size of `r sum(l[[1]]$cfg$N_pt)` reached.
+The initial standard of care remains the reference group throughout and the trial stops once all questions are resolved or the maximum sample size of `r sum(l[[1]]$cfg$N)` reached.
 
 Accrual is assumed to follow a non-homogenous poisson process with linear ramp up over `r l[[1]]$cfg$ramp_up_days` days with around `r l[[1]]$cfg$pt_per_day` enrolments per day.
 Follow up is assumed to occur within a window of `r l[[1]]$cfg$fu_days_lwr` to `r l[[1]]$cfg$fu_days_upr` days.
@@ -236,17 +255,19 @@ The model form is:
 $$
 \begin{aligned}
 y_{\text{post}} &\sim \text{Normal}(\mu, \sigma_e) \\
-\mu &=  \alpha + \beta y_0 + \delta_{[\text{trt}]}  \\
+\mu &=  \alpha + \beta \times y_{\text{pre}} + \gamma_1 \times \text{defer}_i + \gamma_2 \times \text{discontinue}_i  \\
 \end{aligned}
 $$
 
-where $y_{\text{post}}$ is a normally distributed random variable for the ppFEV1 at 12 months and $y_0$ is the (mean centred) baseline measure of ppFEV1.
+where $y_{\text{post}}$ is a normally distributed random variable for the ppFEV1 at 12 months and $y_{\text{pre}}$ is the baseline measure of ppFEV1.
 
-+ $\alpha$ mean ppFEV1 at baseline
++ $\alpha$ mean ppFEV1 at baseline in SoC when baseline ppFEV1 is zero^[For the actual model, we centre all of the covariates to improve sampling and all operations are then on the mean centred matrix using a temporary intercept. The $\alpha$ term is recovered as the temporary intercept minus the dot-product of the covariate means and the parameter estimates.]
 +	$\beta$ effect of pre treatment ppFEV1 (assumed to be linear)
-+	$\delta_l$ effect of treatment (soc, deferred, early discontinuation) with the reference group fixed to zero
++	$\gamma_l$ effect of treatment 
 
-The model adjustment for pre-treatment ppFEV1 transforms this into an autoregressive form that accounts for the within participant correlation between ppFEV1 at the baseline and followup.
+and again taking *defer* and *discontinue* as indicator variables of treatment assignment.
+
+The model is a bivariate autoregressive form that accounts for the within participant correlation between ppFEV1 at the baseline and followup by the inclusion of the observed baseline value for ppFEV1.
 
 ## Alternatives
 
@@ -271,7 +292,7 @@ A mixture of normals may be more appropriate prior model.
 #| fig-pos: H
 
 d_fig <- data.table(
-  x = rnorm(1e6, l[[1]]$cfg$pri_b_0[1], l[[1]]$cfg$pri_b_0[2])
+  x = rnorm(1e6, l[[1]]$cfg$prior$pri_b_0[1], l[[1]]$cfg$prior$pri_b_0[2])
 )
 
 ggplot(d_fig, aes(x = x)) +
@@ -313,8 +334,8 @@ The decision thresholds and evidential thresholds are shown in @tbl-dec-threshol
 
 d_dec_pars <- data.table(
   desc = c("NI", "Inferiority"),
-  ref_value = c(l[[1]]$cfg$dec_delta_ni, l[[1]]$cfg$dec_delta_inf),
-  threshold = c(l[[1]]$cfg$dec_thresh_ni, l[[1]]$cfg$dec_thresh_inf)
+  ref_value = c(l[[1]]$cfg$delta$ni, l[[1]]$cfg$delta$inf),
+  threshold = c(l[[1]]$cfg$thresh$ni, l[[1]]$cfg$thresh$inf)
 )
 
 
@@ -352,7 +373,7 @@ Conversely, if the ppFEV1 on the intervention arm falls below the non-inferiorit
 
 # Scenarios {#sec-scenarios}
 
-Each scenario adopts a maximum sample size of 600 with interim analyses run when `r paste0(cumsum(l[[1]]$cfg$N_pt)[-length(l[[1]]$cfg$N_pt)], collapse = ", ")` enrolments have occurred.
+Each scenario adopts a maximum sample size of 600 with interim analyses run when `r paste0(cumsum(l[[1]]$cfg$N)[-length(l[[1]]$cfg$N)], collapse = ", ")` enrolments have occurred.
 The treatment effects were specified as differences in mean ppFEV1 at followup.
 
 All scenarios used fixed covariate distributions and effects over the duration of the study. 
@@ -463,7 +484,7 @@ d_fig_1[, variable := factor(
   levels = c("t0", "tfu"),
   labels = c("Entry", "Followup"))]
 # 
-N <- cumsum(l[[1]]$cfg$N_pt)[-length(l[[1]]$cfg$N_pt)]
+N <- cumsum(l[[1]]$cfg$N)[-length(l[[1]]$cfg$N)]
 ```
 
 
@@ -492,7 +513,7 @@ d_tmp <- d_tmp[
   by = .(id, analysis_time)]
 
 d_fig_2 <- data.table(
-  x = rep(0, length(l[[1]]$cfg$N_pt)-1),
+  x = rep(0, length(l[[1]]$cfg$N)-1),
   y = N ,
   xend = d_acc_t[id %in% N, t0],
   yend = d_tmp$N
@@ -516,7 +537,7 @@ ggplot(d_fig_1, aes(x = value, y = id,
   scale_x_continuous("Study day",
                      breaks = seq(0, max(d_acc_t$tfu), by = 100)) +
   scale_y_continuous("Cumulative enrolments",
-                     breaks = seq(0, sum(l[[1]]$cfg$N_pt), by = 100)) +
+                     breaks = seq(0, sum(l[[1]]$cfg$N), by = 100)) +
   scale_color_discrete("")+
   theme_minimal() +
   theme(
@@ -552,12 +573,6 @@ ggplot(d_fig_1, aes(x = value, y = id,
 
 ### Participant level ppFEV1
 
-@fig-ppfev1 shows the participant ppFEV1 for the whole cohort in an single simulation for each scenario.
-Further calibration of the baseline and followup ppFEV1 may be required.
-In the current version, the baseline population mean is `r l[[1]]$cfg$b_0` and the slope is `r l[[1]]$cfg$b_time` ppFEV1 change (in absolute terms) per year.
-The unit level variation at baseline is normally distributed around the population mean with standard deviation `r l[[1]]$cfg$b_s0`; the unit level slope has a standard deviation of `r l[[1]]$cfg$b_s1` and the correlation between the two is `r l[[1]]$cfg$b_rho`.
-The residual noise is set to have a standard deviation of `r l[[1]]$cfg$b_se`.
-
 ```{r, echo = F, eval = T}
 #| label: ppfev1
 #| code-summary: Participant ppFEV1
@@ -569,11 +584,13 @@ d_ppfev1 <- data.table()
 # For each scenario that was simulated
 for(i in 1:length(l)){
   
-  d_all <- copy(l[[i]]$d_all[sim == 1, .(sim, ia, id, trt, y_pre, y_post, y_mis)])
+  d_all <- copy(
+    l[[i]]$d_all[sim == 1, .(sim, ia, id, trt, y_pre, y_post, y_mis)])
   
-  d_all[, y_mis := factor(y_mis, levels = c(0, 1), labels = c("observed", "missing"))]
-  
-  
+  d_all[
+    , y_mis := factor(y_mis, 
+                      levels = c(0, 1), 
+                      labels = c("observed", "missing"))]
   
   l_cfg <- copy(l[[i]]$cfg)
   
@@ -591,6 +608,47 @@ for(i in 1:length(l)){
 d_ppfev1[, desc := factor(desc, levels = unique(d_ppfev1$desc))]
 ```
 
+@fig-ppfev1 shows the participant ppFEV1 for the whole cohort in an single simulation for each scenario.
+Further calibration of the baseline and followup ppFEV1 may be required.
+In the current version, the baseline population mean is `r l[[1]]$cfg$b_0` and the slope is `r l[[1]]$cfg$b_time` ppFEV1 change (in absolute terms) per year.
+The unit level variation at baseline is normally distributed around the population mean with standard deviation `r l[[1]]$cfg$u_s0`; the unit level slope has a standard deviation of `r l[[1]]$cfg$u_s1` and the correlation between the two is `r l[[1]]$cfg$u_rho`.
+The residual noise is set to have a standard deviation of `r l[[1]]$cfg$b_se`.
+The correlation between pre and post ppFEV1 is 
+
+```{r, eval = T}
+#| echo: FALSE
+#| label: tbl-cor-pre-post
+#| tbl-cap: 'Correlation between pre and post ppFEV1'
+#| tbl-pos: H
+
+d_tbl <- d_ppfev1[, .(cor = cor(y_pre, y_post)), by = .(scenario, desc)]
+
+
+
+g_tbl <- d_tbl |> 
+  gt() |> 
+  cols_align(
+    columns = 1:2,
+    align = "left"
+  )   |>
+  cols_label(
+    scenario = "ID",
+    desc = "Scenario",
+    cor = "Correlation between pre and post"
+  ) |>
+  tab_options(
+    table.font.size = pct(55),
+    latex.use_longtable = TRUE,
+    latex.header_repeat = TRUE 
+  ) |>
+  fmt_number(columns = cor, decimals = 2, drop_trailing_zeros = F)
+
+g_tbl
+```
+
+
+
+
 ```{r, echo = F, eval = T}
 #| label: fig-ppfev1
 #| fig-cap: 'Pre and post values for ppfev1'
@@ -606,7 +664,8 @@ d_fig_1[, timepoint := fifelse(timepoint == "y_pre", "baseline", "followup")]
 d_fig_1[, timepoint := factor(timepoint, levels =c("baseline", "followup"))]
 
 d_fig_2 <- d_fig_1[
-  y_mis == "observed", .(y_mu = mean(value)), keyby = .(scenario, desc, trt, timepoint)]
+  y_mis == "observed", .(y_mu = mean(value)), 
+  keyby = .(scenario, desc, trt, timepoint)]
 
 ggplot(data = d_fig_1, aes(x = timepoint, y = value, group = id)) +
   geom_line(alpha = 0.5, lwd = 0.2) +
@@ -618,11 +677,17 @@ ggplot(data = d_fig_1, aes(x = timepoint, y = value, group = id)) +
   ggrepel::geom_text_repel(
     data = d_fig_2,
     aes(x = timepoint, y = y_mu, group = trt, label = round(y_mu, 1)),
-    box.padding = 2,
-    inherit.aes = F
+    box.padding = 5,
+    max.overlaps = Inf,
+    force        = 0.5,
+    nudge_x      = 0.15,
+    direction    = "y",
+    hjust        = 0,
+    segment.size = 0.2,
+    inherit.aes = F, col = 2
   ) +
   scale_x_discrete("Timepoint") + 
-  scale_y_continuous("Observed ppFEV1", breaks = seq(50, 100, by = 10)) + 
+  scale_y_continuous("Observed ppFEV1", breaks = seq(50, 100, by = 5)) + 
   ggh4x::facet_grid2(
     desc ~ trt, 
     axes = "y",
@@ -663,7 +728,560 @@ ggplot(data = d_fig_1, aes(x = timepoint, y = value, group = id)) +
   
 ```
 
+## Example trials
 
+```{r, echo = F}
+example_data <- function(id_ex, id_scen = 1){
+
+  # extract the cohort data
+  # extract the trial decision
+  # extract the posterior at each analysis
+  d_all_ex <- copy(l[[id_scen]]$d_all[sim == id_ex])
+  d_post_smry_ex <- copy(l[[id_scen]]$d_post_smry_1[sim == id_ex])
+  d_pr_dec_ex <- copy(l[[id_scen]]$d_pr_dec[sim == id_ex])
+  d_post_all_ex <- copy(l[[id_scen]]$d_post_all[sim == id_ex])
+  
+  d_post_pars_ex <- copy(d_post_all_ex[, .(ic, b_0, `b[1]`, `b[2]`, `b[3]`, se)])
+  setnames(d_post_pars_ex, 
+           c("b_0", "b[1]", "b[2]", "b[3]", "se"),
+           c("b_0", "b_1", "b_2", "b_3", "se"))
+  d_freq_ex <- copy(l[[id_scen]]$d_freq[sim == id_ex])
+  d_freq_ex[par == "b[1]", par := "b_1"]
+  d_freq_ex[par == "b[2]", par := "b_2"]
+  d_freq_ex[par == "b[3]", par := "b_3"]
+  
+  l_ex <- list(
+    d_all_ex = d_all_ex,
+    d_post_smry_ex = d_post_smry_ex,
+    d_pr_dec_ex = d_pr_dec_ex,
+    d_post_all_ex = d_post_all_ex,
+    d_post_pars_ex = d_post_pars_ex,
+    d_freq_ex = d_freq_ex
+  )
+}
+```
+
+```{r, echo = F}
+example_accrual <- function(l_ex, id_scen = 1){
+
+  # Enrolment and followup trajectory
+
+  d_fig_1 <- copy(l_ex$d_all_ex)
+  d_fig_2 <- copy(l_ex$d_all_ex)
+  d_fig_2  <- d_fig_2[order(tfu)]
+  d_fig_2[, id_tmp := 1:.N]
+  
+  N <- cumsum(l[[id_scen]]$cfg$N)[-length(l[[id_scen]]$cfg$N)]
+  d_tmp <- l_ex$d_all_ex[N, .(id = .I, analysis_time = t0)]
+  d_tmp <- d_tmp[
+    , .(N = l_ex$d_all_ex[tfu <= analysis_time, .N]), 
+    by = .(id, analysis_time)]
+  
+  d_fig_3 <- data.table(
+    x = rep(0, length(l[[id_scen]]$cfg$N)-1),
+    y = N ,
+    xend = l_ex$d_all_ex[id %in% N, t0],
+    yend = d_tmp$N
+  )
+
+
+  p <- ggplot(d_fig_1, aes(x = t0, y = id)) +
+    geom_step() +
+    geom_step(
+      data = d_fig_2,
+      aes(x = tfu, y = id_tmp), lty = 2, 
+      inherit.aes = F) +
+    geom_segment(
+      data = d_fig_3,
+      aes(x = x, y = y, xend = xend, yend = y), 
+      inherit.aes = F, lty = 2, lwd = 0.3) +
+    geom_segment(
+      data = d_fig_3,
+      aes(x = xend, y = y, xend = xend, yend = yend), 
+      arrow = arrow(type = "open", length = unit(0.2, "cm")),
+      lineend = "round",
+      linejoin = "mitre",
+      inherit.aes = F, lty = 2, lwd = 0.3)  +
+    scale_x_continuous(
+      "Study day",
+      breaks = seq(0, max(d_acc_t$tfu), by = 100)) +
+    scale_y_continuous(
+      "Cumulative enrolments",
+      breaks = seq(0, sum(l[[1]]$cfg$N), by = 100)) +
+    scale_color_discrete("") +
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      # this and the guide call below ensures that you get
+      # legends for decision type and trt on different rows
+      legend.box="vertical",
+      legend.title = element_text(size = 8) ,
+      strip.text.y.right = element_text(angle = 0,
+                                        hjust = 0,
+                                        vjust = 0.2,
+                                        size = 7),
+      axis.ticks = element_blank(),
+      strip.text.x.top = element_text(size = 7),
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "grey",
+                                    linewidth = 0.1,
+                                    linetype = 1),
+      axis.title.y=element_text(size = 7),
+      axis.text.y = element_text(size = 7), 
+      axis.text.x = element_text(size = 7), 
+      axis.title.x = element_text(size = 7),
+      legend.text = element_text(size = 7)
+    ) +
+    guides(
+      colour = guide_legend(nrow = 1),
+      linetype = guide_legend(nrow = 1)
+    )
+  return(p)
+}
+```
+
+```{r, echo = F}
+
+example_analysis_sets <- function(l_ex, id_scen = 1){
+  # Sample size entering the analysis at each interim by treatment arm 
+  
+  # Given that there is accrual delay you will find that even after a stopping
+  # decision is made, some participants will be found on the arm that was 
+  # stopped in the subsequent analysis due to the fact that they were enrolled
+  # in the arm but had not reached follow up by the time the decision was made.
+  
+  # Participants taken into each analysis
+  d_fig_1 <- l_ex$d_all_ex[, .(N = .N), keyby = .(ic, ia, trt, y_mis)]
+  d_fig_1 <- dcast(d_fig_1, ic + ia + trt ~ y_mis, value.var = "N")
+  setnames(d_fig_1, c("0", "1"), c("N_obs", "N_mis"))
+  d_fig_1[, N_tot := N_obs + N_mis]
+  d_fig_1[, N_obs_c := cumsum(N_obs), keyby = .(trt)]
+  
+  d_fig_2 <- d_fig_1[!is.na(ia), .(N = sum(N_obs)), keyby = .(ia, trt)]
+  d_fig_2[, N_c := cumsum(N), keyby = .(trt)]
+  d_fig_2[, `:=`(
+    ia = factor(ia),
+    trt = factor(trt)
+  )]
+  p <- ggplot(d_fig_2, 
+         aes(x = trt, y = N_c)) +
+    geom_bar(stat = "identity") +
+    scale_x_discrete("Treatment arm") +
+    scale_y_continuous("Participants entering analysis") +
+    facet_wrap(~ia, labeller = label_both)+
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      # this and the guide call below ensures that you get
+      # legends for decision type and trt on different rows
+      legend.box="vertical",
+      legend.title = element_text(size = 8) ,
+      strip.text.y.right = element_text(angle = 0,
+                                        hjust = 0,
+                                        vjust = 0.2,
+                                        size = 7),
+      axis.ticks = element_blank(),
+      strip.text.x.top = element_text(size = 7),
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "grey",
+                                    linewidth = 0.1,
+                                    linetype = 1),
+      axis.title.y=element_text(size = 7),
+      axis.text.y = element_text(size = 7), 
+      axis.text.x = element_text(size = 7), 
+      axis.title.x = element_text(size = 7),
+      legend.text = element_text(size = 7)
+    ) +
+    guides(
+      colour = guide_legend(nrow = 1),
+      linetype = guide_legend(nrow = 1)
+    )
+  
+  return(p)
+}
+
+```
+
+
+```{r, echo = F}
+
+example_inference_cmp <- function(l_ex, id_scen = 1){
+  # Bayesian vs frequentist parameters
+  d_fig_1 <- copy(l_ex$d_post_pars_ex)
+  d_fig_1 <- melt(d_fig_1, id.vars = "ic", variable.name = "par")
+  d_fig_1 <- d_fig_1[, .(
+    mu = mean(value),
+    q_025 = quantile(value, prob = 0.025),
+    q_975 = quantile(value, prob = 0.975)), keyby = .(ic, par)]
+  d_fig_1[, method := "Bayesian"]
+  
+  d_fig_2 <- copy(l_ex$d_freq_ex[, .(ic, par, Estimate, `2.5 %`, `97.5 %`)])
+  setnames(d_fig_2, c("Estimate", "2.5 %", "97.5 %"), c("mu", "q_025", "q_975"))
+  d_fig_2[, method := "Frequentist"]
+  
+  d_fig_3 <- rbind(d_fig_1, d_fig_2)
+  d_fig_3[, method := factor(method, levels = c("Bayesian", "Frequentist"))]
+  
+  d_fig_3[par == "b_0", par := "intercept"]
+  d_fig_3[par == "b_1", par := "y_pre"]
+  d_fig_3[par == "b_2", par := "trt_2"]
+  d_fig_3[par == "b_3", par := "trt_3"]
+  
+  d_fig_3[, par := factor(par, levels = c("intercept", "y_pre", "trt_2", "trt_3", "se"))]
+  
+  p <- ggplot(data = d_fig_3, aes(x = 1, y = mu, group = method, col = method)) +
+    geom_linerange(aes(ymin = q_025, ymax = q_975),
+                   position = position_dodge2(width = 0.4)) +
+    geom_point(position = position_dodge2(width = 0.4)) +
+    scale_x_discrete("") +
+    scale_y_continuous("Posterior estimate and Cr/Conf interval") +
+    facet_grid(par~ic, labeller = label_both, scales = "free_y") +
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      # this and the guide call below ensures that you get
+      # legends for decision type and trt on different rows
+      legend.box="vertical",
+      legend.title = element_text(size = 8) ,
+      strip.text.y.right = element_text(angle = 0,
+                                        hjust = 0,
+                                        vjust = 0.2,
+                                        size = 7),
+      axis.ticks = element_blank(),
+      strip.text.x.top = element_text(size = 7),
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "grey",
+                                    linewidth = 0.1,
+                                    linetype = 1),
+      axis.title.y=element_text(size = 7),
+      axis.text.y = element_text(size = 7), 
+      axis.text.x = element_text(size = 7), 
+      axis.title.x = element_text(size = 7),
+      legend.text = element_text(size = 7)
+    ) +
+    guides(
+      colour = guide_legend(nrow = 1),
+      linetype = guide_legend(nrow = 1)
+    )
+  
+  return(p)
+}
+```
+
+```{r, echo = F}
+
+example_posterior_inf <- function(l_ex, id_scen = 1){
+  
+  ni_delta <- l[[id_scen]]$cfg$delta$ni
+  # Posterior inference
+
+  d_fig_1 <- copy(l_ex$d_post_smry_ex[par %in% c("mu_1", "mu_2", "mu_3")])
+  d_fig_1[, par := factor(par, levels = c("mu_1", "mu_2", "mu_3"), labels = paste0(1:3))]
+  
+  d_fig_2 <- copy(l_ex$d_post_smry_ex[par %in% c("delta_2_1", "delta_3_1")])
+  d_fig_2[, par := factor(par, levels = c("delta_2_1", "delta_3_1"), 
+                          labels = c("2 vs 1", "3 vs 1"))]
+  
+  d_fig_3 <- copy(l_ex$d_pr_dec_ex[par %in% c("delta_2_1", "delta_3_1")])
+  d_fig_3[, par := factor(par, levels = c("delta_2_1", "delta_3_1"), 
+                          labels = c("2 vs 1", "3 vs 1"))]
+  d_fig_3[rule == "inf" & dec == 1, col := "Inferior"]
+  d_fig_3[rule == "ni" & dec == 1, col := "NI"]
+  d_fig_3[dec == 0, col := "No decision"]
+  d_fig_3[, col := factor(col, levels = c("No decision", "NI", "Inferior"))]
+  d_fig_3[is.na(col), col := ""]
+  
+  cols <- c("No decision" = "black", "NI" = "green", "Inferior" = "red")
+  
+  p1 <- ggplot(d_fig_1, aes(x = par, y = mu)) +
+    geom_linerange(aes(ymin = q_025, ymax = q_975)) +
+    geom_point() +
+    scale_x_discrete("Treatment arm") +
+    scale_y_continuous("Posterior summary") +
+    facet_wrap(~ic, labeller = label_both) +
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      # this and the guide call below ensures that you get
+      # legends for decision type and trt on different rows
+      legend.box="vertical",
+      legend.title = element_text(size = 8) ,
+      strip.text.y.right = element_text(angle = 0,
+                                        hjust = 0,
+                                        vjust = 0.2,
+                                        size = 7),
+      axis.ticks = element_blank(),
+      strip.text.x.top = element_text(size = 7),
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "grey",
+                                    linewidth = 0.1,
+                                    linetype = 1),
+      axis.title.y=element_text(size = 7),
+      axis.text.y = element_text(size = 7), 
+      axis.text.x = element_text(size = 7), 
+      axis.title.x = element_text(size = 7),
+      legend.text = element_text(size = 7)
+    ) +
+    guides(
+      colour = guide_legend(nrow = 1),
+      linetype = guide_legend(nrow = 1)
+    )
+  
+  p2 <- ggplot(d_fig_2, aes(x = par, y = mu)) +
+    geom_hline(aes(yintercept =  ni_delta), lwd = 0.3, lty = 2 ) +
+    geom_linerange(aes(ymin = q_025, ymax = q_975)) +
+    geom_point() +
+    scale_x_discrete("Comparisons") +
+    scale_y_continuous("Posterior summary") +
+    facet_wrap(~ic, labeller = label_both) +
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      # this and the guide call below ensures that you get
+      # legends for decision type and trt on different rows
+      legend.box="vertical",
+      legend.title = element_text(size = 8) ,
+      strip.text.y.right = element_text(angle = 0,
+                                        hjust = 0,
+                                        vjust = 0.2,
+                                        size = 7),
+      axis.ticks = element_blank(),
+      strip.text.x.top = element_text(size = 7),
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "grey",
+                                    linewidth = 0.1,
+                                    linetype = 1),
+      axis.title.y=element_text(size = 7),
+      axis.text.y = element_text(size = 7), 
+      axis.text.x = element_text(size = 7), 
+      axis.title.x = element_text(size = 7),
+      legend.text = element_text(size = 7)
+    ) +
+    guides(
+      colour = guide_legend(nrow = 1),
+      linetype = guide_legend(nrow = 1)
+    )
+  
+  p3 <- ggplot(d_fig_3, aes(x = par)) +
+    geom_linerange(aes(ymin = 0, ymax = p, col = col)) +
+    scale_x_discrete("Comparisons") +
+    scale_y_continuous("Probability", breaks = seq(0, 1, by = 0.5)) +
+    scale_color_manual("", values = cols) +
+    facet_grid(rule~ic, labeller = label_both) +
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      # this and the guide call below ensures that you get
+      # legends for decision type and trt on different rows
+      legend.box="vertical",
+      legend.title = element_text(size = 8) ,
+      strip.text.y.right = element_text(angle = 0,
+                                        hjust = 0,
+                                        vjust = 0.2,
+                                        size = 7),
+      axis.ticks = element_blank(),
+      strip.text.x.top = element_text(size = 7),
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "grey",
+                                    linewidth = 0.1,
+                                    linetype = 1),
+      axis.title.y=element_text(size = 7),
+      axis.text.y = element_text(size = 7), 
+      axis.text.x = element_text(size = 7), 
+      axis.title.x = element_text(size = 7),
+      legend.text = element_text(size = 7)
+    ) +
+    guides(
+      colour = guide_legend(nrow = 1),
+      linetype = guide_legend(nrow = 1)
+    )
+  
+  
+  return(list(p1 = p1, p2 = p2, p3 = p3))
+}
+```
+
+
+### Example 1
+
+```{r, echo = F, eval = T}
+#| label: ex_trial_1
+#| code-summary: 'Example trial 1 trial data'
+
+id_scen = 1
+id_ex <- l[[id_scen]]$cfg$ex_trial_ix[1]
+l_ex <- example_data(id_ex, id_scen)
+# str(l_ex)
+```
+
+
+```{r, echo = F, eval = T}
+#| label: fig-ex1-accrual
+#| fig-cap: 'Example trial 1 accrual'
+#| fig-height: 5
+#| fig-width: 7
+#| fig-pos: H
+
+print(example_accrual(l_ex, id_scen))
+```
+
+
+```{r, echo = F, eval = T}
+#| label: fig-ex1-anlys-sets
+#| fig-cap: 'Example trial 1 analysis sets'
+#| fig-height: 5
+#| fig-width: 7
+#| fig-pos: H
+
+
+print(example_analysis_sets(l_ex, id_scen))
+```
+
+
+```{r, echo = F, eval = T}
+#| label: fig-ex1-inf-cmp
+#| fig-cap: 'Example trial 1 inferential framework comparison'
+#| fig-height: 7
+#| fig-width: 7
+#| fig-pos: H
+
+
+suppressWarnings(print(example_inference_cmp(l_ex, id_scen)))
+```
+
+
+```{r, echo = F, eval = T}
+#| label: fig-ex1-post-result
+#| fig-cap: 'Example trial 1 inferential framework comparison'
+#| fig-height: 7
+#| fig-width: 7
+#| fig-pos: H
+
+l_p <- example_posterior_inf(l_ex, id_scen)
+suppressWarnings(print(l_p$p1 / l_p$p2 / l_p$p3))
+```
+
+
+
+### Example 2
+
+```{r, echo = F, eval = T}
+#| label: ex_trial_2
+#| code-summary: 'Example trial 2 trial data'
+
+
+id_scen = 2
+id_ex <- l[[id_scen]]$cfg$ex_trial_ix[1]
+l_ex <- example_data(id_ex, id_scen)
+```
+
+
+```{r, echo = F, eval = T}
+#| label: fig-ex2-accrual
+#| fig-cap: 'Example trial 2 accrual'
+#| fig-height: 5
+#| fig-width: 7
+#| fig-pos: H
+
+print(example_accrual(l_ex, id_scen))
+```
+
+
+```{r, echo = F, eval = T}
+#| label: fig-ex2-anlys-sets
+#| fig-cap: 'Example trial 2 analysis sets'
+#| fig-height: 5
+#| fig-width: 7
+#| fig-pos: H
+
+
+print(example_analysis_sets(l_ex, id_scen))
+```
+
+
+```{r, echo = F, eval = T}
+#| label: fig-ex2-inf-cmp
+#| fig-cap: 'Example trial 2 inferential framework comparison'
+#| fig-height: 7
+#| fig-width: 7
+#| fig-pos: H
+
+
+suppressWarnings(print(example_inference_cmp(l_ex, id_scen)))
+```
+
+
+```{r, echo = F, eval = T}
+#| label: fig-ex2-post-result
+#| fig-cap: 'Example trial 2 inferential framework comparison'
+#| fig-height: 7
+#| fig-width: 7
+#| fig-pos: H
+
+l_p <- example_posterior_inf(l_ex, id_scen)
+suppressWarnings(print(l_p$p1 / l_p$p2 / l_p$p3))
+```
+
+
+
+### Example 3
+
+```{r, echo = F, eval = T}
+#| label: ex_trial_3
+#| code-summary: 'Example trial 3 trial data'
+
+
+id_scen = 3
+id_ex <- l[[id_scen]]$cfg$ex_trial_ix[1]
+l_ex <- example_data(id_ex, id_scen)
+```
+
+
+```{r, echo = F, eval = T}
+#| label: fig-ex3-accrual
+#| fig-cap: 'Example trial 3 accrual'
+#| fig-height: 5
+#| fig-width: 7
+#| fig-pos: H
+
+print(example_accrual(l_ex, id_scen))
+```
+
+
+```{r, echo = F, eval = T}
+#| label: fig-ex3-anlys-sets
+#| fig-cap: 'Example trial 3 analysis sets'
+#| fig-height: 5
+#| fig-width: 7
+#| fig-pos: H
+
+
+print(example_analysis_sets(l_ex, id_scen))
+```
+
+
+```{r, echo = F, eval = T}
+#| label: fig-ex3-inf-cmp
+#| fig-cap: 'Example trial 3 inferential framework comparison'
+#| fig-height: 7
+#| fig-width: 7
+#| fig-pos: H
+
+
+suppressWarnings(print(example_inference_cmp(l_ex, id_scen)))
+```
+
+
+```{r, echo = F, eval = T}
+#| label: fig-ex3-post-result
+#| fig-cap: 'Example trial 3 inferential framework comparison'
+#| fig-height: 7
+#| fig-width: 7
+#| fig-pos: H
+
+l_p <- example_posterior_inf(l_ex, id_scen)
+suppressWarnings(print(l_p$p1 / l_p$p2 / l_p$p3))
+```
 
 ## Probability of triggering decisions
 
@@ -691,7 +1309,7 @@ for(i in 1:length(l)){
   l_cfg <- copy(l[[i]]$cfg)
   
   # number of enrolments at each interim (interim sample size sequence)
-  d_N <- data.table(ic = seq_along(l_cfg$N_pt), N = cumsum(l_cfg$N_pt))
+  d_N <- data.table(ic = seq_along(l_cfg$N), N = cumsum(l_cfg$N))
   
   
   # compute the cumulative instances of a decision being made by sim, each 
@@ -918,7 +1536,7 @@ for(i in 1:length(l)){
   # config for scenario
   l_cfg <- copy(l[[i]]$cfg)
   
-  N_analysis <- length(l_cfg$N_pt)
+  N_analysis <- length(l_cfg$N)
   N_trt <- length(l_cfg$b_trt)
   # 
   d_grid <- CJ(
@@ -1115,7 +1733,7 @@ for(i in 1:length(l)){
   d_pars[, mu :=  nafill(mu, type = "locf"), keyby = .(sim, par)]
   
   # interim looks
-  d_N <- data.table(ic = seq_along(l_cfg$N_pt), N = cumsum(l_cfg$N_pt))
+  d_N <- data.table(ic = seq_along(l_cfg$N), N = cumsum(l_cfg$N))
   d_pars <- base::merge(d_pars, d_N, by = "ic")
   
   d_pars[par == "delta_2_1", delta_tru := b_trt[2] - b_trt[1]]
@@ -1285,7 +1903,7 @@ for(i in 1:length(l)){
   
   # interim looks
   d_enrolment <- data.table(
-    ic = seq_along(l_cfg$N_pt), N_enrol = cumsum(l_cfg$N_pt))
+    ic = seq_along(l_cfg$N), N_enrol = cumsum(l_cfg$N))
 
   # observed data
   d_all <- copy(l[[i]]$d_all)
@@ -1366,7 +1984,7 @@ g_tbl
 
 
 {{< pagebreak >}}
-# Repository status {.unlisted .unnumbered}
+## Repository status {.unlisted .unnumbered}
 
 \footnotesize
 ```{r}
@@ -1375,6 +1993,16 @@ repo <- repository(path = ".")
 summary(repo)
 ```
 \normalsize
+
+## Stan models
+
+```{r}
+#| class-output: stan
+#| echo: false
+
+cat(readLines(paste0(prefix_stan, "/sim02-v01.stan")), sep = "\n")
+```
+
 
 
 {{< pagebreak >}}

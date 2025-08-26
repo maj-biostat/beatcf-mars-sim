@@ -113,6 +113,7 @@ run_trial <- function(
   
   if(return_posterior){
     d_post_all <- data.table()
+    d_freq <- data.table()
   }
   
   
@@ -205,9 +206,31 @@ run_trial <- function(
     
     
     if(return_posterior){
+      
+      d_tmp <- data.table(f_1$draws(
+        variables = c(g_par_mu, g_par_delta, "b_0_tmp", "b_0", "b", "se"),   
+        format = "matrix"))
       d_post_all <- rbind(
         d_post_all,
-        cbind(ic = l_spec$ic, d_post)
+        cbind(ic = l_spec$ic, d_tmp)
+      )
+      
+      f_2 <- lm(y_post ~ y_pre + trt, data = lsd$dd)
+      s <- summary(f_2)
+      d_tmp <- data.table(par = rownames(s$coef), s$coef, confint(f_2))
+      d_tmp[par == "(Intercept)", par := "b_0"]
+      d_tmp[par == "y_pre", par := "b[1]"]
+      d_tmp[par == "trt2", par := "b[2]"]
+      d_tmp[par == "trt3", par := "b[3]"]
+      d_tmp <- rbind(
+        d_tmp, 
+        data.table(par = "se", Estimate = s$sigma),
+        fill = T
+      )
+      
+      d_freq <- rbind(
+        d_freq,
+        cbind(ic = l_spec$ic, d_tmp)
       )
     }
     
@@ -277,7 +300,10 @@ run_trial <- function(
     
     # Update allocation probabilities if decisions have been reached.
     # Subsequent enrolments get redirected to the remaining arms.
-    if(any(d_stop$resolved)){
+    if(all(d_stop$resolved)){
+      log_info("Stop trial as all questions addressed ", ix)
+      stop_enrol <- T    
+    } else if(any(d_stop$resolved)){
     
       if(d_stop[par == "delta_2_1", resolved]) {
         l_spec$p_trt_alloc[2] <- 0  
@@ -289,14 +315,7 @@ run_trial <- function(
         l_spec$p_trt_alloc <- l_spec$p_trt_alloc / sum(l_spec$p_trt_alloc)
       } 
     }
-    
-    
-    if(all(d_stop$resolved)){
-      log_info("Stop trial as all questions addressed ", ix)
-      stop_enrol <- T    
-    }
-    
-    log_info("Trial ", ix, " updated allocation control ", l_spec$ic)
+    log_info("Trial ", ix, " allocation after cohort ", l_spec$ic, " alloc: ", paste0(l_spec$p_trt_alloc, collapse = ", "))
     
     # next interim
     l_spec$ic <- l_spec$ic + 1
@@ -335,6 +354,7 @@ run_trial <- function(
   
   if(return_posterior){
     l_ret$d_post_all <- copy(d_post_all)
+    l_ret$d_freq <- copy(d_freq)
   }
   # 
   
@@ -356,12 +376,16 @@ run_sim02 <- function(){
   }
   
   l_spec <- list()
+  
+  l_spec$desc <- g_cfgsc$desc
+  l_spec$nsim <- g_cfgsc$nsim
+  l_spec$nex <- g_cfgsc$nex
+  
   # N by analysis
   l_spec$N <- g_cfgsc$N_pt
   
   l_spec$pt_per_day <-  g_cfgsc$pt_per_day
   l_spec$ramp_up_days <-  g_cfgsc$ramp_up_days
-  
   
   l_spec$fu_days <- g_cfgsc$fu_days
   l_spec$fu_days_lwr <- g_cfgsc$fu_days_lwr
@@ -406,7 +430,6 @@ run_sim02 <- function(){
   l_spec$thresh$ni <- unlist(g_cfgsc$dec_thresh_ni)
   l_spec$thresh$inf <- unlist(g_cfgsc$dec_thresh_inf)
   
-  l_spec$nex <- g_cfgsc$nex
   if(l_spec$nex > 0){
     log_info("Creating ", l_spec$nex, " example trials with full posterior")
     l_spec$ex_trial_ix <- sort(sample(1:g_cfgsc$nsim, size = l_spec$nex, replace = F))
@@ -506,12 +529,21 @@ run_sim02 <- function(){
     
   } )))
   
+  d_freq <- data.table(do.call(rbind, lapply(1:length(r), function(i){
+    # if the sim contains full posterior (for example trial) then return
+    if(!is.null(r[[i]]$d_freq)){
+      cbind(sim = i, r[[i]]$d_freq)
+    }
+    
+  } )))
+  
   l <- list(
-    cfg = g_cfgsc,
+    cfg = l_spec,
     d_pr_dec = d_pr_dec, 
     d_post_smry_1 = d_post_smry_1,
     d_all = d_all,
-    d_post_all = d_post_all
+    d_post_all = d_post_all,
+    d_freq = d_freq
   )
   
   log_info("Command line arguments ", paste(args[2], collapse = ", "))
