@@ -155,7 +155,7 @@ cannot be bothered to implement it in anything else at the moment).
 
 | Version    |   Date     | Change    |   Reason     |
 |:----|:------------|:----|:------------|
-| 0.1 | 2025-07-11 | First version | N/A |
+| 0.1 | 2025-08-27 | First version | N/A |
 
 
 {{< pagebreak >}}
@@ -174,15 +174,19 @@ These results are based on simulation `r sim_lab` with `r N_sims` simulated tria
 
 # Design overview
 
-The study adopts a pre/post design measuring outcomes in the treatment strategies and control group both before and after the intervention.
+BEAT-CF-MARs is a non-inferiority study that adopts a pre/post design where lung function is measured under each of the treatment strategies and control group both at baseline and after having received 12 months of the assigned intervention.
+
 Participants are randomised with equal allocation to one of the three strategies at enrolment and this allocation is assumed to hold over the following 12 month period, i.e. whenever an exacerbation occurs the treatment regime is assumed to be that which was assigned.
-The outcome (ppFEV1) is measured at baseline and 12 months followup on individual participants.
-Adaptations are included so that any of the treatment arms may be stopped for non-inferiority or inferiority.
+
+The outcome (ppFEV1) is measured at baseline and 12 months followup on individual participants and we examine the difference the difference in mean lung function at follow up.
+
+The design includes adaptation that permits early stopping of treatment arms for non-inferiority or inferiority.
 The control arm of standard of care remains the reference arm throughout.
 
 ## Alternatives
 
-Several modifications could be made to the design, for example:
+Several revisions to the design might be made on what is presented here.
+For example:
 
 1. Repeat the data collection step a multiple times on each participant at baseline and followup, e.g. one reading per day over three days or three readings in one-day
 2. Attempt to account for the number/frequency/severity of exacerbations to improve precision
@@ -203,13 +207,12 @@ When the lungs are working properly, the values should be close to 100%.
 The participant characteristics and their outcome variables are generated as cohorts prior to each analysis such that the data accrues sequentially.
 As the trial progresses, decisions may be made which lead to early stopping of treatment arms.
 
-We simulate ppFEV1 at baseline and 12 months follow up, assuming the population mean of ppFEV1 at baseline is normal with a mean of `r l[[1]]$cfg$b_0` and a 1% decline (in absolute terms) per year.
+We simulate ppFEV1 at baseline and 12 months follow up, assuming the population arises from a normal distribution with with a mean of `r l[[1]]$cfg$b_0` and a 1% decline (in absolute terms) per year.
 Missingness is assumed to follow MCAR across all treatment groups with a `r l[[1]]$cfg$pr_ymis` missing probability.
 
-Patient level heterogeneity is assumed to be multivariate normal with standard deviations `r l[[1]]$cfg$u_s0` and `r l[[1]]$cfg$u_s1` on the intercept (baseline) and slope (followup increment) respectively with `r l[[1]]$cfg$u_rho` correlation between them.
-Treatment arms are assumed to have a range of small deviations on the slope relative to the standard of care group (see @sec-scenarios).
-Finally, the residual standard deviation is assumed to be `r l[[1]]$cfg$b_se`.
-The above values were arbitrarily selected.
+Patient level heterogeneity is assumed to be multivariate normal with standard deviations of `r l[[1]]$cfg$u_s0` and `r l[[1]]$cfg$u_s1` on the intercept (baseline) and slope (followup increment) respectively and with `r l[[1]]$cfg$u_rho` correlation between them.
+Treatment arms are assumed to have a range of small deviations at the 12 month followup relative to the standard of care group (see @sec-scenarios).
+The residual standard deviation is assumed to be `r l[[1]]$cfg$b_se`.
 
 The linear combination of terms used to simulate the outcome variable at baseline and followup is:
 
@@ -224,7 +227,7 @@ $$
 where 
 
 + $\beta_0$ and $\beta_1$ are the population intercept and slope
-+ $u_{i0}$ and $u_{i1}$ are the participant level offset from the intercept and slope
++ $u_{i0}$ and $u_{i1}$ are the participant level offset from the intercept and slope, normally distribution with zero centres and covariance as discussed above
 + $\gamma_1$ and $\gamma_2$ are the effects of the deferred and discontinued treatment at followup
 
 Taking *post*, *defer* and *discontinue* as indicator variables, we then simulate a value for the observed outcome under a normal model with mean $\mu_i$ and standard error $\sigma_\epsilon$.
@@ -240,13 +243,12 @@ Follow up is assumed to occur within a window of `r l[[1]]$cfg$fu_days_lwr` to `
 
 ## Overview
 
-The data are simulated using a saturated linear model with terms for intercept and slope (with the intercept giving the population average mean ppFEV1 and the sum of the two yielding the mean ppFEV1 at follow up) along with participant level deviations on both the intercept and slope.
-
 The interim analyses are based on the available complete baseline and followup data.
 For example, out of 400 enrolments, there might be 260 that have reached their follow up at the time when the 400th patient is enrolled and thus 260 would enter into the interim analysis.
 The final analysis is run after followup is complete on all participants.
 
-The outcome is modelled using a pre/post linear model that includes a term for treatment assignment (ANCOVA).
+The model is a bivariate autoregressive form that accounts for the within participant correlation between ppFEV1 at the baseline and followup by the inclusion of the observed baseline value for ppFEV1.
+Specifically, the outcome is modelled using a linear model that regresses the follow up measure for ppFEV1 on the baseline measure and treatment assignment (i.e. ANCOVA).
 The groups level means and group differences in means are computed via a g-computation step.
 The analysis is conducted for complete cases (missing values are not imputed).
 
@@ -267,9 +269,7 @@ where $y_{\text{post}}$ is a normally distributed random variable for the ppFEV1
 
 and again taking *defer* and *discontinue* as indicator variables of treatment assignment.
 
-The model is a bivariate autoregressive form that accounts for the within participant correlation between ppFEV1 at the baseline and followup by the inclusion of the observed baseline value for ppFEV1.
-
-## Alternatives
+### Alternatives
 
 An alternative way in which to analyse the data would be to adopt a linear mixed model including all enrolments and imputing those that have not completed followup at the time of the analysis.
 
@@ -361,7 +361,8 @@ gt_tbl
 
 ```
 
-In the current implementation, we evaluate non-inferiority and inferiority at each interim and, if a decision threshold is met, then we will stop recruitment into the relevant arm, but the standard of care remains the reference arm throughout.
+In the current implementation, we evaluate non-inferiority and inferiority at each interim and, if a decision threshold is met, then we will stop recruitment into the relevant arm.
+Standard of care remains the reference arm throughout.
 This approach is adopted for each interim and the final analysis and is reflected in the current set of results.
 
 The trial setup is such that if the intervention were beneficial, it would reduce the rate of decline for ppFEV1 and we are therefore considering negative non-inferiority margins.
@@ -610,10 +611,10 @@ d_ppfev1[, desc := factor(desc, levels = unique(d_ppfev1$desc))]
 
 @fig-ppfev1 shows the participant ppFEV1 for the whole cohort in an single simulation for each scenario.
 Further calibration of the baseline and followup ppFEV1 may be required.
-In the current version, the baseline population mean is `r l[[1]]$cfg$b_0` and the slope is `r l[[1]]$cfg$b_time` ppFEV1 change (in absolute terms) per year.
+In the current version, the baseline population mean is `r l[[1]]$cfg$b_0` and the slope is `r l[[1]]$cfg$b_1` ppFEV1 change (in absolute terms) per year.
 The unit level variation at baseline is normally distributed around the population mean with standard deviation `r l[[1]]$cfg$u_s0`; the unit level slope has a standard deviation of `r l[[1]]$cfg$u_s1` and the correlation between the two is `r l[[1]]$cfg$u_rho`.
 The residual noise is set to have a standard deviation of `r l[[1]]$cfg$b_se`.
-The correlation between pre and post ppFEV1 is 
+The observed correlation between pre and post ppFEV1 is shown in @tbl-cor-pre-post.
 
 ```{r, eval = T}
 #| echo: FALSE
@@ -804,7 +805,7 @@ example_accrual <- function(l_ex, id_scen = 1){
       inherit.aes = F, lty = 2, lwd = 0.3)  +
     scale_x_continuous(
       "Study day",
-      breaks = seq(0, max(d_acc_t$tfu), by = 100)) +
+      breaks = seq(0, max(d_acc_t$tfu), by = 200)) +
     scale_y_continuous(
       "Cumulative enrolments",
       breaks = seq(0, sum(l[[1]]$cfg$N), by = 100)) +
@@ -830,12 +831,15 @@ example_accrual <- function(l_ex, id_scen = 1){
       axis.text.y = element_text(size = 7), 
       axis.text.x = element_text(size = 7), 
       axis.title.x = element_text(size = 7),
-      legend.text = element_text(size = 7)
+      legend.text = element_text(size = 7),
+      plot.title = element_text(size = 10)
     ) +
     guides(
       colour = guide_legend(nrow = 1),
       linetype = guide_legend(nrow = 1)
-    )
+    ) +
+    ggtitle("Plot 1: Accrual")
+  
   return(p)
 }
 ```
@@ -863,9 +867,10 @@ example_analysis_sets <- function(l_ex, id_scen = 1){
     ia = factor(ia),
     trt = factor(trt)
   )]
+  
   p <- ggplot(d_fig_2, 
          aes(x = trt, y = N_c)) +
-    geom_bar(stat = "identity") +
+    geom_bar(stat = "identity", width = 0.2) +
     scale_x_discrete("Treatment arm") +
     scale_y_continuous("Participants entering analysis") +
     facet_wrap(~ia, labeller = label_both)+
@@ -890,12 +895,14 @@ example_analysis_sets <- function(l_ex, id_scen = 1){
       axis.text.y = element_text(size = 7), 
       axis.text.x = element_text(size = 7), 
       axis.title.x = element_text(size = 7),
-      legend.text = element_text(size = 7)
+      legend.text = element_text(size = 7),
+      plot.title = element_text(size = 10)
     ) +
     guides(
       colour = guide_legend(nrow = 1),
       linetype = guide_legend(nrow = 1)
-    )
+    ) +
+    ggtitle("Plot 2: Analysis sets")
   
   return(p)
 }
@@ -957,12 +964,14 @@ example_inference_cmp <- function(l_ex, id_scen = 1){
       axis.text.y = element_text(size = 7), 
       axis.text.x = element_text(size = 7), 
       axis.title.x = element_text(size = 7),
-      legend.text = element_text(size = 7)
+      legend.text = element_text(size = 7),
+      plot.title = element_text(size = 10)
     ) +
     guides(
       colour = guide_legend(nrow = 1),
       linetype = guide_legend(nrow = 1)
-    )
+    ) +
+    ggtitle("Plot 3: Model parameter estimates")
   
   return(p)
 }
@@ -1117,43 +1126,34 @@ l_ex <- example_data(id_ex, id_scen)
 
 ```{r, echo = F, eval = T}
 #| label: fig-ex1-accrual
-#| fig-cap: 'Example trial 1 accrual'
-#| fig-height: 5
-#| fig-width: 7
-#| fig-pos: H
-
-print(example_accrual(l_ex, id_scen))
-```
-
-
-```{r, echo = F, eval = T}
-#| label: fig-ex1-anlys-sets
-#| fig-cap: 'Example trial 1 analysis sets'
-#| fig-height: 5
-#| fig-width: 7
-#| fig-pos: H
-
-
-print(example_analysis_sets(l_ex, id_scen))
-```
-
-
-```{r, echo = F, eval = T}
-#| label: fig-ex1-inf-cmp
-#| fig-cap: 'Example trial 1 inferential framework comparison'
+#| fig-cap: 'Example trial 1'
 #| fig-height: 7
 #| fig-width: 7
 #| fig-pos: H
 
+layout <- "
+AAABBB
+AAABBB
+######
+#CCCC#
+#CCCC#
+#CCCC#
+#CCCC#
+"
 
-suppressWarnings(print(example_inference_cmp(l_ex, id_scen)))
+p1 <- example_accrual(l_ex, id_scen)
+p2 <- example_analysis_sets(l_ex, id_scen)
+p3 <- example_inference_cmp(l_ex, id_scen)
+
+suppressWarnings(print(p1 + p2 + p3 + 
+  plot_layout(design = layout) ))
 ```
 
 
 ```{r, echo = F, eval = T}
 #| label: fig-ex1-post-result
-#| fig-cap: 'Example trial 1 inferential framework comparison'
-#| fig-height: 7
+#| fig-cap: 'Example trial 1 posterior summary and decision probabilities'
+#| fig-height: 8
 #| fig-width: 7
 #| fig-pos: H
 
@@ -1178,43 +1178,34 @@ l_ex <- example_data(id_ex, id_scen)
 
 ```{r, echo = F, eval = T}
 #| label: fig-ex2-accrual
-#| fig-cap: 'Example trial 2 accrual'
-#| fig-height: 5
-#| fig-width: 7
-#| fig-pos: H
-
-print(example_accrual(l_ex, id_scen))
-```
-
-
-```{r, echo = F, eval = T}
-#| label: fig-ex2-anlys-sets
-#| fig-cap: 'Example trial 2 analysis sets'
-#| fig-height: 5
-#| fig-width: 7
-#| fig-pos: H
-
-
-print(example_analysis_sets(l_ex, id_scen))
-```
-
-
-```{r, echo = F, eval = T}
-#| label: fig-ex2-inf-cmp
-#| fig-cap: 'Example trial 2 inferential framework comparison'
+#| fig-cap: 'Example trial 2'
 #| fig-height: 7
 #| fig-width: 7
 #| fig-pos: H
 
+layout <- "
+AAABBB
+AAABBB
+######
+#CCCC#
+#CCCC#
+#CCCC#
+#CCCC#
+"
 
-suppressWarnings(print(example_inference_cmp(l_ex, id_scen)))
+p1 <- example_accrual(l_ex, id_scen)
+p2 <- example_analysis_sets(l_ex, id_scen)
+p3 <- example_inference_cmp(l_ex, id_scen)
+
+suppressWarnings(print(p1 + p2 + p3 + 
+  plot_layout(design = layout) ))
 ```
 
 
 ```{r, echo = F, eval = T}
 #| label: fig-ex2-post-result
-#| fig-cap: 'Example trial 2 inferential framework comparison'
-#| fig-height: 7
+#| fig-cap: 'Example trial 2 posterior summary and decision probabilities'
+#| fig-height: 8
 #| fig-width: 7
 #| fig-pos: H
 
@@ -1239,36 +1230,27 @@ l_ex <- example_data(id_ex, id_scen)
 
 ```{r, echo = F, eval = T}
 #| label: fig-ex3-accrual
-#| fig-cap: 'Example trial 3 accrual'
-#| fig-height: 5
+#| fig-cap: 'Example trial 3 posterior summary and decision probabilities'
+#| fig-height: 8
 #| fig-width: 7
 #| fig-pos: H
 
-print(example_accrual(l_ex, id_scen))
-```
+layout <- "
+AAABBB
+AAABBB
+######
+#CCCC#
+#CCCC#
+#CCCC#
+#CCCC#
+"
 
+p1 <- example_accrual(l_ex, id_scen)
+p2 <- example_analysis_sets(l_ex, id_scen)
+p3 <- example_inference_cmp(l_ex, id_scen)
 
-```{r, echo = F, eval = T}
-#| label: fig-ex3-anlys-sets
-#| fig-cap: 'Example trial 3 analysis sets'
-#| fig-height: 5
-#| fig-width: 7
-#| fig-pos: H
-
-
-print(example_analysis_sets(l_ex, id_scen))
-```
-
-
-```{r, echo = F, eval = T}
-#| label: fig-ex3-inf-cmp
-#| fig-cap: 'Example trial 3 inferential framework comparison'
-#| fig-height: 7
-#| fig-width: 7
-#| fig-pos: H
-
-
-suppressWarnings(print(example_inference_cmp(l_ex, id_scen)))
+suppressWarnings(print(p1 + p2 + p3 + 
+  plot_layout(design = layout) ))
 ```
 
 
@@ -1994,15 +1976,17 @@ summary(repo)
 ```
 \normalsize
 
+{{< pagebreak >}}
 ## Stan models
 
+\footnotesize
 ```{r}
 #| class-output: stan
 #| echo: false
 
 cat(readLines(paste0(prefix_stan, "/sim02-v01.stan")), sep = "\n")
 ```
-
+\normalsize
 
 
 {{< pagebreak >}}

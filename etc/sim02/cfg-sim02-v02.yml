@@ -1,6 +1,6 @@
 default:
   desc: "Boundary case - both test arms increase decline of ppFEV1"
-  nsim: 1000
+  nsim: 5000
   mc_cores: 40
   # example trials
   nex: 10
@@ -25,13 +25,13 @@ default:
   b_1: -1
   
   # pt level variation in baseline
-  u_s0: 6
-  u_s1: 1.5
+  u_s0: 5
+  u_s1: 1
   # correlation between pre and post
   u_rho: -0.1
   
   # system residual
-  b_se: 1.2
+  b_se: 1
   
   # intervention
   b_trt: [0, -0.5, -0.5] 
