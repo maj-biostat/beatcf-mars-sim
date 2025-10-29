@@ -16,21 +16,18 @@ get_sim03_trial_data <- function(
   if(is.null(l_spec$is)){ is <- 1 } else { is <- l_spec$is }
   if(is.null(l_spec$ie)){ ie <- 1 } else { ie <- l_spec$ie }
   if(is.null(l_spec$t0)){ t0 <- 1 } else { t0 <- l_spec$t0 }
-  if(is.null(l_spec$tfu)){ tfu <- 1 } else { tfu <- l_spec$tfu }
   
   trt_opts <- 1:length(l_spec$p_trt_alloc)
   
   N_ic <- length(is:ie)
-  # Progression from pre to post assuming soc occurs for everyone
-  d <- CJ(
+  
+  d_i <- data.table(
     # interim id
     ic = ic, 
     # unit id
-    id = is:ie,
-    # spirometry observation point
-    t_obs = l_spec$t_sprty_obs
-    )
-  
+    id = 1:N_ic,
+    t0 = t0
+  )
   # age distribution - truncated log normal - restrict age to (age_lwr,age_upr)
   p_lt_age_lwr <- plnorm(
     l_spec$age_lwr, meanlog = l_spec$age_mu, sdlog = l_spec$age_sig, lower.tail = T)
@@ -39,41 +36,58 @@ get_sim03_trial_data <- function(
   # sample u in [p0, 1)
   u <- p_lt_age_lwr + runif(N_ic, 0, (1 - (p_lt_age_lwr + p_gt_age_upr))) 
   baseline_age <- qlnorm(u, meanlog = l_spec$age_mu, sdlog = l_spec$age_sig)
-  d[, age0 := baseline_age[id]]
-  
-  # trt allocation
+  d_i[, age0 := baseline_age]
   trt_alloc <- trt_opts[rep(trt_opts[as.logical(l_spec$p_trt_alloc)], len = N_ic)]
-  d[, trt := trt_alloc[id]]
+  d_i[, trt := trt_alloc]
+  d_i[, gamma_i := rnorm(.N, 0, l_spec$sigma_i)]
+  # latent baseline measure on which the data is generated
+  d_i[, mu0 := l_spec$b_0 + l_spec$b_age * log(age0) + gamma_i]
+  # what we would actually observe and therefore model
+  d_i[, y0 := rnorm(.N, mu0, l_spec$sigma)]
   
-  # mean
-  d[, mu :=
-      l_spec$b_0 +
-      l_spec$b_ln_age * log(age0) +
-      l_spec$b_decl * t_obs +
-      l_spec$b_trt[trt]
-    ]     
+  d <- CJ(
+    # unit id
+    id = 1:N_ic,
+    # spirometry observation point - excludes baseline
+    t_id = seq_along(l_spec$t_sprty_obs) 
+  )
+  d[, t_obs := l_spec$t_sprty_obs[t_id]]
+  d[, t_fu := t0 + 365*t_obs]
+  d <- d[d_i, on = "id"]
   
-  # Covariance matrix for AR(1) structure
+  
+  gamma_trt <- l_spec$b_trt[cbind(d$trt, d$t_id)]
+  d[, b_trt := gamma_trt]
+  d[, b_time := l_spec$b_time[t_id]]
+  d[, mu := mu0 + b_time + b_trt]
+  
+  
+  # Covariance matrix for AR(1) structure only applies to the follow up
   Sigma <- outer(
-    1:length(l_spec$t_sprty_obs), 
-    1:length(l_spec$t_sprty_obs), 
+    1:(length(l_spec$t_sprty_obs)), 
+    1:(length(l_spec$t_sprty_obs)), 
     function(i, j){
-      l_spec$Sigma_s^2 * l_spec$Sigma_rho^abs(i - j)
+      l_spec$sigma^2 * l_spec$rho^abs(i - j)
   } )
   
   # outcome
-  i <- 600
+  # i <- 600
   for(i in 1:N_ic){
     
-    # d[id == i, y := as.numeric(
-    #   rmvt(n = 1, sigma = Sigma, df = l_spec$mvt_df, delta = d[id == i, mu]))]
-    
-    d[id == i, y := as.numeric(
-      rmvnorm(n = 1, mean = d[id == i, mu], sigma = Sigma))]
+    d[id == i, y := as.numeric(rmvnorm(n = 1, mean = d[id == i, mu], sigma = Sigma))]
   }
   
   # missing
   d[, y_mis := rbinom(.N, 1, l_spec$pr_ymis)]
+  
+  d[, ia := NA_integer_]
+  d[, t_anlys := NA_real_]
+  d[, id := rep(is:ie, each = length(l_spec$t_sprty_obs))]
+  
+  setcolorder(
+    d,
+    c("ic", "id", "t_id", "t_obs", "t0", "t_fu", "age0", 
+      "trt", "gamma_i", "mu0", "y0"))
   
   d
 }
@@ -132,15 +146,18 @@ get_prototype_cfg <- function(){
   # model parameters ppfev
   # reference level at age 0
   l_spec$b_0 <- 120
-
-  
   # backgroun temporal change reduces the population level ppfev1
-  l_spec$b_decl <- -1
+  l_spec$b_time <- c(-0.25, -0.5, -0.75, -1)
   # coefficient on log-age
-  l_spec$b_ln_age <- -14
+  l_spec$b_age <- -14
   # l_spec$b_ln_age <- -2
   # treatment effects
-  l_spec$b_trt <- c(0, 0, 0) 
+  l_spec$b_trt <- rbind(
+    c(0, 0, 0, 0),
+    c(1, 2, 3, 4),
+    c(-1, -2, -3, -4)
+  )
+  
   
   # age class distribution
   # quantile_age_data <- function(age = 20, mu, sig, lower.tail = T){
@@ -172,43 +189,14 @@ get_prototype_cfg <- function(){
   # l_spec$age_ref <- 25
    
   # baseline + quarterly spirometry (0, 3, 6, 9, 12 months)
-  l_spec$t_sprty_obs <- c(0, 0.25, 0.5, 0.75, 1)
+  l_spec$t_sprty_obs <- c(0.25, 0.5, 0.75, 1)
   
-  # refine 
-  # number of spirometry events per year (mixture of poisson)
-  # so that the number of observations is unconstrained to specific visits
-  # which is probably more likely to be the reality
-  # plot_spirom_data <- function(r = 2, p = 0.9){
-  #   x <- 0:25
-  #   y = dnbinom(x, size = r, prob = p)
-  #   plot(x, y, type = "h", xlim=c(0, 25), xaxt='n' )
-  #   axis(side = 1, at = x )
-  # }
-  # plot_spirom_data(r = 1.2, p = 0.3)
-  # number of evts (negbin but will truncate to force N > 0) 
-  # l_spec$num_sprty_obs_nb_r <- 1.2 
-  # l_spec$num_sprty_obs_nb_p <- 0.3
+  l_spec$sigma_i <- 2
   
-  # perits - ignore.
+  # AR(1) correlation structure for errors
+  l_spec$rho <- 0.85      # autocorrelation between adjacent time points
+  l_spec$sigma <- 6       # standard deviation at each time point
   
-  # pt level variation in baseline
-  # l_spec$u_s0 <- 5
-  # l_spec$u_s1 <- 1
-  # # correlation between pre and post
-  # l_spec$u_rho <- -0.1
-  
-  # MVN seems to restrictive for these data. Adopt MVT AR1
-  
-  # Degrees of freedom for multivariate t 
-  # as mvt_df -> Inf mvt -> mvn
-  # (3-10) heavier tails
-  # l_spec$mvt_df <- 8
-  
-  # AR(1) correlation structure
-  l_spec$Sigma_rho <- 0.85      # correlation between adjacent time points
-  l_spec$Sigma_s <- 6       # standard deviation at each time point
-  
-
   # priors on log-odds/log-or
   l_spec$prior <- list()
   
@@ -266,6 +254,155 @@ get_prototype_cfg <- function(){
   l_spec
 }
 
+
+
+prototype_1_data <- function(){
+  
+  l_spec <- get_prototype_cfg()
+  str(l_spec)
+
+  d <- get_sim03_trial_data(l_spec)
+  d[, trt := factor(trt)]
+  d[, t_obs := factor(t_obs)]
+  
+  # f_1_f <- nlme::gls(y ~ log(age0) + trt + t_obs, d_mod2,
+  #                    correlation = nlme::corAR1(form = ~ 1 | id))
+  
+  d[, y0 := scale(y0)]
+  f_1_f <- nlme::gls(y ~ y0 + log(age0) + t_obs*trt, d,
+                     correlation = nlme::corAR1(form = ~ 1 | id))
+  
+  s <- summary(f_1_f)
+
+  # plot_1(d)
+  
+  X <- model.matrix(~ y0 + log(age0) + t_obs*trt, data = d)
+  
+  # assume treatment is randomized at baseline to individuals 
+  # sampled from the same population
+  # run a standard pre/post (ancova) analysis
+  
+  output_dir_mcmc <- paste0(getwd(), "/tmp")
+  
+  m1 <- cmdstanr::cmdstan_model("stan/sim03-v06b.stan")  
+  
+  # // baseline (y0, i.e. first observation of ppFEV1)
+  # // log(age0)     
+  # // t_obs0.25      
+  # // t_obs0.5       
+  # // t_obs0.75      
+  # // t_obs1         
+  # // trt2           
+  # // trt3           
+  # // t_obs0.25:trt2
+  # // t_obs0.5:trt2  
+  # // t_obs0.75:trt2 
+  # // t_obs1:trt2    
+  # // t_obs0.25:trt3
+  # // t_obs0.5:trt3 
+  # // t_obs0.75:trt3 
+  # // t_obs1:trt3   
+  # 
+  # X <- model.matrix(~ y0 + log(age0) + )
+  
+  # goal to simplify the data generation and then get the stan model to
+  # recover parameters - compare to gls
+  
+  # all those that have completed followup to 1 year
+  lsd <- list(
+    N = d[, .N],
+    J = length(l_spec$t_sprty_obs)-1,
+    P = ncol(X)-1,
+    X = X[, -1],
+    y = d[, y],
+    N_1 = d[t_id == 1, .N],
+    N_2 = d[t_id == 2, .N],
+    N_3 = d[t_id == 3, .N],
+    N_4 = d[t_id == 4, .N],
+    ix_1 = d[t_id == 1, which = T],
+    ix_2 = d[t_id == 2, which = T],
+    ix_3 = d[t_id == 3, which = T],
+    ix_4 = d[t_id == 4, which = T]
+  )
+  
+  foutname_1 <- paste0(
+    format(Sys.time(), format = "%Y%m%d%H%M%S"),
+    "-sim-", 1)
+  
+  f_1 <- m1$sample(
+    lsd, iter_warmup = 1000, iter_sampling = 1000,
+    parallel_chains = 1, chains = 1, refresh = 100, show_exceptions = T,
+    max_treedepth = 10,
+    output_dir = output_dir_mcmc,
+    output_basename = foutname_1,
+    init = list(
+      list(
+        rho = 0.5,
+        sigma = 1)
+    ) 
+  )
+  cbind(s$coefficients, f_1$summary(variables = c("b0", "b")))
+  f_1$summary(variables = c("sigma", "rho"))
+  s$sigma
+  
+  
+  # f_1_optim <- m1$optimize(data = ld, jacobian = TRUE)
+  # f_1_a <- m1$laplace(data = ld, mode = f_1_optim, draws = 2000)
+  # f_1_a$summary(variables = c("b0", "b_ln_age", "b_t", "b_trt_raw", "sigma", "rho", "nu"))
+
+  # f_1_b <- m1$variational(data = ld)
+  # f_1_b$summary(variables = c("b0", "b_ln_age", "b_t", "b_trt_raw", "sigma", "rho", "nu"))
+  # 
+  # f_1_c <- m1$pathfinder(data = ld)
+  # f_1_c$output()
+  # f_1_c$summary(variables = c("b0", "b_ln_age", "b_t", "b_trt_raw", "sigma", "rho"))
+  
+  
+  
+  d_post_1 <- data.table(f_1$draws(variables = c("b0", "b"),  format = "matrix"))
+  
+  d_fig_1 <- melt(d_post_1, measure.vars = names(d_post_1))
+  
+  ggplot(d_fig_1, aes(x = value)) +
+    geom_density() +
+    ggh4x::facet_wrap2(~variable, ncol = 2, scales = "free_x")
+}
+
+
+plot_1 <- function(d){
+  
+  # d[, .(mu = mean(y)), keyby = .(trt, t_obs)]
+  # min_y <- min(floor(d$y))
+  # max_y <- max(ceiling(d$y))
+  
+  d_fig <- copy(d)
+  d_fig[, trt := as.numeric(trt)]
+  d_fig[, t_obs := as.numeric(t_obs)]
+  
+  d_fig[, age_cat := cut(age0, breaks  = c(0, 0.1, 0.2, 0.3, 0.5, 0.8))]
+  d_fig[, age := age0 + t_obs]
+  
+  rnd_id <- sample(unique(d$id), size = 50)
+  p1 <- ggplot(d_fig[id %in% rnd_id], aes(x = t_obs, y = y)) +
+    geom_line(aes(group = id), lwd = 0.2) +
+    geom_point(size = 0.5) +
+    # scale_x_continuous(lim = c(0, 90), breaks = seq(0, 90, by = 5)) +
+    # scale_y_continuous(lim = c(25, 130), breaks = seq(25, 125, by = 25)) +
+    ggh4x::facet_wrap2(~trt, ncol = 3)
+  #
+  
+  p2 <- ggplot(d_fig, aes(x = age, y = y)) +
+    geom_line(aes(group = id), lwd = 0.2) +
+    # scale_x_continuous(lim = c(0, 90), breaks = seq(0, 90, by = 5)) +
+    # scale_y_continuous(lim = c(25, 130), breaks = seq(25, 125, by = 25)) +
+    ggh4x::facet_wrap2(~trt, ncol = 1)
+  #
+  p2 + p1
+  #
+  
+  
+}
+
 prototype_2_data <- function(){
   
   # expt with dealing with the data in long format
@@ -275,7 +412,7 @@ prototype_2_data <- function(){
   str(l_spec)
   
   d <- get_sim03_trial_data(l_spec)
-
+  
   output_dir_mcmc <- paste0(getwd(), "/tmp")
   
   m1 <- cmdstanr::cmdstan_model("stan/sim03-v07.stan")  
@@ -314,119 +451,6 @@ prototype_2_data <- function(){
   
   
 }
-
-prototype_1_data <- function(){
-  
-  l_spec <- get_prototype_cfg()
-  str(l_spec)
-
-  d <- get_sim03_trial_data(l_spec)
-
-  # plot_1(d)
-  
-  
-  # assume treatment is randomized at baseline to individuals 
-  # sampled from the same population
-  # run a standard pre/post (ancova) analysis
-  
-  output_dir_mcmc <- paste0(getwd(), "/tmp")
-  
-  m1 <- cmdstanr::cmdstan_model("stan/sim03-v06.stan")  
-  
-  
-  d_mod <- dcast(d, id + age0 + trt ~ t_obs, value.var = "y")
-  ld <- list(
-    N = d_mod[, .N],
-    J = length(l_spec$t_sprty_obs),
-    y = d_mod[, 4:8],
-    age = d_mod$age0,
-    t_obs = l_spec$t_sprty_obs,
-    trt = d_mod$trt
-  )
-  foutname_1 <- paste0(
-    format(Sys.time(), format = "%Y%m%d%H%M%S"),
-    "-sim-", 1)
-  
-  f_1 <- m1$sample(
-    ld, iter_warmup = 1000, iter_sampling = 1000,
-    parallel_chains = 1, chains = 1, refresh = 100, show_exceptions = T,
-    max_treedepth = 10,
-    output_dir = output_dir_mcmc,
-    output_basename = foutname_1,
-    init = list(
-      list(
-        rho = 0.5,
-        sigma = 1)
-    ) 
-  )
-  f_1$summary(
-    variables = c("b0", "b_ln_age", "b_t", "b_trt_raw", "sigma", "rho"))
-  
-  # alternatively could use:
-  d_mod2 <- copy(d)
-  d_mod2[, trt := factor(trt)]
-  f_1_f <- nlme::gls(y ~ log(age0) + trt + t_obs, d_mod2,
-             correlation = nlme::corAR1(form = ~ 1 | id))
-  summary(f_1_f)
-  
-  # f_1_optim <- m1$optimize(data = ld, jacobian = TRUE)
-  # f_1_a <- m1$laplace(data = ld, mode = f_1_optim, draws = 2000)
-  # f_1_a$summary(variables = c("b0", "b_ln_age", "b_t", "b_trt_raw", "sigma", "rho", "nu"))
-
-  # f_1_b <- m1$variational(data = ld)
-  # f_1_b$summary(variables = c("b0", "b_ln_age", "b_t", "b_trt_raw", "sigma", "rho", "nu"))
-  # 
-  # f_1_c <- m1$pathfinder(data = ld)
-  # f_1_c$output()
-  # f_1_c$summary(variables = c("b0", "b_ln_age", "b_t", "b_trt_raw", "sigma", "rho"))
-  
-  
-  
-  d_post_1 <- data.table(f_1$draws(
-    variables = c("b0", "b_ln_age", "b_t", "b_trt_raw"), 
-    format = "matrix"))
-  
-  d_fig_1 <- melt(d_post_1, measure.vars = names(d_post_1))
-  
-  ggplot(d_fig_1, aes(x = value)) +
-    geom_density() +
-    ggh4x::facet_wrap2(~variable, ncol = 1, scales = "free_x")
-}
-
-
-plot_1 <- function(d){
-  
-  # d[, .(mu = mean(y)), keyby = .(trt, t_obs)]
-  # min_y <- min(floor(d$y))
-  # max_y <- max(ceiling(d$y))
-  
-  d_fig <- copy(d)
-  d_fig[, trt := factor(trt)]
-  
-  d_fig[, age_cat := cut(age0, breaks  = c(0, 0.1, 0.2, 0.3, 0.5, 0.8))]
-  d_fig[, age := age0 + t_obs]
-  
-  rnd_id <- sample(unique(d$id), size = 50)
-  p1 <- ggplot(d_fig[id %in% rnd_id], aes(x = t_obs, y = y)) +
-    geom_line(aes(group = id), lwd = 0.2) +
-    geom_point(size = 0.5) +
-    # scale_x_continuous(lim = c(0, 90), breaks = seq(0, 90, by = 5)) +
-    # scale_y_continuous(lim = c(25, 130), breaks = seq(25, 125, by = 25)) +
-    ggh4x::facet_wrap2(~trt, ncol = 3)
-  #
-  
-  p2 <- ggplot(d_fig, aes(x = age, y = y)) +
-    geom_line(aes(group = id), lwd = 0.2) +
-    # scale_x_continuous(lim = c(0, 90), breaks = seq(0, 90, by = 5)) +
-    # scale_y_continuous(lim = c(25, 130), breaks = seq(25, 125, by = 25)) +
-    ggh4x::facet_wrap2(~trt, ncol = 1)
-  #
-  p2
-  #
-  
-  
-}
-
 
 tmp <- function(){
   library(data.table)
@@ -541,4 +565,18 @@ tmp <- function(){
   
   
    
+  
+  library(data.table)
+  set.seed(1)
+  d <- CJ(
+    trt = 1:3,
+    time = c(0, 0.25, 0.5, 0.75, 1)
+  )
+  d[, trt := factor(trt)]
+  d[, time := factor(time)]
+  d[, mu_tru := rnorm(.N)]
+  d[, y := rnorm(.N, mu_tru, 1)]
+  
+  model.matrix(y ~ trt * time, data = d)
+  
 }

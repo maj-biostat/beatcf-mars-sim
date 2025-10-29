@@ -1,28 +1,51 @@
 data {
-  // number of unique subjects
-  int<lower=1> N;        
-  // number of timepoints
-  int<lower=1> J;               
+  // number of observations (repeat measures on pts at 3, 6, 9, 12 months)
+  // all pt must have at least one follow up 
+  // (baseline only pt dropped from analysis)
+  int<lower=1> N;               
   // observed outcome (ppFEV1)
-  matrix[N,J] y;
-  // age at baseline (years)
-  vector[N] age;             
-  // time in fraction of follow-up (0, 0.25, 0.5, 0.75, 1)
-  vector[J] t_obs;      
-  // treatment allocation
-  array[N] int trt;
+  vector[N] y;
+  // design excl intercept
+  
+  // y0 baseline ppFEV1 (scaled)
+  // log(age0)
+  // t_obs0.5
+  // t_obs0.75
+  // t_obs1
+  // trt2
+  // trt3
+  // t_obs0.5:trt2
+  // t_obs0.75:trt2
+  // t_obs1:trt2
+  // t_obs0.5:trt3
+  // t_obs0.75:trt3
+  // t_obs1:trt3
+  
+  int<lower=0> P;
+  matrix[N, P] X;
+  
+  // ix for fu1 
+  int N_1;
+  array[N_1] int ix_1;
+  int N_2;
+  array[N_2] int ix_2;
+  int N_3;
+  array[N_3] int ix_3;
+  int N_4;
+  array[N_4] int ix_4;
 }
 transformed data {
-  vector[N] ln_age;
-  for (i in 1:N) {
-    ln_age[i] = log(age[i]);
-  }
+  array[N_2] int ix_2_prev;
+  array[N_3] int ix_3_prev;
+  array[N_4] int ix_4_prev;
+  
+  for(i in 1:N_2) ix_2_prev[i] = ix_2[i] - 1;
+  for(i in 1:N_3) ix_3_prev[i] = ix_3[i] - 1;
+  for(i in 1:N_4) ix_4_prev[i] = ix_4[i] - 1;
 }
 parameters {
-  real b0;
-  real b_age;
-  real b_t;
-  vector[2] b_trt_raw;
+  real b_0;
+  vector[P] b;
 
   // marginal SD - see distinction in notes
   real<lower=0> sigma;    
@@ -31,51 +54,30 @@ parameters {
 
 }
 transformed parameters {
-  vector[3] b_trt;
-  b_trt[1] = 0.0;
-  b_trt[2:3] = b_trt_raw;
-
   real<lower=-1,upper=1> rho = tanh(rho_un);
-
-  // // Build AR(1) correlation matrix
-  // matrix[J, J] R;
-  // for (r in 1:J) {
-  //   for (c in 1:J) {
-  //     R[r, c] = pow(rho, abs(r - c));
-  //   }
-  // }
-
 }
-
 model {
   // Priors
-  target += normal_lpdf(b0 | 100, 5);
-  target += normal_lpdf(b_age | 0, 5);
-  target += normal_lpdf(b_t | 0, 5);
-  target += normal_lpdf(b_trt | 0, 5);
+  target += normal_lpdf(b_0 | 100, 5);
+  target += normal_lpdf(b | 0, 5);
 
   target += exponential_lpdf(sigma | 0.5);
   target += normal_lpdf(rho_un | 0, 1);
   
-  matrix[N,J] mu;        
+  vector[N] mu = b_0 + X * b;        
   real innov_sd = sigma * sqrt(1 - (rho*rho));
   
-  for(j in 1:J){
-    mu[,j] = b0 +
-      // constant trt effect
-      b_trt[trt] +
-      // decline based on log baseline age
-      b_age * ln_age  +
-      // linear time trend
-      b_t * t_obs[j];  
-  }
+  vector[N] resid = y - mu;
   
-  matrix[N,J] resid = y - mu;
+  target += normal_lpdf(y[ix_1] | mu[ix_1], sigma);
+
+  target += normal_lpdf(y[ix_2] | mu[ix_2] + rho * resid[ix_2_prev], innov_sd);
+  target += normal_lpdf(y[ix_3] | mu[ix_3] + rho * resid[ix_3_prev], innov_sd);
+  target += normal_lpdf(y[ix_4] | mu[ix_4] + rho * resid[ix_4_prev], innov_sd);
   
-  target += normal_lpdf(y[, 1] | mu[, 1], sigma);
   
-  for(j in 2:J){
-    target += normal_lpdf(y[, j] | mu[, j] + rho * resid[, j-1], innov_sd);
-  }
+}
+generated quantities{
+  
   
 }
