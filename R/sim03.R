@@ -13,7 +13,7 @@ args = commandArgs(trailingOnly=TRUE)
 if (length(args)<1) {
   log_info("Setting default run method (does nothing)")
   args[1] = "run_none_sim03"
-  args[2] = "./sim03/cfg-sim03-v01.yml"
+  args[2] = "./sim03/cfg-sim03-v02.yml"
 } else {
   log_info("Run method ", args[1])
   log_info("Scenario config ", args[2])
@@ -91,14 +91,13 @@ run_trial <- function(
   
   
   # posterior summaries
-  g_par_beta = paste0("b_", 0:13)
-  g_par_delta = paste0(rep(paste0("delta_", 2:3, "_1_"), each = 4), 1:4)
-  
-  g_par_delta_pri <- c("delta_2_1_4", "delta_3_1_4")
+  # g_par_beta = paste0("b_", 0:13)
+  g_par_beta = paste0("b_", 0:37)
+  g_par_delta <- c("delta_2_1", "delta_3_1")
     
   d_post_smry_1 <- CJ(
     ic = 1:N_analys,
-    par = factor(c(g_par_beta, g_par_delta))
+    par = factor(c(g_par_beta, g_par_delta), levels = c(g_par_beta, g_par_delta))
   )
   d_post_smry_1[, mu := NA_real_]
   d_post_smry_1[, med := NA_real_]
@@ -112,7 +111,7 @@ run_trial <- function(
   d_pr_dec <- CJ(
     ic = 1:N_analys,
     rule = factor(g_rule_type),
-    par = factor(g_par_delta_pri),
+    par = factor(g_par_delta),
     p = NA_real_,
     dec = NA_integer_
   )
@@ -178,9 +177,11 @@ run_trial <- function(
     
     d_mod[, y0_std := scale(y0)]
     d_mod[, trt := factor(trt)]
-    d_mod[, t_obs := factor(t_obs)]
+    d_mod[, t_id := factor(t_id)]
     
-    X <- model.matrix(~ y0_std + log(age0) + t_obs*trt, data = d_mod)
+    X <- model.matrix(~ y0_std + log(age0) + t_id*trt, data = d_mod)
+    
+    
     
     # all those that have completed followup to 1 year
     lsd <- list(
@@ -192,10 +193,26 @@ run_trial <- function(
       N_2 = d_mod[t_id == 2, .N],
       N_3 = d_mod[t_id == 3, .N],
       N_4 = d_mod[t_id == 4, .N],
+      N_5 = d_mod[t_id == 5, .N],
+      N_6 = d_mod[t_id == 6, .N],
+      N_7 = d_mod[t_id == 7, .N],
+      N_8 = d_mod[t_id == 8, .N],
+      N_9 = d_mod[t_id == 9, .N],
+      N_10 = d_mod[t_id == 10, .N],
+      N_11 = d_mod[t_id == 11, .N],
+      N_12 = d_mod[t_id == 12, .N],
       ix_1 = d_mod[t_id == 1, which = T],
       ix_2 = d_mod[t_id == 2, which = T],
       ix_3 = d_mod[t_id == 3, which = T],
-      ix_4 = d_mod[t_id == 4, which = T]
+      ix_4 = d_mod[t_id == 4, which = T],
+      ix_5 = d_mod[t_id == 5, which = T],
+      ix_6 = d_mod[t_id == 6, which = T],
+      ix_7 = d_mod[t_id == 7, which = T],
+      ix_8 = d_mod[t_id == 8, which = T],
+      ix_9 = d_mod[t_id == 9, which = T],
+      ix_10 = d_mod[t_id == 10, which = T],
+      ix_11 = d_mod[t_id == 11, which = T],
+      ix_12 = d_mod[t_id == 12, which = T]
     )
     
     # lsd$ld$pri_b_0 <- l_spec$prior$pri_b_0
@@ -219,44 +236,56 @@ run_trial <- function(
           list(rho_un = 0, sigma = 1, b_0 = 100, b = rep(0, lsd$P))
         )
       )
-      
     )
     
+    # snk <- capture.output(
+    #   
+    #   f_1b <- m1$pathfinder(
+    #     lsd, num_paths = 20,
+    #     single_path_draws = 200,
+    #     history_size = 50,
+    #     max_lbfgs_iters = 100, refresh = 0, draws = 2000
+    #   )
+    # )
+    
     log_info("Trial ", ix, " fitted models ", l_spec$ic)
+    
+    # for 4 fu (quarterly from baseline):
+    # time effects
+    # b3:b13
+    # trt effects
+    # b6:b7
+    # interactions
+    # b8:b10 t_id_x:trt2
+    # b11:b13 t_id_x:trt3
+    
+    # for 12 fu:
+    # time effects
+    # b3:b13
+    # trt effects
+    # b14:b15
+    # interactions
+    # b16:b26 t_id_x:trt2
+    # b27:b37 t_id_x:trt3
     
     # extract posterior - marginal probability of outcome by trt group
     # higher values of p indicate higher risk of treatment failure
     m_post <- f_1$draws(variables = c("b"), format = "matrix")
     
-    # treatment effects
+    # treatment effects (for quarterly)
     # | compare   | mnth  | contrast   |
-    # |  2 vs 1   | 3     | b_6        |
-    # |  2 vs 1   | 6     | b_6 + b_8  |
-    # |  2 vs 1   | 9     | b_6 + b_9  |
     # |  2 vs 1   | 12    | b_6 + b_10 |
-    # |  3 vs 1   | 3     | b_7        |
-    # |  3 vs 1   | 6     | b_7 + b_11 |
-    # |  3 vs 1   | 9     | b_7 + b_12 |
     # |  3 vs 1   | 12    | b_7 + b_13 |
     
     d_post_delta <- data.table(
-      # 2 vs 1 at timepoint 1
-      delta_2_1_1 = as.numeric(m_post[, 6]),
-      # 2 vs 1 at timepoint 2
-      delta_2_1_2 = as.numeric(m_post[, 6] + m_post[, 8]),
-      # 2 vs 1 at timepoint 3 etc
-      delta_2_1_3 = as.numeric(m_post[, 6] + m_post[, 9]),
-      delta_2_1_4 = as.numeric(m_post[, 6] + m_post[, 10]),
-      
-      delta_3_1_1 = as.numeric(m_post[, 7]),
-      delta_3_1_2 = as.numeric(m_post[, 7] + m_post[, 11]),
-      delta_3_1_3 = as.numeric(m_post[, 7] + m_post[, 12]),
-      delta_3_1_4 = as.numeric(m_post[, 7] + m_post[, 13])
+      # 
+      delta_2_1 = as.numeric(m_post[, 14] + m_post[, 26]),
+      delta_3_1 = as.numeric(m_post[, 15] + m_post[, 37])
     )
     
     # bind the intercept with betas
     d_post <- data.table(f_1$draws(variables = c("b_0"), format = "matrix"), m_post)
-    names(d_post) <- paste0("b_", 0:13)
+    names(d_post) <- paste0("b_", 0:(ncol(d_post)-1))
     d_post <- cbind(d_post, d_post_delta)
    
     # d_fig_1 <- melt(d_post, measure.vars = names(d_post))
@@ -264,6 +293,9 @@ run_trial <- function(
     # ggplot(d_fig_1, aes(x = value)) +
     #   geom_density() +
     #   ggh4x::facet_wrap2(~variable, ncol = 2, scales = "free_x")
+    
+    
+
     
     if(return_posterior){
       
@@ -274,8 +306,10 @@ run_trial <- function(
         cbind(ic = l_spec$ic, d_tmp)
       )
       
-      f_2 <- nlme::gls(y ~ y0_std + log(age0) + t_obs*trt, d_mod,
-                         correlation = nlme::corAR1(form = ~ 1 | id))
+      # within each subject (id), the correlation between residuals decays as a 
+      # function of the difference in the t values
+      f_2 <- nlme::gls(y ~ y0_std + log(age0) + t_id*trt, d_mod,
+                         correlation = nlme::corAR1(form = ~ as.numeric(t_id) | id))
       s <- summary(f_2)
       
       d_tmp <- data.table(par = rownames(s$tTable), value = s$coef, confint(f_2))
@@ -299,6 +333,35 @@ run_trial <- function(
     }
     
     d_post_long <- melt(d_post, measure.vars = names(d_post), variable.name = "par")
+    
+    
+    
+    # f_2 <- gamm(y ~ y0_std + log(age0) + t_id * trt,
+    #             random = list(id = ~ 1),
+    #             correlation = corAR1(form = ~ as.numeric(t_id) | id),
+    #             data = d_mod, method = "REML")
+    
+    # summary(f_2$gam)
+    # summary(f_2$lme)   
+    
+    # d_new <- data.table(t_id = factor(12), 
+    #                     trt = factor(1), 
+    #                     y0_std = mean(d_mod$y0_std), 
+    #                     age0 = mean(d_mod$age0))
+    # pred_1 <- predict(f_2$gam, d_new, se.fit = TRUE)
+    # d_new$trt <- factor(2)
+    # pred_2 <- predict(f_2$gam, d_new, se.fit = TRUE)
+    # d_new$trt <- factor(3)
+    # pred_3 <- predict(f_2$gam, d_new, se.fit = TRUE)
+    # 
+    # delta_2_1_est <- pred_2$fit - pred_1$fit
+    # delta_2_1_se  <- sqrt(pred_1$se.fit^2 + pred_2$se.fit^2)
+    # 
+    # delta_3_1_est <- pred_3$fit - pred_1$fit
+    # delta_3_1_se  <- sqrt(pred_1$se.fit^2 + pred_3$se.fit^2)
+    # 
+    # d_post_long[, .(mu = mean(value)), keyby = par]
+    # c(delta_2_1_est, delta_3_1_est)
     
     # merge posterior summaries for current interim
     d_post_smry_1[
@@ -335,13 +398,13 @@ run_trial <- function(
     d_pr_dec[
       
       rbind(
-        d_post_long[par %in% g_par_delta_pri, .(
+        d_post_long[par %in% g_par_delta, .(
           ic = l_spec$ic,
           rule = factor("ni", levels = g_rule_type),
           p = mean(value > l_spec$delta$ni),
           dec = as.integer(mean(value > l_spec$delta$ni) > l_spec$thresh$ni)
         ), keyby = par],
-        d_post_long[par %in% g_par_delta_pri, .(
+        d_post_long[par %in% g_par_delta, .(
           ic = l_spec$ic,
           rule = factor("inf", levels = g_rule_type),
           p = mean(value < l_spec$delta$inf),
@@ -360,7 +423,7 @@ run_trial <- function(
     # soc. In order to stop the study both need to have been resolved (either 
     # NI or inferiority have been concluded).
     d_stop <- d_pr_dec[
-      ic <= l_spec$ic & par %in% c(g_par_delta_pri), 
+      ic <= l_spec$ic & par %in% c(g_par_delta), 
       .(resolved = as.integer(sum(dec) > 0)), keyby = .(par)]
     
     
@@ -372,13 +435,13 @@ run_trial <- function(
     } else if(any(d_stop$resolved)){
       
       # 2 vs 1 at timepoint 4    
-      if(d_stop[par == "delta_2_1_4", resolved]) {
+      if(d_stop[par == "delta_2_1", resolved]) {
         l_spec$p_trt_alloc[2] <- 0  
         l_spec$p_trt_alloc <- l_spec$p_trt_alloc / sum(l_spec$p_trt_alloc)
       } 
       
       # 3 vs 1 at timepoint 4
-      if(d_stop[par == "delta_3_1_4", resolved]) {
+      if(d_stop[par == "delta_3_1", resolved]) {
         l_spec$p_trt_alloc[3] <- 0  
         l_spec$p_trt_alloc <- l_spec$p_trt_alloc / sum(l_spec$p_trt_alloc)
       } 
@@ -467,20 +530,15 @@ run_sim03 <- function(){
   l_spec$p_trt_alloc <- unlist(g_cfgsc$trt)/length(unlist(g_cfgsc$trt))
   
   l_spec$b_0 <- g_cfgsc$b_0
-  l_spec$b_time <- unlist(g_cfgsc$b_time)
+  l_spec$b_time <- g_cfgsc$b_time
   l_spec$b_age <- g_cfgsc$b_age
   l_spec$b_trt <- do.call(rbind, g_cfgsc$b_trt)
-  
-  # subject levell heterogeneity - allows us to represent true (latent) mu0
-  # and then what we actually observe (y0) 
-  # data is generated based on mu0 and modelled adjusted for observed y0 (noisey
-  # version of mu0)
-  l_spec$sigma_i <- g_cfgsc$sigma_i
   
   l_spec$sigma <- g_cfgsc$sigma 
   l_spec$rho <- g_cfgsc$rho
   
-  l_spec$t_sprty_obs <- unlist(g_cfgsc$t_sprty_obs)
+  l_spec$n_sprty_obs <- g_cfgsc$n_sprty_obs
+  l_spec$t_sprty_obs <- 1:l_spec$n_sprty_obs
   
   # # priors on log-odds/log-or
   # l_spec$prior <- list()

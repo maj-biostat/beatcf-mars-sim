@@ -33,15 +33,47 @@ data {
   array[N_3] int ix_3;
   int N_4;
   array[N_4] int ix_4;
+  int N_5;
+  array[N_5] int ix_5;
+  int N_6;
+  array[N_6] int ix_6;
+  int N_7;
+  array[N_7] int ix_7;
+  int N_8;
+  array[N_8] int ix_8;
+  int N_9;
+  array[N_9] int ix_9;
+  int N_10;
+  array[N_10] int ix_10;
+  int N_11;
+  array[N_11] int ix_11;
+  int N_12;
+  array[N_12] int ix_12;
 }
 transformed data {
   array[N_2] int ix_2_prev;
   array[N_3] int ix_3_prev;
   array[N_4] int ix_4_prev;
+  array[N_5] int ix_5_prev;
+  array[N_6] int ix_6_prev;
+  array[N_7] int ix_7_prev;
+  array[N_8] int ix_8_prev;
+  array[N_9] int ix_9_prev;
+  array[N_10] int ix_10_prev;
+  array[N_11] int ix_11_prev;
+  array[N_12] int ix_12_prev;
   
   for(i in 1:N_2) ix_2_prev[i] = ix_2[i] - 1;
   for(i in 1:N_3) ix_3_prev[i] = ix_3[i] - 1;
   for(i in 1:N_4) ix_4_prev[i] = ix_4[i] - 1;
+  for(i in 1:N_5) ix_5_prev[i] = ix_5[i] - 1;
+  for(i in 1:N_6) ix_6_prev[i] = ix_6[i] - 1;
+  for(i in 1:N_7) ix_7_prev[i] = ix_7[i] - 1;
+  for(i in 1:N_8) ix_8_prev[i] = ix_8[i] - 1;
+  for(i in 1:N_9) ix_9_prev[i] = ix_9[i] - 1;
+  for(i in 1:N_10) ix_10_prev[i] = ix_10[i] - 1;
+  for(i in 1:N_11) ix_11_prev[i] = ix_11[i] - 1;
+  for(i in 1:N_12) ix_12_prev[i] = ix_12[i] - 1;
 }
 parameters {
   real b_0;
@@ -74,6 +106,14 @@ model {
   target += normal_lpdf(y[ix_2] | mu[ix_2] + rho * resid[ix_2_prev], innov_sd);
   target += normal_lpdf(y[ix_3] | mu[ix_3] + rho * resid[ix_3_prev], innov_sd);
   target += normal_lpdf(y[ix_4] | mu[ix_4] + rho * resid[ix_4_prev], innov_sd);
+  target += normal_lpdf(y[ix_5] | mu[ix_5] + rho * resid[ix_5_prev], innov_sd);
+  target += normal_lpdf(y[ix_6] | mu[ix_6] + rho * resid[ix_6_prev], innov_sd);
+  target += normal_lpdf(y[ix_7] | mu[ix_7] + rho * resid[ix_7_prev], innov_sd);
+  target += normal_lpdf(y[ix_8] | mu[ix_8] + rho * resid[ix_8_prev], innov_sd);
+  target += normal_lpdf(y[ix_9] | mu[ix_9] + rho * resid[ix_9_prev], innov_sd);
+  target += normal_lpdf(y[ix_10] | mu[ix_10] + rho * resid[ix_10_prev], innov_sd);
+  target += normal_lpdf(y[ix_11] | mu[ix_11] + rho * resid[ix_11_prev], innov_sd);
+  target += normal_lpdf(y[ix_12] | mu[ix_12] + rho * resid[ix_12_prev], innov_sd);
   
   
 }

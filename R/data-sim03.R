@@ -39,9 +39,10 @@ get_sim03_trial_data <- function(
   d_i[, age0 := baseline_age]
   trt_alloc <- trt_opts[rep(trt_opts[as.logical(l_spec$p_trt_alloc)], len = N_ic)]
   d_i[, trt := trt_alloc]
-  d_i[, gamma_i := rnorm(.N, 0, l_spec$sigma_i)]
+  # d_i[, gamma_i := rnorm(.N, 0, l_spec$sigma_i)]
   # latent baseline measure on which the data is generated
-  d_i[, mu0 := l_spec$b_0 + l_spec$b_age * log(age0) + gamma_i]
+  # d_i[, mu0 := l_spec$b_0 + l_spec$b_age * log(age0) + gamma_i]
+  d_i[, mu0 := l_spec$b_0 + l_spec$b_age * log(age0) ]
   # what we would actually observe and therefore model
   d_i[, y0 := rnorm(.N, mu0, l_spec$sigma)]
   
@@ -49,16 +50,16 @@ get_sim03_trial_data <- function(
     # unit id
     id = 1:N_ic,
     # spirometry observation point - excludes baseline
-    t_id = seq_along(l_spec$t_sprty_obs) 
+    t_id = l_spec$t_sprty_obs
   )
-  d[, t_obs := l_spec$t_sprty_obs[t_id]]
+  d[, t_obs := t_id/l_spec$n_sprty_obs]
   d[, t_fu := t0 + 365*t_obs]
   d <- d[d_i, on = "id"]
   
   
-  gamma_trt <- l_spec$b_trt[cbind(d$trt, d$t_id)]
+  gamma_trt <- unlist(l_spec$b_trt[cbind(d$trt, d$t_id)])
   d[, b_trt := gamma_trt]
-  d[, b_time := l_spec$b_time[t_id]]
+  d[, b_time := t_obs * l_spec$b_time]
   d[, mu := mu0 + b_time + b_trt]
   
   
@@ -77,17 +78,14 @@ get_sim03_trial_data <- function(
     d[id == i, y := as.numeric(rmvnorm(n = 1, mean = d[id == i, mu], sigma = Sigma))]
   }
   
-  # missing
-  d[, y_mis := rbinom(.N, 1, l_spec$pr_ymis)]
-  
   d[, ia := NA_integer_]
   d[, t_anlys := NA_real_]
-  d[, id := rep(is:ie, each = length(l_spec$t_sprty_obs))]
+  d[, id := rep(is:ie, each = l_spec$n_sprty_obs)]
   
   setcolorder(
     d,
     c("ic", "id", "t_id", "t_obs", "t0", "t_fu", "age0", 
-      "trt", "gamma_i", "mu0", "y0"))
+      "trt", "mu0", "y0"))
   
   d
 }
@@ -554,14 +552,14 @@ tmp <- function(){
   
  
   
-  library(brms)
-  data("LakeHuron")
-  LakeHuron <- as.data.frame(LakeHuron)
-  brms::make_stancode(x ~ ar(p = 2), data = LakeHuron)
-  brms::make_standata(x ~ ar(p = 2), data = LakeHuron)
-  
-  fit <- brm(x ~ ar(p = 2), data = LakeHuron)
-  summary(fit)
+  # library(brms)
+  # data("LakeHuron")
+  # LakeHuron <- as.data.frame(LakeHuron)
+  # brms::make_stancode(x ~ ar(p = 2), data = LakeHuron)
+  # brms::make_standata(x ~ ar(p = 2), data = LakeHuron)
+  # 
+  # fit <- brm(x ~ ar(p = 2), data = LakeHuron)
+  # summary(fit)
   
   
    

@@ -34,6 +34,8 @@ suppressPackageStartupMessages(library("patchwork"))
 suppressPackageStartupMessages(library(pander))
 suppressPackageStartupMessages(library(mvtnorm))
 
+suppressPackageStartupMessages(library(mgcv))
+suppressPackageStartupMessages(library(nlme))
 
 # install.packages(
 #   c(
