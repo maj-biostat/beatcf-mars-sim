@@ -181,8 +181,6 @@ run_trial <- function(
     
     X <- model.matrix(~ y0_std + log(age0) + t_id*trt, data = d_mod)
     
-    
-    
     # all those that have completed followup to 1 year
     lsd <- list(
       N = d_mod[, .N],
@@ -294,9 +292,6 @@ run_trial <- function(
     #   geom_density() +
     #   ggh4x::facet_wrap2(~variable, ncol = 2, scales = "free_x")
     
-    
-
-    
     if(return_posterior){
       
       
@@ -306,8 +301,6 @@ run_trial <- function(
         cbind(ic = l_spec$ic, d_tmp)
       )
       
-      # within each subject (id), the correlation between residuals decays as a 
-      # function of the difference in the t values
       f_2 <- nlme::gls(y ~ y0_std + log(age0) + t_id*trt, d_mod,
                          correlation = nlme::corAR1(form = ~ as.numeric(t_id) | id))
       s <- summary(f_2)
@@ -333,8 +326,6 @@ run_trial <- function(
     }
     
     d_post_long <- melt(d_post, measure.vars = names(d_post), variable.name = "par")
-    
-    
     
     # f_2 <- gamm(y ~ y0_std + log(age0) + t_id * trt,
     #             random = list(id = ~ 1),
