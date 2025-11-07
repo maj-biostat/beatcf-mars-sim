@@ -53,6 +53,13 @@ runsim03:
   just sim03 ../etc/sim03/cfg-sim03-v03.yml
   just sim03 ../etc/sim03/cfg-sim03-v04.yml
 
+sim04 cfg:
+  Rscript --vanilla ./R/sim04.R run_sim04 {{cfg}}
+  just cleantmp
+
+runsim04:
+  just sim04 ../etc/sim04/cfg-sim04-v01.yml
+  
 report rep:
   quarto render reports/{{rep}} --to pdf
 

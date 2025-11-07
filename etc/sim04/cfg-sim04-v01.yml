@@ -1,0 +1,64 @@
+default:
+  desc: "Equal decline in ppFEV1 in all treatment arms"
+  nsim: 100
+  mc_cores: 40
+  # example trials
+  nex: 10
+  # enrolment
+  N_pt: [400, 100, 100]
+  pt_per_day: 0.57
+  ramp_up_days: 120
+  
+  # probability of missingness
+  pr_ymis: 0.1
+  
+  # trt - use relative numbers to avoid underflow - not currently used
+  trt_alloc: [1, 1, 1]
+  
+  # details on age
+  age_mu: 2.5
+  age_sig: 0.75
+  age_lwr: 3
+  age_upr: 85
+  
+  # number of obs evenly spaced over 12 months
+  n_sprty_obs: 12
+  # assume linearity within intervals (over follow up visits)
+  basis_ix_seg: 
+    - [1, 3]
+    - [3, 6]
+    - [6, 9]
+    - [9, 12]
+  
+  # parameters
+  b_0: 120
+  # (log) age effects
+  b_la: -14 
+  # background temporal linearly declining over year
+  # [1, 3], [3, 6], [6, 9], [9:12]
+  # 3, 4, 4, 4
+  # b_t[1] is the ref level (slope at e.g. 3 months)
+  # subsequent b_t are the incremental changes in slope at the end of each 
+  # segment, 
+  # e.g. by 6 months fev has dropped by 2/11 + 3/11 = 5/11
+  # e.g. by 9 months fev has dropped by 2/11 + 3/11 + 3/11 = 8/11
+  b_t: [-2/11, -3/11, -3/11, -3/11]
+  b_T: [-1, 0]
+  b_tT:
+    - [0, -2, -3, -5]
+    - [0, 0, 0, 0]
+  
+  # variability on baseline (well state) measure.
+  sigma_mu0: 3
+  
+  sigma: 4
+  rho: 0.8
+  
+  
+  # decision reference values
+  dec_delta_ni: -0.75
+  dec_delta_inf: -0.75
+  # decision probability thresholds
+  dec_thresh_ni: 0.95
+  dec_thresh_inf: 0.70
+    
