@@ -1,0 +1,658 @@
+---
+title: BEAT CF MARS
+subtitle: Simulation Report
+description: |
+    Three-arm Bayesian adaptive trial nested within BEAT-CF platform evaluating antibiotic-sparing strategies for managing pulmonary exacerbations
+date: last-modified
+date-format: "D MMMM YYYY"
+author: 
+  - name: Mark Jones
+    id: mj
+    email: mark.jones1@sydney.edu.au
+version: 0.1
+sponsor: "University of Sydney, NSW, Australia"
+protocol-number: todo
+registration: todo
+hrec: todo
+ci1: Tom Snelling
+editor: source
+bibliography: ../etc/refs.bib
+csl: ../etc/elsevier-harvard.csl
+# number-sections required otherwise section refs will not render 
+number-sections: true
+toc: true
+toc-depth: 3
+format:
+  pdf: 
+    pdf-engine: xelatex
+    keep-tex: true
+    documentclass: scrreprt
+    papersize: a4
+    fontsize: 12pt
+    mainfont: Libertinus Serif
+    sansfont: Libertinus Sans
+    monofont: Libertinus Mono
+    mathfont: Libertinus Math
+    linestretch: 1.25
+    template-partials: 
+      - "../_extensions/partials/before-body.tex"
+    include-in-header:
+      text: |
+       \usepackage{physics}
+       \setkomafont{chapter}{\fontsize{16}{18}\selectfont}
+       \setkomafont{section}{\fontsize{14}{16}\selectfont}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE
+)
+```
+
+```{r}
+#| echo: false
+
+# uml digs
+suppressPackageStartupMessages(library(nomnoml))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(qs))
+suppressPackageStartupMessages(library(git2r))
+suppressPackageStartupMessages(suppressWarnings(library(gt)))
+suppressPackageStartupMessages(library(ggh4x))
+suppressPackageStartupMessages(library(lubridate))
+suppressPackageStartupMessages(library(scales))
+suppressPackageStartupMessages(library(patchwork))
+suppressPackageStartupMessages(library(pbapply))
+
+
+toks <- unlist(tstrsplit(getwd(), "/")) 
+if(toks[length(toks)] == "beatcf-mars-sim"){
+  prefix_cfg <- "./etc/sim03/"
+  prefix_stan <- "./stan"
+  prefix_fig <- "./fig"
+  prefix_data <- "./data"
+  prefix_r <- "./r"
+} else {
+  prefix_cfg <- "../etc/sim03/"
+  prefix_stan <- "../stan"
+  prefix_fig <- "../fig"
+  prefix_data <- "../data"
+  prefix_r <- "../r"
+}
+
+
+source(paste0(prefix_r, "/data.R"))
+source(paste0(prefix_r, "/data-sim03.R"))
+
+# Reference design
+
+sim_lab <- "sim00-01"
+
+flist <- list.files(paste0(prefix_data, "/", sim_lab), pattern = "sim00")
+toks <- list()
+l0 <- list()
+i <- 1
+
+for(i in 1:length(flist)){
+
+  l0[[i]] <- qs::qread(file.path(paste0(prefix_data, "/", sim_lab), flist[i]))
+}
+
+
+
+# Each input file corresponds to the results from a single simulation
+# scenario/configuration.
+# Load all the files into a single list.
+
+# files of interest
+sim_lab <- "sim03-07"
+
+flist <- list.files(paste0(prefix_data, "/", sim_lab), pattern = "sim03")
+toks <- list()
+l <- list()
+i <- 1
+
+for(i in 1:length(flist)){
+
+  l[[i]] <- qs::qread(file.path(paste0(prefix_data, "/", sim_lab), flist[i]))
+  toks[[i]] <-  unlist(tstrsplit(flist[i], "[-.]"))
+}
+
+N_sims <- l[[1]]$cfg$nsim
+
+N_example_sims <- 7
+
+# temp to replace
+# l_spec <- get_prototype_cfg()
+l_spec_1 <- l[[1]]$cfg
+```
+
+{{< pagebreak >}}
+
+::: summary
+|     |        |
+|:----|:------------|
+|Study title:  |  BEAT-CF MARS |
+|Reference intervention: |  Standard airway clearance therapy at least twice per day for 14 days, plus 14 days of oral antibiotics commencing as soon as practicable (and ≥ 72 hours and < 7 days) after onset of new or acute worsening of cough. |   
+|Intervention: | (1) Deferred antibiotic strategy (2) Early discontinuation antibiotic strategy. |   
+|Outcome: | ppFev1 at 12 months |   
+|Study design:  |   Bayesian adaptive trial with early stopping rules | 
+|Sponsor:  |    University of Sydney, NSW, Australia | 
+Protocol: |  todo |
+|Registration:  |    todo | 
+|HREC:  |   todo | 
+|Study date of first consent:  |   todo | 
+|Principal coordinating investigators:  |   Tom Snelling | 
+:::
+
+<!-- 
+Note that the above relies on the pandoc extension implemented in the lua file 
+in the etc directory. It additionally relies on the presence of a custom style
+in word called study summary. It will currently only work for word (because I
+cannot be bothered to implement it in anything else at the moment).
+-->
+
+
+{{< pagebreak >}}
+
+# Version history {.unlisted .unnumbered}
+
+| Version    |   Date     | Change    |   Reason     |
+|:----|:------------|:----|:------------|
+| 0.1 | 2025-08-27 | First version | N/A |
+
+
+{{< pagebreak >}}
+
+
+
+# Introduction
+
+This report documents the simulation approach and results for the operating characteristics for the BEAT-CF MARS study.
+The report is an operational document that will be updated, as necessary, over the course of the study.
+It should be read in conjunction with the relevant version of the statistical analysis plan.
+
+We provide the data generation assumptions, modelling approaches, scenarios and results that were used to explore the design.
+
+These results are based on simulation `r sim_lab` with `r N_sims` simulated trials run per scenario.
+
+The key configuration parameters that persist across all scenarios are shown below:
+
++ Interim analyses: `r cumsum(l_spec_1$N)`
++ Futility evaluation at: `r cumsum(l_spec_1$N)`
++ Superiority evaluation at: `r cumsum(l_spec_1$N)`
++ Enrolment per day after ramp up: `r l_spec_1$pt_per_day`
++ Ramp up period (days): `r l_spec_1$ramp_up_days`
++ Standard deviation on ppFEV1: `r l_spec_1$sigma`
++ Correlation between repeat measures: `r l_spec_1$rho`
++ Reference value for non-inferiority: `r l_spec_1$delta$ni`
++ Evidential threshold for non-inferiority (probability): `r l_spec_1$ni$sup`
++ Reference value for inferiority: `r l_spec_1$delta$inf`
++ Evidential threshold for inferiority (probability): `r l_spec_1$thresh$inf`
+
+
+
+ 
+
+# Design overview
+
+BEAT-CF-MARs is a non-inferiority study that uses a longitudinal design with lung function measured under each of the active treatment strategies and the control group at baseline and then quarterly to 12 months.
+
+Participants are randomised with equal allocation to one of the three strategies at enrolment and this allocation is assumed to hold over the 12 month period, i.e. whenever an exacerbation occurs the treatment regime is assumed to be that which was assigned.
+
+The primary outcome measure, ppFEV1 (percent predicted forced expiratory volume in one second) characterises lung function on how well a person can exhale air in one second compared to what is expected for someone of their age, height, sex, and race.
+When the lungs are working properly, the values should be close to 100%.
+Young people may commonly have ppFEV1 > 100%.
+
+We examine the difference the difference in mean lung function at 12-months.
+
+The design includes adaptation that permits early stopping of treatment arms for non-inferiority or inferiority.
+The control arm of standard of care remains the reference arm throughout.
+
+## Alternatives
+
+Variations on the design might include:
+
++ Attempt to model the number/frequency/severity of exacerbations with the goal of characterising more of the variation and therefore improve precision on the treatment effects of interest
++ Re-randomisation participants to alternative treatments over the 12 month period; patients would be randomised on each exacerbation in a cross-over type design
++ Focus attention on one of the two active arms rather than both (in an attempt to make the most of our 600 patients)
+
+
+
+# Data generation {#sec-data-generation}
+
+The distributional assumptions of each data component follows.
+
+The participant characteristics and their outcome variables are generated as cohorts prior to each analysis such that the data accrues sequentially.
+As the trial progresses, decisions may be made which lead to early stopping of treatment arms.
+
+We simulate ppFEV1 at baseline and over the 12 months follow up, assuming that ppFEV1 progression can be adequately represented based on a participants' baseline ppFEV1 value (in a well state), age at entry, a time trend and (time-varying) treatment effects.
+
+The population age distribution is assumed to be truncated log-normal with a lower and upper bound of `r l_spec_1$age_lwr` and `r l_spec_1$age_upr` and is distributed as per @fig-age0.
+
+```{r, echo = F}
+#| label: fig-age0
+#| fig-cap: 'Age class distribution of simulated trial population'
+#| fig-height: 5
+#| fig-width: 5
+#| fig-pos: H
+
+
+# age distribution - truncated log normal - restrict age to (age_lwr,age_upr)
+p_lt_age_lwr <- plnorm(
+  l_spec_1$age_lwr, meanlog = l_spec_1$age_mu, sdlog = l_spec_1$age_sig, lower.tail = T)
+p_gt_age_upr <- plnorm(
+  l_spec_1$age_upr, meanlog = l_spec_1$age_mu, sdlog = l_spec_1$age_sig, lower.tail = F)
+# sample u in [p0, 1)
+u <- p_lt_age_lwr + runif(1e5, 0, (1 - (p_lt_age_lwr + p_gt_age_upr))) 
+baseline_age <- qlnorm(u, meanlog = l_spec_1$age_mu, sdlog = l_spec_1$age_sig)
+d_fig <- data.table(age0 = baseline_age)
+
+ggplot(d_fig, aes(x = age0)) +
+  geom_histogram(bins = 30, fill = "grey", col = "black") +
+  scale_x_continuous("Baseline age") +
+  scale_y_continuous("") +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    legend.box="horizontal",
+    strip.text.y.right = element_text(angle = 0,
+                                      hjust = 0,
+                                      vjust = 0.2,
+                                      size = 7),
+    axis.ticks = element_blank(),
+    strip.text.x.top = element_text(size = 7),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(color = "grey",
+                                  linewidth = 0.1,
+                                  linetype = 1),
+    axis.title.y=element_text(size = 7),
+    axis.text.y = element_blank(),
+    axis.text.x =  element_text(size = 7),
+    axis.title.x = element_text(size = 7),
+    legend.text = element_text(size = 7)
+  ) 
+
+```
+
+
+In practice, there would be an initial measure of ppFEV1 prior to treatment assignment being able to have any effect.
+For simplicity, we just simulate the follow-up measures.
+The follow-up visits, where spirometry is collected after the participants have been on their treatment assignment for some time, are collected over the 12-month period.
+The follow up values are assumed to be normally distributed, $Y_{i,1:\Tau} \sim N(\mu, \Sigma)$, where $\mu_{i,j}$ is a function of time ($j=1 \dots \Tau$) and treatment status and where $\Sigma$ reflects an AR1 covariance structure for the residuals:
+
+$$
+\begin{aligned}
+\mu_{i,j} &= \mu_{i,0} + \beta_{time}[\text{time}_{j}] + \beta_{trt}[\text{trt}_i, \text{time}_j] \\
+\Sigma_{kl} &= \sigma^2 \rho^{|k-l|}
+\end{aligned}
+$$
+
+with $\beta_{time}$ creating a `r paste0(l_spec_1$b_time, " ppFEV1")` decline over the year and $\beta_{trt}$ representing the time varying treatment effects based on the simulation scenario, $\sigma =$ `r l_spec_1$sigma` and $\rho =$ `r l_spec_1$rho`.
+
+```{r, echo = F}
+
+l_spec_tmp <- copy(l_spec_1)
+l_spec_tmp$N <- 1000
+l_spec_tmp$is <- 1
+l_spec_tmp$ie <- l_spec_tmp$N
+
+```
+
+Based on a random set of `r l_spec_tmp$N` participants from the data generation process , an indicative of ppFEV1 observations under the null scenario for individuals and overall is shown in @fig-ppfev1-age-prog.
+
+```{r, echo = F}
+#| label: fig-ppfev1-age-prog
+#| fig-cap: 'Indicative progression of observed ppFEV1 by age based on simulation parameters'
+#| fig-height: 4
+#| fig-width: 6
+#| fig-pos: H
+
+
+d <- get_sim03_trial_data(l_spec_tmp)
+d[, age := age0 + t_obs]
+
+brks_y <- seq(0, 150, by = 10)
+
+ggplot(d, aes(x = age, y = y)) +
+  geom_line(aes(group = id), alpha = 0.1, lwd = 0.4) +
+  geom_point(alpha = 0.2, size= 0.5) +
+  geom_smooth(se = F, method = "gam", 
+              formula = y ~ s(x, bs = "cs"), lwd = 0.4) +
+  scale_x_continuous("Age") +
+  scale_y_continuous("Observed ppFEV1", breaks = brks_y) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    legend.box="horizontal",
+    strip.text.y.right = element_text(angle = 0,
+                                      hjust = 0,
+                                      vjust = 0.2,
+                                      size = 7),
+    axis.ticks = element_blank(),
+    strip.text.x.top = element_text(size = 7),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(color = "grey",
+                                  linewidth = 0.1,
+                                  linetype = 1),
+    axis.title.y=element_text(size = 7),
+    axis.text.y = element_text(size = 7),
+    axis.text.x =  element_text(size = 7),
+    axis.title.x = element_text(size = 7),
+    legend.text = element_text(size = 7)
+  ) 
+```
+
+Treatment status is assumed to be allocated 1:1:1, which is updated to 1:1 if a decision threshold is reached for non-inferiority or inferiority.
+The initial standard of care remains the reference group throughout and the study.
+
+Accrual is assumed to follow a non-homogenous poisson process ramping up over `r l_spec_1$ramp_up_days` days with around `r l_spec_1$pt_per_day` enrolments per day.
+
+# Modelling {#sec-modelling}
+
+## Overview
+
+The analysis approach is essentially a Bayesian equivalent of generalised least squares that estimates the mean function and an AR1 covariance matrix for the residuals.
+The outcome (observed ppFEV1) is regressed on the baseline value for ppFEV1, the log of baseline age, time, treatment assignment and a time by treatment interaction.
+By post processing the parameter estimates we compute the treatment effect at each timepoint and base decisions on the treatment effect at the 12-month followup.
+
+The model is:
+
+$$
+\begin{aligned}
+Y &\sim N(\mu, \Sigma) \\
+\mu &=  \beta_0 + \beta_1 \text{ppFEV1}_0 + \beta_2 \log(\text{age}_0) + \beta_{trt,time}[\text{trt}, \text{time}] \\
+\Sigma_{kl} &= \sigma^2 \rho^{|k-l|} \\
+\end{aligned}
+$$
+
+although when implemented, effects for treatment, time and the interaction of the two are separated.
+
+## Priors
+
+The model uses priors:
+
++ $\beta_0 \sim \text{Normal}(100, 5)$
++ $\beta \sim \text{Normal}(0, 5)$
++ $\sigma \sim \text{Exponential}(0.5)$
++ $\rho^* \sim \text{Normal}(0, 1)$
+
+and $\rho$ is derived as a transformation of the unconstrained $\rho^*$.
+
+
+# Decision procedures
+
+The decision processes are based on the available complete baseline and followup data.
+This approach is simple and offers a transparent interpretation, but it ignores the possibility that accumulating data may shift the posterior.
+The decision thresholds and evidential thresholds are shown in @tbl-dec-thresholds.
+
+```{r}
+#| echo: FALSE
+#| label: tbl-dec-thresholds
+#| tbl-pos: H
+#| tbl-cap: "Decision threshold parameters"
+
+d_dec_pars <- data.table(
+  desc = c("NI", "Inferiority"),
+  ref_value = c(l_spec_1$delta$ni, l_spec_1$delta$inf),
+  threshold = c(l_spec_1$thresh$ni, l_spec_1$thresh$inf)
+)
+
+
+gt_tbl <- gt(d_dec_pars) |>
+  cols_align(
+    columns = 1,
+    align = "left"
+  ) |>
+  cols_align(
+    columns = 2:3,
+    align = "center"
+  )  |>
+  cols_label(
+    desc = "Decision type",
+    ref_value = "Reference value",
+    threshold = "Threshold"
+  ) |>
+  tab_options(
+    table.width = pct(60),
+    table.font.size = pct(55)) 
+
+gt_tbl 
+
+```
+
+In the current implementation, we evaluate non-inferiority and inferiority at each interim and, if a decision threshold is met, then we will stop recruitment into the relevant arm.
+Standard of care remains the reference arm throughout.
+This approach is adopted for each interim and the final analysis and is reflected in the current set of results.
+
+The trial setup is such that if the intervention were beneficial, it would reduce the rate of decline for ppFEV1 and we are therefore considering negative non-inferiority margins.
+Specifically, if an intervention arm is non-inferior to the reference arm, then the follow up ppFEV1 on the intervention will be reduced by no more than the non-inferiority margin.
+Conversely, if the ppFEV1 on the intervention arm falls below the non-inferiority margin with very high probability, then we conclude inferiority.
+
++ For non-inferiority, we evaluate $\text{Pr}(\delta > \epsilon_{NI}) > \zeta_{NI}$ where $\delta$ is the relevant difference in mean ppFEV1, $\epsilon_{NI}$ and $\zeta_{NI}$ correspond to a non-inferiority margin and an evidential requirement in terms of a probability threshold.
++ For inferiority, we evaluate $\text{Pr}(\delta < \epsilon_{inf}) > \zeta_{inf}$ where $\epsilon_{inf}$ and $\zeta_{inf}$ correspond to a reference value (currently we set $\epsilon_{inf} = \epsilon_{NI}$) and an evidential minimum in terms of a probability threshold.
+
+
+# Scenarios {#sec-scenarios}
+
+Each scenario adopts a maximum sample size of 600 with interim analyses run when `r paste0(cumsum(l_spec_1$N)[-length(l_spec_1$N)], collapse = ", ")` enrolments have occurred.
+The treatment effects were specified as differences in mean ppFEV1 at the 12-month followup as shown in @scenario_list.
+
+All scenarios used fixed covariate distributions and effects over the duration of the study. 
+Additionally, all simulations used the same reference values and decision thresholds.
+
+```{r, echo = F, eval = T}
+#| label: scenario_list
+#| code-summary: Scenarios
+
+i <- 1
+d_scenarios <- data.table()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  btrt <- l[[i]]$cfg$b_trt
+  
+  d_scenarios <- rbind(
+    d_scenarios,
+    data.table(
+      id = i,
+      desc = l[[i]]$cfg$desc,
+      delta_2_1 = btrt[2,4][[1]] - btrt[1,4][[1]],
+      delta_3_1 = btrt[3,4][[1]] - btrt[1,4][[1]]
+    )
+  )
+}
+
+
+```
+
+```{r, eval = T}
+#| echo: FALSE
+#| label: tbl-scenarios
+#| tbl-pos: H
+#| tbl-cap: "Simulation scenarios"
+
+gt_tbl <- gt(d_scenarios) |>
+  cols_width(
+    id ~ pct(10),
+    desc ~ pct(50),
+    delta_2_1 ~ pct(20),
+    delta_3_1 ~ pct(20)
+  ) |>
+  cols_align(
+    columns = 1:2,
+    align = "left"
+  ) |>
+  cols_align(
+    columns = 3:4,
+    align = "center"
+  )  |>
+  tab_spanner(
+    label = md("Difference in mean ppFEV1 relative to SoC"),
+    columns = 3:4
+  ) |>
+  cols_label(
+    id = "ID",
+    desc = "Scenario",
+    delta_2_1 = "Deferred",
+    delta_3_1 = "Discontinue"
+  ) |>
+  tab_options(
+    table.width = pct(90),
+    container.width = pct(90),
+    table.font.size = pct(55)) 
+
+gt_tbl 
+```
+
+# Results
+
+
+## Probability of triggering decisions
+
+@tbl-cprob-decision provides the cumulative probability of superiority by scenario with the probability of declaring inferiority in parentheses.
+
+```{r, echo = F, eval = T}
+#| label: cum_prob_dec
+#| code-summary: Cumulative probability of each decision type
+
+# Cumulative probability of decisions:
+
+# Traverse the list of simulation results and for each one summarise the 
+# cumulative probability of each decision type.
+
+i <- 1
+d_cprob_dec <- data.table()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  # extract the decision matrix - sim, analysis, quantity, domain level decision
+  d_dec_1 <- copy(l[[i]]$d_pr_dec[par %in% c("delta_2_1", "delta_3_1")])
+  
+  # config for scenario
+  l_cfg <- copy(l[[i]]$cfg)
+  
+  # number of enrolments at each interim (interim sample size sequence)
+  d_N <- data.table(ic = seq_along(l_cfg$N), N = cumsum(l_cfg$N))
+  
+  
+  # compute the cumulative instances of a decision being made by sim, each 
+  # decision type and by parameter
+  d_dec_1[, cdec := as.integer(cumsum(dec)>0), keyby = .(sim, rule, par)]
+  d_dec_1[, cdec := nafill(cdec, type = "locf"), keyby = .(sim, rule, par)]
+  d_dec_1[, cdec := as.logical(cdec)]
+  
+  d_dec_1 <- base::merge(d_dec_1, d_N, by = "ic")
+  
+  # cumulative proportion for which each decision quantity has been met by 
+  # analysis and domain
+  d_dec_1 <- d_dec_1[, .(pr_val = mean(cdec)), keyby = .(ic, N, rule, par)]
+  
+  
+  d_cprob_dec <- rbind(
+    d_cprob_dec,
+    cbind(scenario = i, desc = l_cfg$desc, d_dec_1)
+  )
+
+}
+
+```
+
+
+```{r, eval = T}
+#| echo: FALSE
+#| label: tbl-cprob-decision
+#| tbl-cap: 'Cumulative probability of decision for each enrolment cohort'
+#| tbl-pos: H
+
+d_tbl_1_cur <- copy(d_cprob_dec)
+d_tbl_1_cur <- dcast(
+  d_tbl_1_cur, scenario + desc + par ~ rule + N, value.var = "pr_val")
+
+d_tbl_1_cur[par == "delta_2_1", par := "Deferred"]
+d_tbl_1_cur[par == "delta_3_1", par := "Discontinued"]
+
+d_b_trt <- data.table()
+
+for(i in 1:length(l)){
+  l_cfg <- copy(l[[i]]$cfg)
+  btrt <- as.matrix(l_cfg$b_trt)
+  
+  d_tmp <- data.table(scenario = i, 
+                      par = c("Deferred", "Discontinued"), 
+                      delta = c(btrt[2,l_cfg$n_sprty_obs][[1]]-btrt[1,l_cfg$n_sprty_obs][[1]], 
+                                btrt[3,l_cfg$n_sprty_obs][[1]]-btrt[1,l_cfg$n_sprty_obs][[1]]))
+  d_b_trt <- rbind(d_b_trt, d_tmp)
+}
+
+d_tbl_1_cur <- base::merge(d_tbl_1_cur, d_b_trt, by = c("scenario", "par"))
+# d_tbl_1_cur <- merge(d_tbl_1_cur, d_tbl_2_cur, by = c(
+#   "scenario", "desc", "par"
+# ))
+
+
+setcolorder(d_tbl_1_cur, c("scenario", "desc", "par", "delta"))
+setorderv(d_tbl_1_cur, cols = c("scenario"))
+
+d_tbl_1_cur <- d_tbl_1_cur[, .SD, .SDcols = !c("scenario")]
+
+g_tbl <- d_tbl_1_cur |> 
+  gt(groupname_col = "desc") |> 
+  gt::text_transform(
+    locations = cells_row_groups(),
+    fn = function(x) {
+      lapply(x, function(x) {
+        gt::md(paste0("*", x, "*"))
+      })
+    }
+  ) |>
+  cols_align(
+    columns = 1:2,
+    align = "left"
+  )  |> 
+  cols_align(
+    columns = 3:ncol(d_tbl_1_cur),
+    align = "center"
+  )  |> 
+  cols_merge(
+    columns = c("ni_500", "inf_500"
+                ),
+    pattern = "<<{1}>><< ({2})>>"
+  )   |> 
+  cols_merge(
+    columns = c("ni_600", "inf_600"
+                ),
+    pattern = "<<{1}>><< ({2})>>"
+  ) |> 
+  cols_merge(
+    columns = c("ni_700", "inf_700"
+                ),
+    pattern = "<<{1}>><< ({2})>>"
+  )   |>
+  cols_width(
+    starts_with("ni") ~ px(90)
+  ) |>
+  tab_spanner(
+    label = md("Participants having reached primary endpoint"),
+    columns = 4:ncol(d_tbl_1_cur)
+  )  |>
+  cols_label(
+    delta = "Difference in means at 12 month",
+    par = "",
+    ni_500 = html("500"),
+    ni_600 = html("600"),
+    ni_700 = html("700")
+  ) |>
+  tab_options(
+    table.font.size = pct(55),
+    latex.use_longtable = TRUE,
+    latex.header_repeat = TRUE 
+  ) |>
+  fmt_number(decimals = 2, drop_trailing_zeros = F)
+
+g_tbl
+```
+
