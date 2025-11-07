@@ -214,7 +214,7 @@ Patient level heterogeneity is assumed to be multivariate normal with standard d
 Treatment arms are assumed to have a range of small deviations at the 12 month followup relative to the standard of care group (see @sec-scenarios).
 The residual standard deviation is assumed to be `r l[[1]]$cfg$b_se`.
 
-The linear combination of terms used to simulate the outcome variable at baseline and followup is:
+For the data generation, we are modeling the outcome at each timepoint and assuming that the treatment effect manifests at 12 months and so the linear combination of terms used to simulate the outcome variable at baseline and followup is:
 
 $$
 \begin{aligned}
@@ -235,7 +235,7 @@ Taking *post*, *defer* and *discontinue* as indicator variables, we then simulat
 Treatment status was allocated 1:1:1, which is updated to 1:1 if a decision threshold is reached for non-inferiority or inferiority.
 The initial standard of care remains the reference group throughout and the trial stops once all questions are resolved or the maximum sample size of `r sum(l[[1]]$cfg$N)` reached.
 
-Accrual is assumed to follow a non-homogenous poisson process with linear ramp up over `r l[[1]]$cfg$ramp_up_days` days with around `r l[[1]]$cfg$pt_per_day` enrolments per day.
+Accrual is assumed to follow a non-homogenous poisson process ramping up over `r l[[1]]$cfg$ramp_up_days` days with around `r l[[1]]$cfg$pt_per_day` enrolments per day.
 Follow up is assumed to occur within a window of `r l[[1]]$cfg$fu_days_lwr` to `r l[[1]]$cfg$fu_days_upr` days.
 
 
