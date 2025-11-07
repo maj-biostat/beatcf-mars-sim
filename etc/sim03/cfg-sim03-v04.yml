@@ -1,0 +1,59 @@
+default:
+  desc: "Both alts below NI boundary"
+  nsim: 100
+  mc_cores: 40
+  # example trials
+  nex: 10
+  # enrolment
+  N_pt: [500, 100, 100]
+  pt_per_day: 0.57
+  ramp_up_days: 120
+  
+  # probability of missingness
+  pr_ymis: 0.1
+  
+  # trt - use relative numbers to avoid underflow - not currently used
+  trt_alloc: [1, 1, 1]
+  
+  # model parameters ppfev
+  # reference level (baseline)
+  b_0: 120
+  # backgroun temporal linearly declining over year
+  b_time: -1
+  # effect on log age
+  b_age: -14
+  # intervention x time increment (model is baseline adj so we have 
+  # effects in all cols since they all reflect post rand timepoints)
+  b_trt: 
+    - [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    - [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
+    - [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
+  
+  # details on age
+  age_mu: 2.5
+  age_sig: 0.75
+  age_lwr: 3
+  age_upr: 85
+  
+  # number of obs evenly spaced over 12 months
+  n_sprty_obs: 12
+  
+  # subject heterogeneity this is for the baseline measure
+  sigma_i: 1
+  
+  # ar1 errors
+  sigma: 5
+  rho: 0.8
+  
+  
+  # decision reference values
+  dec_delta_ni: -0.75
+  dec_delta_inf: -0.75
+  # decision probability thresholds
+  dec_thresh_ni: 0.95
+  dec_thresh_inf: 0.70
+    
+
+    
+
+
