@@ -235,6 +235,17 @@ run_trial <- function(
     }
     
     d_post_long <- melt(d_post, measure.vars = names(d_post), variable.name = "par")
+    
+    # d_fig_1 <- melt(d_tmp[, c("b[2]", "b[3]")])
+    # ggplot(
+    #   data = d_post_long[par %in% c("delta_2_1", "delta_3_1")],
+    #   aes(x = value, group = par)
+    # ) + 
+    #   geom_density() +
+    #   geom_density(
+    #     data = d_fig_1,
+    #     aes(x = value, group = variable), col = 2, lty = 2
+    #   )
 
     # merge posterior summaries for current interim
     d_post_smry_1[
