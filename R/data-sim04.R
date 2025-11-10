@@ -52,8 +52,15 @@ get_sim04_trial_data <- function(
   )
   d <- d[d_i, on = "id"]
   
-  # build basis
-  for (k in seq_len(nrow(l_spec$basis_ix_seg))) {
+  # Build basis
+  # Should generalise this but haven't got around to it. 
+  # Trying to make the basis such that it is easy to enter the treatment
+  # effects. At the moment it works for observation at every month 1:12 inclusive
+  # with four segments. So, for example, we have a linear slope that covers month
+  # 1 to 3 inclusive, then from 3 to 6, 6 to 9 and 9 to 12. 
+  n_pw_seg <- nrow(l_spec$basis_ix_seg)
+  k <- 1
+  for (k in 1:n_pw_seg) {
     # within-interval linear ramp scaled to [0,1]
     start <- l_spec$basis_ix_seg[k, 1]
     end   <- l_spec$basis_ix_seg[k, 2]
@@ -110,30 +117,6 @@ get_sim04_trial_data <- function(
 
 
 
-
-
-get_sim04_stan_data <- function(d_mod){
-  
-  # mean centre pre so that the intercept makes a bit more sense.
-  dd <- copy(d_mod)
-  dd[, trt := factor(trt)]
-  
-  X <- model.matrix(~y_pre + trt, data = dd)
-  
-  ld <- list(
-    N = nrow(dd),
-    y = dd$y_post,
-    Kx = ncol(X) - 1,
-    X = X[, 2:ncol(X)],
-    prior_only = 0
-  )
-  
-  list(
-    dd = dd,
-    ld = ld
-  )
-  
-}
 
 get_sim04_prototype_cfg <- function(){
   
@@ -470,105 +453,4 @@ prototype_1_data <- function(){
 }
 
 
-plot_1 <- function(d){
-  
-  # d[, .(mu = mean(y)), keyby = .(trt, t_obs)]
-  # min_y <- min(floor(d$y))
-  # max_y <- max(ceiling(d$y))
-  
-  d_fig <- copy(d)
-  d_fig[, trt := as.numeric(trt)]
-  d_fig[, t_obs := as.numeric(t_obs)]
-  
-  d_fig[, age_cat := cut(age0, breaks  = c(0, 0.1, 0.2, 0.3, 0.5, 0.8))]
-  d_fig[, age := age0 + t_obs]
-  
-  rnd_id <- sample(unique(d$id), size = 50)
-  p1 <- ggplot(d_fig[id %in% rnd_id], aes(x = t_obs, y = y)) +
-    geom_line(aes(group = id), lwd = 0.2) +
-    geom_point(size = 0.5) +
-    # scale_x_continuous(lim = c(0, 90), breaks = seq(0, 90, by = 5)) +
-    # scale_y_continuous(lim = c(25, 130), breaks = seq(25, 125, by = 25)) +
-    ggh4x::facet_wrap2(~trt, ncol = 3)
-  #
-  
-  p2 <- ggplot(d_fig, aes(x = age, y = y)) +
-    geom_line(aes(group = id), lwd = 0.2) +
-    # scale_x_continuous(lim = c(0, 90), breaks = seq(0, 90, by = 5)) +
-    # scale_y_continuous(lim = c(25, 130), breaks = seq(25, 125, by = 25)) +
-    ggh4x::facet_wrap2(~trt, ncol = 1)
-  #
-  p2 + p1
-  #
-  
-  
-}
 
-tmp <- function(){
-  
-  library(data.table)
-  
-  #--- Define design parameters ---
-  set.seed(123)
-  N <- 30                # number of subjects
-  K <- 3                 # number of time segments (=> 3 basis functions)
-  time_points <- 0:12    # months (0 = baseline, 12 = primary endpoint)
-  
-  # Treatment groups: 0 = immediate, 1 = delayed, 2 = early finish
-  trt_levels <- c("immediate", "delayed", "early_finish")
-  
-  #--- Create participant-level data ---
-  d <- data.table(id = 1:N)
-  d[, trt := sample(trt_levels, .N, replace = TRUE)]
-  d[, a := rnorm(.N, mean = 90, sd = 5)]  # baseline FEV1 (in % predicted)
-  
-  #--- Expand to all time points ---
-  d <- d[, .(time = time_points), by = .(id, trt, a)]
-  
-  #--- Create piecewise linear basis functions ---
-  # breakpoints at 3, 6, 12 months for simplicity
-  breaks <- c(0, 3, 6, 12)
-  make_basis <- function(t, breaks) {
-    K <- length(breaks) - 1
-    B <- matrix(0, nrow = length(t), ncol = K)
-    for (k in seq_len(K)) {
-      # Linear increase within each interval, 0 before, capped after
-      B[, k] <- pmax(pmin(t - breaks[k], breaks[k+1] - breaks[k]), 0)
-    }
-    B
-  }
-  
-  B <- make_basis(d$time, breaks)
-  colnames(B) <- paste0("B", 1:K)
-  d <- cbind(d, B)
-  
-  #--- Define coefficients ---
-  beta_0  <- 85
-  beta_B  <- 0.4
-  beta_t  <- c(0.5, 0.2, -0.1)                # baseline time slopes
-  beta_T  <- c(-1.0, -2.0)                    # mean offsets: delayed, early_finish
-  beta_int <- matrix(c(  # interaction deviations per segment
-    0.3,  0.1,  0.0,     # delayed
-    -0.2, -0.1,  0.0      # early_finish
-  ), nrow = 2, byrow = TRUE)
-  
-  #--- Encode treatment indicators ---
-  d[, T1 := as.integer(trt == "delayed")]
-  d[, T2 := as.integer(trt == "early_finish")]
-  
-  #--- Compute linear predictor (mean FEV1) ---
-  d[, mu :=
-      beta_0 +
-      beta_B * a +
-      (beta_t[1] * B1 + beta_t[2] * B2 + beta_t[3] * B3) +
-      (beta_T[1] * T1 + beta_T[2] * T2) +
-      (T1 * (beta_int[1,1]*B1 + beta_int[1,2]*B2 + beta_int[1,3]*B3)) +
-      (T2 * (beta_int[2,1]*B1 + beta_int[2,2]*B2 + beta_int[2,3]*B3))
-  ]
-  
-  #--- Inspect the mean structure ---
-  d[order(id, time)][, .(id, trt, time, a, mu)][1:20]
-  
-  # end
-  
-}

@@ -1,5 +1,5 @@
 default:
-  desc: "ppFEV1 equal in all"
+  desc: "ppFEV1 below NI boundary for trt2 and trt3"
   nsim: 1000
   mc_cores: 40
   # example trials
@@ -45,8 +45,8 @@ default:
   b_t: [-2/11, -3/11, -3/11, -3/11]
   b_T: [0, 0]
   b_tT:
-    - [0, 0, 0, 0]
-    - [0, 0, 0, 0]
+    - [0, -0.6, -0.8, -0.6]
+    - [0, -0.4, -0.6, -0.4]
   
   # variability on baseline (well state) measure.
   sigma_mu0: 3

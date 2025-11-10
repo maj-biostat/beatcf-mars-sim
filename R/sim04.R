@@ -181,6 +181,17 @@ run_trial <- function(
     
     # use gls and a laplace approx
     
+    # X <- model.matrix(~ y0  + log(age0) + 
+    #                # time trend
+    #                B1 + B2 + B3 + B4 +
+    #                # trt
+    #                T2 + T3 +
+    #                # trt x time
+    #                B1:T2 + B2:T2 + B3:T2 + B4:T2 +
+    #                B1:T3 + B2:T3 + B3:T3 + B4:T3, data = d_mod)
+    # X[1:15, ]
+    # X[13:35, ]
+    
     f_1 <- nlme::gls(
       y ~ y0  + log(age0) + 
         # time trend
@@ -193,7 +204,27 @@ run_trial <- function(
       correlation = nlme::corAR1(form = ~ 1 | id),
       data = d_mod)
     
-    
+    # d_trt1 <- d_mod[trt == 1, .(t_id, B1, B2, B3, B4, T2, T3)]
+    # d_trt1 <- unique(d_trt1)
+    # d_trt1[, `:=`(desc = "trt1", y0 = mean(d_mod$y0), age0 = mean(d_mod$age0))]
+    # d_trt1[, pred := predict(f_1, newdata = d_trt1)]
+    # 
+    # d_trt2 <- d_mod[trt == 2, .(t_id, B1, B2, B3, B4, T2, T3)]
+    # d_trt2 <- unique(d_trt2)
+    # d_trt2[, `:=`(desc = "trt2", y0 = mean(d_mod$y0), age0 = mean(d_mod$age0))]
+    # d_trt2[, pred := predict(f_1, newdata = d_trt2)]
+    # 
+    # d_trt3 <- d_mod[trt == 3, .(t_id, B1, B2, B3, B4, T2, T3)]
+    # d_trt3 <- unique(d_trt3)
+    # d_trt3[, `:=`(desc = "trt3", y0 = mean(d_mod$y0), age0 = mean(d_mod$age0))]
+    # d_trt3[, pred := predict(f_1, newdata = d_trt3)]
+    # 
+    # d_fig <- rbind(d_trt1, d_trt2, d_trt3)
+    # ggplot(d_fig, aes(x = t_id, y = pred, col = desc)) +
+    #   geom_line() +
+    #   scale_x_continuous(breaks = 1:12) +
+    #   theme(legend.position = "bottom")
+    #
     
     mu <- coef(f_1)
     names(mu)[1] <- g_par[1]
@@ -203,7 +234,7 @@ run_trial <- function(
     
     # draw from multivariate normal on all parameters
     d_post <- data.table(
-      rmvnorm(1e5, mu, sigma = S)
+      rmvnorm(1e4, mu, sigma = S)
     )
     # isolate treatment effects of interest for convenience
     d_post[, `:=`(

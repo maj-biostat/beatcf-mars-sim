@@ -1,5 +1,5 @@
 default:
-  desc: "ppFEV1 equal in all"
+  desc: "ppFEV1 at NI boundary for trt2 and trt3"
   nsim: 1000
   mc_cores: 40
   # example trials
@@ -43,10 +43,11 @@ default:
   # e.g. by 6 months fev has dropped by 2/11 + 3/11 = 5/11
   # e.g. by 9 months fev has dropped by 2/11 + 3/11 + 3/11 = 8/11
   b_t: [-2/11, -3/11, -3/11, -3/11]
+  # cumulative effects by trt arm
   b_T: [0, 0]
   b_tT:
-    - [0, 0, 0, 0]
-    - [0, 0, 0, 0]
+    - [0, -0.3, -0.4, -0.3]
+    - [0, -0.3, -0.4, -0.3]
   
   # variability on baseline (well state) measure.
   sigma_mu0: 3

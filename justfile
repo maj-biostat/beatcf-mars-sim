@@ -59,6 +59,9 @@ sim04 cfg:
 
 runsim04:
   just sim04 ../etc/sim04/cfg-sim04-v01.yml
+  just sim04 ../etc/sim04/cfg-sim04-v02.yml
+  just sim04 ../etc/sim04/cfg-sim04-v03.yml
+  just sim04 ../etc/sim04/cfg-sim04-v04.yml
   
 report rep:
   quarto render reports/{{rep}} --to pdf
