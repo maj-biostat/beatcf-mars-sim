@@ -302,7 +302,7 @@ run_trial <- function(
       )
       
       f_2 <- nlme::gls(y ~ y0_std + log(age0) + t_id*trt, d_mod,
-                         correlation = nlme::corAR1(form = ~ as.numeric(t_id) | id))
+                         correlation = nlme::corAR1(form = ~ 1 | id))
       s <- summary(f_2)
       
       d_tmp <- data.table(par = rownames(s$tTable), value = s$coef, confint(f_2))
@@ -326,33 +326,6 @@ run_trial <- function(
     }
     
     d_post_long <- melt(d_post, measure.vars = names(d_post), variable.name = "par")
-    
-    # f_2 <- gamm(y ~ y0_std + log(age0) + t_id * trt,
-    #             random = list(id = ~ 1),
-    #             correlation = corAR1(form = ~ as.numeric(t_id) | id),
-    #             data = d_mod, method = "REML")
-    
-    # summary(f_2$gam)
-    # summary(f_2$lme)   
-    
-    # d_new <- data.table(t_id = factor(12), 
-    #                     trt = factor(1), 
-    #                     y0_std = mean(d_mod$y0_std), 
-    #                     age0 = mean(d_mod$age0))
-    # pred_1 <- predict(f_2$gam, d_new, se.fit = TRUE)
-    # d_new$trt <- factor(2)
-    # pred_2 <- predict(f_2$gam, d_new, se.fit = TRUE)
-    # d_new$trt <- factor(3)
-    # pred_3 <- predict(f_2$gam, d_new, se.fit = TRUE)
-    # 
-    # delta_2_1_est <- pred_2$fit - pred_1$fit
-    # delta_2_1_se  <- sqrt(pred_1$se.fit^2 + pred_2$se.fit^2)
-    # 
-    # delta_3_1_est <- pred_3$fit - pred_1$fit
-    # delta_3_1_se  <- sqrt(pred_1$se.fit^2 + pred_3$se.fit^2)
-    # 
-    # d_post_long[, .(mu = mean(value)), keyby = par]
-    # c(delta_2_1_est, delta_3_1_est)
     
     # merge posterior summaries for current interim
     d_post_smry_1[
