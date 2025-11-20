@@ -226,6 +226,7 @@ run_trial <- function(
     #   theme(legend.position = "bottom")
     #
     
+    
     mu <- coef(f_1)
     names(mu)[1] <- g_par[1]
     S <- vcov(f_1)
