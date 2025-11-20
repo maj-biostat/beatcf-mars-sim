@@ -107,7 +107,7 @@ run_trial <- function(
   d_post_smry_1[, q_975 := NA_real_]
   
   # decisions 
-  g_rule_type <- c("ni",  "inf")
+  g_rule_type <- c("ni",  "fut")
   
   d_pr_dec <- CJ(
     ic = 1:N_analys,
@@ -226,7 +226,6 @@ run_trial <- function(
     #   theme(legend.position = "bottom")
     #
     
-    
     mu <- coef(f_1)
     names(mu)[1] <- g_par[1]
     S <- vcov(f_1)
@@ -299,9 +298,9 @@ run_trial <- function(
         ), keyby = par],
         d_post_long[par %in% g_par_delta, .(
           ic = l_spec$ic,
-          rule = factor("inf", levels = g_rule_type),
-          p = mean(value < l_spec$delta$inf),
-          dec = as.integer(mean(value < l_spec$delta$inf) > l_spec$thresh$inf)
+          rule = factor("fut", levels = g_rule_type),
+          p = mean(value < l_spec$delta$fut),
+          dec = as.integer(mean(value < l_spec$delta$fut) > l_spec$thresh$fut)
         ), keyby = par]
       ),
       
@@ -313,7 +312,7 @@ run_trial <- function(
     
     # For trial stopping we only consider the comparisons to the
     # soc. In order to stop the study both need to have been resolved (either 
-    # NI or inferiority have been concluded).
+    # NI or futility have been concluded).
     d_stop <- d_pr_dec[
       ic <= l_spec$ic & par %in% c(g_par_delta),
       .(resolved = as.integer(sum(dec) > 0)), keyby = .(par)]
@@ -432,12 +431,12 @@ run_sim04 <- function(){
   # decision hurdle
   l_spec$delta <- list()
   l_spec$delta$ni <- g_cfgsc$dec_delta_ni
-  l_spec$delta$inf <- g_cfgsc$dec_delta_inf
+  l_spec$delta$fut <- g_cfgsc$dec_delta_fut
   
   # evidentiary requirement
   l_spec$thresh <- list()
   l_spec$thresh$ni <- unlist(g_cfgsc$dec_thresh_ni)
-  l_spec$thresh$inf <- unlist(g_cfgsc$dec_thresh_inf)
+  l_spec$thresh$fut <- unlist(g_cfgsc$dec_thresh_fut)
   
   if(l_spec$nex > 0){
     log_info("Creating ", l_spec$nex, " example trials with full posterior")
