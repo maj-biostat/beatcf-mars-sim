@@ -1,13 +1,13 @@
-library(data.table)
-library(mvtnorm)
+suppressWarnings(library(data.table))
+suppressWarnings(library(mvtnorm))
 # for weibullph
-library(flexsurv)
-library(ggplot2)
-library(INLAjoint)
-library(pbapply)
-library(lobstr)
+suppressWarnings(library(flexsurv))
+suppressWarnings(library(ggplot2))
+suppressWarnings(library(INLAjoint))
+suppressWarnings(library(pbapply))
+suppressWarnings(library(lobstr))
 
-library(patchwork)
+suppressWarnings(library(patchwork))
 
 # todo 
 # review betancourt warping paper etc
@@ -15,9 +15,16 @@ library(patchwork)
 
 
 # Baseline ppfev with option for subject level heterogeneity
-ppfev_0 <- function(age, A = 123, k = 0.4, p = 0.3, sd_ppfev = 3) {
-  A * exp(-k * age^p) + rnorm(length(age), 0, sd_ppfev)
+# ppfev_0 <- function(age, A = 123, k = 0.4, p = 0.3, sd_ppfev = 3) {
+#   A * exp(-k * age^p) + rnorm(length(age), 0, sd_ppfev)
+# }
+
+# Baseline ppfev with option for subject level heterogeneity
+ppfev_0 <- function(age, age_min = 10, ppfev0_max = 100, k = 0.1, p = 0.5, sd_ppfev = 0) {
+  ppfev0_max * exp(-k * (age-age_min)^p) + rnorm(length(age), 0, sd_ppfev)
 }
+
+
 
 
 # age_mean_log = log(35)
@@ -48,19 +55,7 @@ get_sim12_pt <- function(
   # probably should include sex in this...?
   age <- rlnorm(1, meanlog = log(l_spec$age_mean), sdlog = l_spec$age_sd)
   age <- pmin(pmax(age, l_spec$age_min), l_spec$age_max)
-  ppfev_baseline <- (ppfev_0(age) - l_spec$ppfev_ref) / l_spec$ppfev_increment
-  
-  # assume (perhaps dubiously) that the frailties are not correlated. 
-  # g_a <- 10
-  # g_r <- 10
-  # hist(rgamma(1e3, shape = g_a, rate = g_r))
-  # mean(rgamma(1e3, shape = g_a, rate = g_r))
-  
-  # sigmas <- c(l_spec$sd_he, l_spec$sd_eh)
-  # s <- diag(sigmas)
-  # r <- matrix(c(1, l_spec$rho_frailty, l_spec$rho_frailty, 1), nrow = 2)
-  # Sigma <- s %*% r %*% s
-  # frailties <- mvtnorm::rmvnorm(1, mean = c(0, 0), sigma = Sigma)
+  ppfev_baseline <- (ppfev_0(age, sd_ppfev = 3) - l_spec$ppfev_ref) / l_spec$ppfev_increment
   
   # indep gamma frailty but with same param values for each transition
   u_he <- rgamma(1, shape = l_spec$g_a, rate = l_spec$g_r)
@@ -72,9 +67,7 @@ get_sim12_pt <- function(
   states_list <- list()
   exac_count  <- 0
   
-  names(l_spec$b_trt) <- c("soc","delay","defer")
-  
-  
+  names(l_spec$b_trt) <- l_spec$trt_lab
   
   while (t < l_spec$followup) {
     
@@ -105,7 +98,7 @@ get_sim12_pt <- function(
       exac_count <- exac_count + 1
       
       # we randomise treatment at the start of the exacerbation we just hit
-      trt_options <- c("soc", "delay", "defer")[l_spec$trt_active]
+      trt_options <- l_spec$trt_lab[l_spec$trt_active]
       
       trt <- sample(trt_options,1)
       # and then compute the recovery time on that basis
@@ -1137,7 +1130,7 @@ contrast_trajectory <- function(
 
 
 
-weibullPH_stats <- function(shape_ph, scale_ph){
+weibullPH_stats <- function(shape_ph, scale_ph, tau = 25){
   # aft scale
   aft_lambda <- scale_ph^(-1/shape_ph)
   # aft shape
@@ -1148,7 +1141,17 @@ weibullPH_stats <- function(shape_ph, scale_ph){
   w_mu <- aft_lambda * gamma(1 + (1/aft_k))
   # variance
   w_sd <- sqrt((aft_lambda^2)*(gamma(1 + 2/aft_k) - (gamma(1 + 1/aft_k))^2))
-  c(median = w_med, mean = w_mu, sd = w_sd)
+  
+  SweibullPH <- function(x, shape_ph, scale_ph){
+    1-flexsurv::pweibullPH(x, shape_ph, scale_ph)
+  }
+  
+  # plot(0:365, SweibullPH(0:365, shape_ph, scale_ph))
+  
+  rmst <- integrate(SweibullPH, 0, tau, shape_ph = shape_ph, scale_ph = scale_ph)
+  
+  
+  c(median = w_med, mean = w_mu, sd = w_sd, rmst = rmst$value)
 }
 
 example_stan_2 <- function(){
@@ -1158,9 +1161,10 @@ example_stan_2 <- function(){
   
   l_spec <- get_demo_spec()
   
-  l_spec$shape_he <- 2.9 # originally 1.1
-  l_spec$mu_exacerb <- -16 # originally  -4.5
-  weibullPH_stats(l_spec$shape_he, exp(l_spec$mu_exacerb))
+  l_spec$shape_he <- 2.85 # originally 1.1
+  l_spec$mu_exacerb <- -16.1 # originally  -4.5
+  weibullPH_stats(
+    shape_ph = l_spec$shape_he, scale_ph = exp(l_spec$mu_exacerb), tau = 365)
 
   y_he <- flexsurv::rweibullPH(
     1e4, l_spec$shape_he, scale = exp(l_spec$mu_exacerb)
@@ -1170,7 +1174,22 @@ example_stan_2 <- function(){
   
   l_spec$shape_eh <- 2.75  # originally 0.9 
   l_spec$mu_recov <- -6.5  # originally -0.5
-  weibullPH_stats(l_spec$shape_eh, exp(l_spec$mu_recov))
+  (res_1 <- weibullPH_stats(
+    shape_ph = l_spec$shape_eh, scale_ph = exp(l_spec$mu_recov), tau = 25))
+  
+  log_hr <- seq(0.12,0.15, len = 100)
+  delta <- numeric(100)
+  for(ii in seq_along(log_hr)){
+    (res_2 <- weibullPH_stats(
+      shape_ph = l_spec$shape_eh, scale_ph = exp(l_spec$mu_recov - log_hr[ii]), tau = 25))
+    delta[ii] <- res_2["rmst"] - res_1["rmst"]
+  }
+  names(delta) <- paste0(log_hr)
+  delta
+  
+  (res_2 <- weibullPH_stats(
+    shape_ph = l_spec$shape_eh, scale_ph = exp(l_spec$mu_recov - 0.14168), tau = 25))
+  res_2["rmst"] - res_1["rmst"]
   
   y_eh <- flexsurv::rweibullPH(
     1e4, l_spec$shape_eh, scale = exp(l_spec$mu_recov)
@@ -1187,11 +1206,20 @@ example_stan_2 <- function(){
   
   
   d_cohort <- get_sim12_cohort(l_spec)
-  d_cohort[, .N, keyby  = id][, .(min = min(N), max = max(N))]
-  id_no_pex <- d_cohort[, .N, keyby = id][N == 1, id]
-  d_tbl <- dcast(d_cohort[, .N, keyby  = .(id, state)], id ~ state, value.var = "N")
-  d_tbl[is.na(E), E := 0]
-  d_tbl
+  
+  d_tbl <- d_cohort[, .N, by = .(id, state)]
+  all_ids <- unique(d_cohort$id); all_states <- c("H", "E")
+  
+  d_grid <- CJ(id = all_ids, state = all_states)
+  d_tbl_full <- d_tbl[d_grid, on = .(id, state)]
+  d_tbl_full[is.na(N), N := 0]
+  # if a pt has one exacerbation but is censored (ie we never see the 
+  # recovery time because it exceeds fu) then the below summary will show
+  # a min of 1 for both E and H
+  table(d_tbl_full$state, d_tbl_full$N)
+  
+  
+  
   
   hist(d_tbl$E)
   hist(d_tbl$H)
@@ -1643,8 +1671,7 @@ get_demo_spec <- function(){
   l_spec$sd_he <- 0.3
   l_spec$sd_eh <- 0.3 
   l_spec$rho_frailty <- -0.4
-  l_spec$shape_he <- 2.9 # originally 1.1
-  l_spec$shape_eh <- 2.75  # originally 0.9 
+  
   l_spec$ppfev_ref <- 77.5
   l_spec$ppfev_increment <- 10
   
@@ -1652,14 +1679,15 @@ get_demo_spec <- function(){
   l_spec$g_a <- 10
   l_spec$g_r <- 10
   
-  
   # linear predictor exacerbation
-  l_spec$mu_exacerb <- -16 # originally  -4.5
+  l_spec$mu_exacerb <- -16.1 # originally  -4.5
   # applied to (ppfev_baseline - reference value) / increment
   # so that at zero the linear predictor relates to the reference value 
   # and a unit change corresponds relates to a 10% increment in ppfev
   # so here the log-hazard decreases for every 10% increment in ppfev
   l_spec$b_ppfev_exacerb <- -0.2
+  l_spec$shape_he <- 2.9 # originally 1.1
+  
   # linear predictor recovery
   l_spec$mu_recov <- -6.5  # originally -0.5
   # as above but the log-hazard increases for every 10% increment in ppfev
@@ -1667,7 +1695,11 @@ get_demo_spec <- function(){
   l_spec$b_ppfev_recov <- 0.1
   # trt is c("soc","delay","defer")
   l_spec$b_trt <- c(0, -0.3, -0.2)
+  l_spec$shape_eh <- 2.75  # originally 0.9 
   
+  l_spec$trt_lab <- c("soc","delay","defer")
+  l_spec$trt_active <- c(1, 1, 1)
+  names(l_spec$trt_active) <- l_spec$trt_lab
   
   l_spec$is <- 1 
   l_spec$ie <- sum(l_spec$N_pt)

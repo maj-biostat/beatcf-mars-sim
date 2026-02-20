@@ -10,4 +10,3 @@ get_enrol_time <- function(N = 2500, lambda = 1.52,
 }
 
 
-

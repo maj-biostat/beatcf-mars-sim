@@ -36,6 +36,10 @@ suppressPackageStartupMessages(library(mvtnorm))
 
 suppressPackageStartupMessages(library(mgcv))
 suppressPackageStartupMessages(library(nlme))
+suppressPackageStartupMessages(library(INLA))
+
+
+library(DiagrammeR)
 
 # install.packages(
 #   c(
