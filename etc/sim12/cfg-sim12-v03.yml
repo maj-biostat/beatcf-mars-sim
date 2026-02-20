@@ -1,0 +1,69 @@
+default:
+  desc: "Treatments decrease recovery below NI"
+  nsim: 50
+  mc_cores: 40
+  
+  # example trials
+  nex: 5
+  # enrolment
+  N_pt: [400, 100, 100]
+  pt_per_day: 0.57
+  ramp_up_days: 120
+  
+  followup: 365
+  rmst_eh_horizon: 25
+  
+  # probability of missingness
+  pr_ymis: 0.1
+  
+  # take log of mean before use in rlnorm
+  age_mean: 35
+  # use as is:
+  age_sd: 0.4
+  age_min: 10
+  age_max: 60
+  # used to scale ppfev at baseline so that parameters are 
+  # per 10% increment
+  ppfev_increment: 10
+
+  # frailty parameters to link recurrences
+  sd_he: 0.3
+  sd_eh: 0.3 
+  rho_frailty: -0.4
+  # alt indep gamma frailty
+  g_a: 10
+  g_r: 10
+  
+  ppfev_ref: 77.5
+  
+  # linear predictor exacerbation
+  
+  # exacerbation -> healthy
+  # linear predictor recovery
+  mu_recov: -6.5  # originally -0.5
+  
+  # trt is c("soc","delay","defer")
+  b_trt: [0, -0.3, -0.3]
+  
+  
+  b_ppfev_recov: 0.1
+  shape_eh: 2.75  # originally 0.9 
+  
+  # healthy -> exacerbation
+  mu_exacerb: -16.1 # originally  -4.5
+  b_ppfev_exacerb: -0.2
+  shape_he: 2.85 # originally 1.1
+  
+  
+  trt_active: [1, 1, 1]
+  trt_lab: ["soc", "delay", "defer"]
+  
+  # decision reference values - 
+  # will not tolerate rmst in the intervention arms being more than 
+  # dec_delta_ni than the soc group
+  dec_delta_ni: 0.5
+  
+  # decision probability thresholds 
+  dec_thresh_ni: 0.98
+  dec_thresh_fut: 0.60
+    
