@@ -29,8 +29,9 @@ f_cfgsc <- file.path("./etc", args[2])
 l_spec <- config::get(file = f_cfgsc)
 stopifnot("Config is null" = !is.null(l_spec))
 
-ix <- 1
 
+ix <- 1
+m1 <- cmdstanr::cmdstan_model("stan/sim12-v03.stan")
 
 output_dir_mcmc <- paste0(getwd(), "/tmp")
 
@@ -90,32 +91,35 @@ run_trial <- function(
   N_analys <- length(l_spec$N_pt)
   
   
-  # # posterior summaries
-  # g_par <- c("b0", "y0", "log(age0)", "B1", "B2", "B3", "B4", "T2", 
-  #            "T3", "B1:T2", "B2:T2", "B3:T2", "B4:T2", "B1:T3", "B2:T3", "B3:T3", 
-  #            "B4:T3", "delta_2_1", "delta_3_1")
-  # g_par_delta <- c("delta_2_1", "delta_3_1")
-  #   
-  # d_post_smry_1 <- CJ(
-  #   ic = 1:N_analys,
-  #   par = factor(c(g_par), levels = c(g_par))
-  # )
-  # d_post_smry_1[, mu := NA_real_]
-  # d_post_smry_1[, med := NA_real_]
-  # d_post_smry_1[, se := NA_real_]
-  # d_post_smry_1[, q_025 := NA_real_]
-  # d_post_smry_1[, q_975 := NA_real_]
+  # rmst
+  d_post_smry_1 <- CJ(
+    ic = 1:N_analys,
+    trt = l_spec$trt_lab
+  )
+  d_post_smry_1[, rmst_mu := NA_real_]
+  d_post_smry_1[, rmst_lo := NA_real_]
+  d_post_smry_1[, rmst_hi := NA_real_]
+  
+  # total duration in exacerbation and number of exac
+  d_post_smry_2 <- CJ(
+    ic = 1:N_analys,
+    trt = l_spec$trt_lab
+  )
+  d_post_smry_2[, tot_t_mu := NA_real_]
+  d_post_smry_2[, tot_t_lo := NA_real_]
+  d_post_smry_2[, tot_t_hi := NA_real_]
+  d_post_smry_2[, n_exac_mu := NA_real_]
+  d_post_smry_2[, n_exac_lo := NA_real_]
+  d_post_smry_2[, n_exac_hi := NA_real_]
   
   # decisions 
-  # g_rule_type <- c("ni",  "fut")
-  # 
-  # d_pr_dec <- CJ(
-  #   ic = 1:N_analys,
-  #   rule = factor(g_rule_type),
-  #   par = factor(g_par_delta),
-  #   p = NA_real_,
-  #   dec = NA_integer_
-  # )
+  d_pr_dec <- CJ(
+    ic = 1:N_analys,
+    rule = c("ni", "fut"),
+    trt = c("delay", "defer"),
+    p = NA_real_,
+    dec = NA_integer_
+  )
   
   # store all simulated trial pt data
   d_all <- data.table()
@@ -153,8 +157,9 @@ run_trial <- function(
     d_all <- rbind(d_all, d)
     
     if(l_spec$ie == sum(l_spec$N_pt)){
+      
       log_info("Trial ", ix, " final analysis, using all pt")
-      t_now <- d_all[, max(t_fu)]
+      t_now <- d_all[, max(t0 + l_spec$followup)]
       
       l_mod <- get_sim12_stan_data(d_all)
       
@@ -168,188 +173,212 @@ run_trial <- function(
       # progression of fev1 up to their latest visit. mfit also uses this 
       # perspective basically including pt if they have been on trt for at 
       # least 4 weeks.
-      incl_ids <- d_all[t0 + 365 < t_now, id]
+      incl_ids <- d_all[t0 + l_spec$followup < t_now, id]
       
       l_mod <- get_sim12_stan_data(d_all[id %in% incl_ids])
       
-      
     }
     
-    # see help on msm2Surv and (jackson paper on multistate to see data structure
-    # requirements)
-    # d_tmp <- melt(d_all[, .(id, age, start, stop, trt, state)], id.vars = c("id", "age", "trt", "state"))
-    # d_tmp <- d_tmp[variable == "start"]
-    # # state needs to be numeric/factor
-    # d_tmp[, state := factor(state)]
-    # permitted transitions (diag ignored)
-    # Q <- rbind(c(1, 1), 
-    #            c(1, 1))
-    # 
-    # msm::msm2Surv(
-    #   data = d_tmp, 
-    #   subject = "id", 
-    #   time = "value", 
-    #   state= "state",
-    #   covs = c("trt", "age"),
-    #   Q=Q)
+    # laplace approx
+    f_2_1_optim <- m1$optimize(data = l_mod$ld_eh, jacobian = TRUE, refresh = 0)
+    f_2_1 <- m1$laplace(data = l_mod$ld_eh, mode = f_2_1_optim, draws = 2000, refresh = 0)
+    # f_2_1$summary(variables = c("shape", "b_0", "b", "u_a"))
     
-    f1 <- joint(
-      formSurv =
-        list(
-          inla.surv(time = gap_time, event = evt_he) ~ ppfev_std + (1 | id),
-          inla.surv(time = gap_time, event = evt_eh) ~ ppfev_std + trt + (1 | id)
-        ),
-      basRisk= "weibullsurv", id = "id", dataSurv = d_mod, control= list(config=TRUE)
+    f_2_2_optim <- m1$optimize(data = l_mod$ld_he, jacobian = TRUE, refresh = 0)
+    f_2_2 <- m1$laplace(data = l_mod$ld_he, mode = f_2_2_optim, draws = 2000, refresh = 0)
+    # f_2_2$summary(variables = c("shape", "b_0", "b", "u_a"))
+    
+    
+    # extract posterior draws
+    d_post_eh <- data.table(
+      f_2_1$draws(
+        format = "matrix", 
+        variables = c("shape", "b_0", "b", "u_a"))
     )
     
-    d_smry <- rbind(
-      cbind(
-        model = "S1",
-        parameter = rownames(summary(f1)$SurvEff[[1]]),
-        data.table(summary(f1)$SurvEff[[1]], hr = T)
-      ),
-      cbind(
-        model = "S1",
-        parameter = rownames(summary(f1)$ReffListS[[1]]),
-        data.table(summary(f1)$ReffListS[[1]])
-      ),
-      cbind(
-        model = "S2",
-        parameter = rownames(summary(f1)$SurvEff[[2]]),
-        data.table(summary(f1)$SurvEff[[2]], hr = T)
-      ),
-      cbind(
-        model = "S2",
-        parameter = rownames(summary(f1)$ReffListS[[2]]),
-        data.table(summary(f1)$ReffListS[[2]])
-      ),
-      fill = T
+    po_eh_shape <- d_post_eh$shape
+    po_eh_b_0 <- d_post_eh$b_0
+    po_eh_b_ppfev <- d_post_eh$`b[1]`
+    po_eh_b_delay <- d_post_eh$`b[2]`
+    po_eh_b_defer <- d_post_eh$`b[3`
+    po_eh_u_a <- d_post_eh$u_a
+    
+    d_post_he <- data.table(
+      f_2_2$draws(
+        format = "matrix", 
+        variables = c("shape", "b_0", "b", "u_a"))
     )
     
+    po_he_shape <- d_post_he$shape
+    po_he_b_0 <- d_post_he$b_0
+    po_he_b_ppfev <- d_post_he$`b[1]`
+    po_he_u_a <- d_post_he$u_a
     
-    l_draws <- inla.posterior.sample(1e3, f1)
-    l_draws[[1]]$hyperpar
-    l_draws[[2]]$hyperpar
-    l_draws[[3]]$hyperpar
-    l_draws[[4]]$hyperpar
-    
-    # state transition probabilities
-    
-    # difference in probability of recovery by day 14 
-    
-    # predict for entire cohort probability of recovery at day 14 assuming assigned to each trt group
-    # compute mean and difference between mean probability of recovery.
-    
-    # for B draws from the posterior, compute prob of recov at day 14 for each pt then take expectation
-    # over the B draws this gives us a distribution for each group
-    
-    
-    # draw from multivariate normal on all parameters
-    d_post <- data.table(
-      rmvnorm(1e4, mu, sigma = S)
+    # obtain rmst by simulation
+    l_res_1 <- compare_treatments(
+      arms = l_spec$trt_lab,
+      po_eh_shape, 
+      po_eh_b_0, po_eh_b_ppfev, po_eh_b_delay, po_eh_b_defer, 
+      po_eh_u_a,
+      # simulation settings
+      S          = 200,
+      N_pop      = 10000,
+      # episode window for recovery metrics
+      t_window   = l_spec$rmst_eh_horizon,
+      eval_times = seq(0, 30, by = 1),
+      # covariate profile
+      ppfev_std  = 0
     )
-    # isolate treatment effects of interest for convenience
-    d_post[, `:=`(
-      delta_2_1 = `B1:T2` + `B2:T2` + `B3:T2` + `B4:T2`,
-      delta_3_1 = `B1:T3` + `B2:T3` + `B3:T3` + `B4:T3`
-      )]
-    
-    log_info("Trial ", ix, " fitted models ", l_spec$ic)
-    
-    if(return_posterior){
-      d_post_all <- rbind(
-        d_post_all,
-        cbind(ic = l_spec$ic, d_post)
-      )
-    }
-    
-    
-    d_post_long <- melt(d_post, measure.vars = names(d_post), variable.name = "par")
-    
-    
-    # merge posterior summaries for current interim
+    # just pick up the episode level rmst stuff
     d_post_smry_1[
-      d_post_long[, .(ic = l_spec$ic,
-                      mu = mean(value),
-                      med = median(value),
-                      se = sd(value),
-                      q_025 = quantile(value, prob = 0.025),
-                      q_975 = quantile(value, prob = 0.975)
-                      ), keyby = par], 
-      on = .(ic, par), `:=`(
-        mu = i.mu,
-        med = i.med,
-        se = i.se,
-        q_025 = i.q_025,
-        q_975 = i.q_975
-        )]
-
-    log_info("Trial ", ix, " extracted posterior ", l_spec$ic)
+      cbind(ic = l_spec$ic, l_res_1$rmsts),
+      on = .(ic, trt), `:=`(
+        rmst_mu = i.rmst_mu, rmst_lo = i.rmst_lo, rmst_hi = i.rmst_hi
+      )
+    ]
+    
+    # obtain total time in exac and total number of exac by sim
+    d_tmp <- rbindlist(lapply(seq_along(l_spec$trt_lab), function(ii){
+      l_tmp <-   simulate_trajectory(
+        # HE posterior draws
+        po_he_shape, po_he_b_0, po_he_b_ppfev, po_he_u_a,
+        # EH posterior draws
+        po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
+        po_eh_b_delay, po_eh_b_defer, po_eh_u_a,
+        # settings
+        S         = 100,
+        N_pop     = 1000,
+        followup  = 365,
+        ppfev_std = 0,
+        trt       = l_spec$trt_lab[ii],
+        max_trans = 300L,
+        draw_idx_override = NULL
+      )
+      cbind(
+        ic = l_spec$ic, 
+        trt = l_spec$trt_lab[[ii]], 
+        l_tmp$time_E, 
+        l_tmp$n_exac)
+    }))
+    
+    # just pick up the summaries
+    d_post_smry_2[
+      d_tmp,
+      on = .(ic, trt), `:=`(
+        tot_t_mu = i.tot_t_mu, tot_t_lo = i.tot_t_lo, tot_t_hi = i.tot_t_hi,
+        n_exac_mu = i.n_exac_mu, n_exac_lo = i.n_exac_lo, n_exac_hi = i.n_exac_hi
+      )
+    ]
     
     
-    # compute and merge the current probability and decision trigger status
+    # contrast rmst to l_spec$rmst_eh_horizon days
+    d_res_delay <- contrast_rmst(
+      trt_a = "soc", trt_b = "delay",
+      
+      po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
+      po_eh_b_delay, po_eh_b_defer, po_eh_u_a,
+      # simulation settings
+      S          = 200,
+      N_pop      = 10000,
+      # episode window for recovery metrics
+      t_window   = l_spec$rmst_eh_horizon,
+      # covariate profile
+      ppfev_std  = 0,
+      delta_ni = l_spec$dec_delta_ni
+    )
+    d_res_defer <- contrast_rmst(
+      trt_a = "soc", trt_b = "defer",
+      
+      po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
+      po_eh_b_delay, po_eh_b_defer, po_eh_u_a,
+      # simulation settings
+      S          = 200,
+      N_pop      = 10000,
+      # episode window for recovery metrics
+      t_window   = l_spec$rmst_eh_horizon,
+      # covariate profile
+      ppfev_std  = 0,
+      delta_ni = l_spec$dec_delta_ni
+    )
     
-    # The trial setup is such that if the intervention were beneficial, it would 
-    # reduce the temporal decline of fev1. 
+    # evaluate decision rule, namely does the rmst indicate a longer duration of 
+    # recovery in the intervention group relative to the soc group that is 
+    # above the level that we are willing to tolerate
     
-    # If an intervention arm is non-inferior then the fev at 12 months (landmark)
-    # will decline by no more than the non-inferiority margin relative to the ctl 
-    
-    # If the probability that the fev on the intervention arm is worse (lower) 
-    # than the non-inferiority margin is very high, then we will conclude 
-    # inferiority
-    
+    # NI
     d_pr_dec[
       
       rbind(
-        d_post_long[par %in% g_par_delta, .(
-          ic = l_spec$ic,
-          rule = factor("ni", levels = g_rule_type),
-          p = mean(value > l_spec$delta$ni),
-          dec = as.integer(mean(value > l_spec$delta$ni) > l_spec$thresh$ni)
-        ), keyby = par],
-        d_post_long[par %in% g_par_delta, .(
-          ic = l_spec$ic,
-          rule = factor("fut", levels = g_rule_type),
-          p = mean(value < l_spec$delta$fut),
-          dec = as.integer(mean(value < l_spec$delta$fut) > l_spec$thresh$fut)
-        ), keyby = par]
+        d_res_delay[, .(
+          ic = l_spec$ic, 
+          rule = "ni", 
+          trt = "delay",
+          p = pr_lt_ni, 
+          dec = as.integer(pr_lt_ni > l_spec$dec_thresh_ni))],
+        d_res_defer[, .(
+          ic = l_spec$ic, 
+          rule = "ni", 
+          trt = "defer",
+          p = pr_lt_ni, 
+          dec = as.integer(pr_lt_ni > l_spec$dec_thresh_ni))]
       ),
       
-      on = .(ic, rule, par), `:=`(
+      on = .(ic, rule, trt), `:=`(
         p = i.p, dec = i.dec  
       )
     ]
     
     
-    # For trial stopping we only consider the comparisons to the
-    # soc. In order to stop the study both need to have been resolved (either 
-    # NI or futility have been concluded).
+    # futility
+    d_pr_dec[
+      
+      rbind(
+        d_res_delay[, .(
+          ic = l_spec$ic, 
+          rule = "fut", 
+          trt = "delay",
+          # probability of being greater than the ni margin
+          p = 1-pr_lt_ni, 
+          # decide futile if p of being gt ni margin is above threshold
+          dec = as.integer(1-pr_lt_ni > l_spec$dec_thresh_fut))],
+        d_res_defer[, .(
+          ic = l_spec$ic, 
+          rule = "fut", 
+          trt = "defer",
+          p = pr_lt_ni, 
+          dec = as.integer(1-pr_lt_ni > l_spec$dec_thresh_fut))]
+      ),
+      
+      on = .(ic, rule, trt), `:=`(
+        p = i.p, dec = i.dec  
+      )
+    ]
+    
+    
+    # if intervention arm is inferior, stop recruitment to this arm
+    # update l_spec$trt_active
+    
     d_stop <- d_pr_dec[
-      ic <= l_spec$ic & par %in% c(g_par_delta),
-      .(resolved = as.integer(sum(dec) > 0)), keyby = .(par)]
+      ic <= l_spec$ic & trt %in% c("delay", "defer"),
+      .(resolved = as.integer(sum(dec) > 0)), keyby = .(trt)]
     
-    
-    # Update allocation probabilities if decisions have been reached.
-    # Subsequent enrolments get redirected to the remaining arms.
     if(all(d_stop$resolved)){
       log_info("Stop trial as all questions addressed ", ix)
       stop_enrol <- T
     } else if(any(d_stop$resolved)){
-
+      
       # 2 vs 1 at timepoint 4
-      if(d_stop[par == "delta_2_1", resolved]) {
-        l_spec$p_trt_alloc[2] <- 0
-        l_spec$p_trt_alloc <- l_spec$p_trt_alloc / sum(l_spec$p_trt_alloc)
+      if(d_stop[trt == "delay", resolved]) {
+        l_spec$trt_active["delay"] <- FALSE
       }
-
+      
       # 3 vs 1 at timepoint 4
-      if(d_stop[par == "delta_3_1", resolved]) {
-        l_spec$p_trt_alloc[3] <- 0
-        l_spec$p_trt_alloc <- l_spec$p_trt_alloc / sum(l_spec$p_trt_alloc)
+      if(d_stop[trt == "defer", resolved]) {
+        l_spec$trt_active["defer"] <- FALSE
       }
     }
-    log_info("Trial ", ix, " allocation after cohort ", l_spec$ic, " alloc: ", paste0(l_spec$p_trt_alloc, collapse = ", "))
+    log_info("Trial ", ix, " allocation after cohort ", 
+             l_spec$ic, " alloc: ", paste0(l_spec$trt_active, collapse = ", "))
     
     
     # next interim
@@ -367,6 +396,7 @@ run_trial <- function(
   l_ret <- list(
     d_all = d_all,
     d_post_smry_1 = d_post_smry_1,
+    d_post_smry_2 = d_post_smry_2,
     d_pr_dec = d_pr_dec,
     stop_at = stop_at
   )
@@ -397,6 +427,9 @@ run_sim12 <- function(){
   l_spec$b_trt <- unlist(l_spec$b_trt)
   l_spec$n_trt <- length(l_spec$b_trt)
   
+  # initially all trt arms are active
+  l_spec$trt_lab <- unlist(l_spec$trt_lab)
+  names(l_spec$trt_active) <- l_spec$trt_lab
   
   if(l_spec$nex > 0){
     log_info("Creating ", l_spec$nex, " example trials with full posterior")
