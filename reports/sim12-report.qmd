@@ -1,0 +1,555 @@
+---
+title: BEAT CF MARS
+subtitle: Simulation Report
+description: |
+    Three-arm Bayesian adaptive trial nested within BEAT-CF platform evaluating antibiotic-sparing strategies for managing pulmonary exacerbations
+date: last-modified
+date-format: "D MMMM YYYY"
+author: 
+  - name: Mark Jones
+    id: mj
+    email: mark.jones1@sydney.edu.au
+version: 0.1
+sponsor: "University of Sydney, NSW, Australia"
+protocol-number: todo
+registration: todo
+hrec: todo
+ci1: Tom Snelling
+editor: source
+bibliography: ../etc/refs.bib
+csl: ../etc/elsevier-harvard.csl
+# number-sections required otherwise section refs will not render 
+number-sections: true
+toc: true
+toc-depth: 3
+format:
+  pdf: 
+    pdf-engine: xelatex
+    keep-tex: true
+    documentclass: scrreprt
+    papersize: a4
+    fontsize: 12pt
+    mainfont: Libertinus Serif
+    sansfont: Libertinus Sans
+    monofont: Libertinus Mono
+    mathfont: Libertinus Math
+    linestretch: 1.25
+    template-partials: 
+      - "../_extensions/partials/before-body.tex"
+    include-in-header:
+      text: |
+       \usepackage{physics}
+       \setkomafont{chapter}{\fontsize{16}{18}\selectfont}
+       \setkomafont{section}{\fontsize{14}{16}\selectfont}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE
+)
+```
+
+```{r}
+#| echo: false
+
+# uml digs
+suppressPackageStartupMessages(library(nomnoml))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(qs))
+suppressPackageStartupMessages(library(git2r))
+suppressPackageStartupMessages(suppressWarnings(library(gt)))
+suppressPackageStartupMessages(library(ggh4x))
+suppressPackageStartupMessages(library(lubridate))
+suppressPackageStartupMessages(library(scales))
+suppressPackageStartupMessages(library(patchwork))
+suppressPackageStartupMessages(library(pbapply))
+
+
+toks <- unlist(tstrsplit(getwd(), "/")) 
+if(toks[length(toks)] == "beatcf-mars-sim"){
+  prefix_cfg <- "./etc/sim12/"
+  prefix_stan <- "./stan"
+  prefix_fig <- "./fig"
+  prefix_data <- "./data"
+  prefix_r <- "./r"
+} else {
+  prefix_cfg <- "../etc/sim12/"
+  prefix_stan <- "../stan"
+  prefix_fig <- "../fig"
+  prefix_data <- "../data"
+  prefix_r <- "../r"
+}
+
+
+source(paste0(prefix_r, "/data.R"))
+source(paste0(prefix_r, "/data-sim12.R"))
+
+
+# Each input file corresponds to the results from a single simulation
+# scenario/configuration.
+# Load all the files into a single list.
+
+# files of interest
+sim_lab <- "sim12-02"
+
+flist <- list.files(paste0(prefix_data, "/", sim_lab), pattern = "sim12")
+toks <- list()
+l <- list()
+i <- 1
+
+for(i in 1:length(flist)){
+
+  l[[i]] <- qs::qread(file.path(paste0(prefix_data, "/", sim_lab), flist[i]))
+  toks[[i]] <-  unlist(tstrsplit(flist[i], "[-.]"))
+}
+
+N_sims <- l[[1]]$cfg$nsim
+
+
+
+# temp to replace
+# l_spec <- get_prototype_cfg()
+l_spec_1 <- l[[1]]$l_spec
+
+
+
+```
+
+{{< pagebreak >}}
+
+::: summary
+|     |        |
+|:----|:------------|
+|Study title:  |  BEAT-CF MARS |
+|Reference intervention: |  Standard airway clearance therapy at least twice per day for 14 days, plus 14 days of oral antibiotics commencing as soon as practicable (and ≥ 72 hours and < 7 days) after onset of new or acute worsening of cough. |   
+|Intervention: | (1) Deferred antibiotic strategy (2) Early discontinuation antibiotic strategy. |   
+|Outcome: | ppFev1 at 12 months |   
+|Study design:  |   Bayesian adaptive trial with early stopping rules | 
+|Sponsor:  |    University of Sydney, NSW, Australia | 
+Protocol: |  todo |
+|Registration:  |    todo | 
+|HREC:  |   todo | 
+|Study date of first consent:  |   todo | 
+|Principal coordinating investigators:  |   Tom Snelling | 
+:::
+
+<!-- 
+Note that the above relies on the pandoc extension implemented in the lua file 
+in the etc directory. It additionally relies on the presence of a custom style
+in word called study summary. It will currently only work for word (because I
+cannot be bothered to implement it in anything else at the moment).
+-->
+
+
+{{< pagebreak >}}
+
+# Version history {.unlisted .unnumbered}
+
+| Version    |   Date     | Change    |   Reason     |
+|:----|:------------|:----|:------------|
+| 0.1 | 2025-11-12 | First version | N/A |
+
+
+{{< pagebreak >}}
+
+
+
+# Introduction
+
+This report documents the simulation approach and results for the operating characteristics for the BEAT-CF MARS study.
+The report is an operational document that will be updated, as necessary, over the course of the study.
+It should be read in conjunction with the relevant versions of the protocol and statistical analysis plan.
+
+We provide the data generation assumptions, modelling approaches, scenarios and results that were used to explore the design.
+
+These results are based on simulation `r sim_lab` with `r N_sims` simulated trials run per scenario.
+
+The key configuration parameters that persist across all scenarios are shown below:
+
++ Interim analyses: `r cumsum(l_spec_1$N)`
++ Futility evaluation at: `r cumsum(l_spec_1$N)`
++ Non-inferiority evaluation at: `r cumsum(l_spec_1$N)`
++ Enrolment per day after ramp up: `r l_spec_1$pt_per_day`
++ Ramp up period (days): `r l_spec_1$ramp_up_days`
++ Standard deviation on baseline ppFEV1: `r l_spec_1$sigma_mu0`
++ Standard deviation on ppFEV1: `r l_spec_1$sigma`
++ Correlation between repeat measures: `r l_spec_1$rho`
++ Reference value for non-inferiority: `r l_spec_1$delta$ni`
++ Evidential threshold for non-inferiority (probability): `r l_spec_1$thresh$ni`
++ Reference value for futility: `r l_spec_1$delta$fut`
++ Evidential threshold for futility (probability): `r l_spec_1$thresh$fut`
+
+
+
+ 
+
+# Design overview
+
+
+
+
+
+# Results
+
+
+## Probability of triggering decisions
+
+@tbl-cprob-decision provides the cumulative probability of non-inferiority by scenario with the probability of declaring futility in parentheses.
+
+```{r, echo = F, eval = T}
+#| label: cum_prob_dec
+#| code-summary: Cumulative probability of each decision type
+
+# Cumulative probability of decisions:
+
+# Traverse the list of simulation results and for each one summarise the 
+# cumulative probability of each decision type.
+
+i <- 1
+d_cprob_dec <- data.table()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  # extract the decision matrix - sim, analysis, quantity, domain level decision
+  d_dec_1 <- copy(l[[i]]$d_pr_dec[trt %in% c("delay", "defer")])
+  
+  # config for scenario
+  l_cfg <- copy(l[[i]]$l_spec)
+  
+  # number of enrolments at each interim (interim sample size sequence)
+  d_N <- data.table(ic = seq_along(l_cfg$N_pt), N = cumsum(l_cfg$N_pt))
+  
+  
+  # compute the cumulative instances of a decision being made by sim, each 
+  # decision type and by parameter
+  d_dec_1[, cdec := as.integer(cumsum(dec)>0), keyby = .(sim, rule, trt)]
+  d_dec_1[, cdec := nafill(cdec, type = "locf"), keyby = .(sim, rule, trt)]
+  d_dec_1[, cdec := as.logical(cdec)]
+  
+  d_dec_1 <- base::merge(d_dec_1, d_N, by = "ic")
+  
+  # cumulative proportion for which each decision quantity has been met by 
+  # analysis and domain
+  d_dec_1 <- d_dec_1[, .(pr_val = mean(cdec)), keyby = .(ic, N, rule, trt)]
+  
+  
+  d_cprob_dec <- rbind(
+    d_cprob_dec,
+    cbind(scenario = i, desc = l_cfg$desc, d_dec_1)
+  )
+
+}
+
+```
+
+
+
+
+
+```{r, eval = T}
+#| echo: FALSE
+#| label: tbl-cprob-decision
+#| tbl-cap: 'Cumulative probability of decision for each enrolment cohort'
+#| tbl-pos: H
+
+d_tbl_1_cur <- copy(d_cprob_dec)
+d_tbl_1_cur <- dcast(
+  d_tbl_1_cur, scenario + desc + trt ~ rule + N, value.var = "pr_val")
+
+# d_b_trt <- data.table()
+# 
+# for(i in 1:length(l)){
+#   l_cfg <- copy(l[[i]]$cfg)
+#   
+#   # main effect
+#   b_T <- unlist(l_cfg$b_T)
+#   # time interaction
+#   b_tT <- l_cfg$b_tT
+#   # cumulative effects
+#   b_trt <- c(
+#     b_T[1] + sum(b_tT[1, ]),
+#     b_T[2] + sum(b_tT[2, ])
+#   )
+#   
+#   d_tmp <- data.table(
+#     scenario = i, 
+#     par = c("Deferred", "Discontinued"), 
+#     delta = b_trt
+#   )
+#   d_b_trt <- rbind(d_b_trt, d_tmp)
+# }
+
+# d_tbl_1_cur <- base::merge(d_tbl_1_cur, d_b_trt, by = c("scenario", "par"))
+
+# setcolorder(d_tbl_1_cur, c("scenario", "desc", "par", "delta"))
+# setorderv(d_tbl_1_cur, cols = c("scenario"))
+
+d_tbl_1_cur <- d_tbl_1_cur[, .SD, .SDcols = !c("scenario")]
+
+g_tbl <- d_tbl_1_cur |> 
+  gt(groupname_col = "desc") |> 
+  gt::text_transform(
+    locations = cells_row_groups(),
+    fn = function(x) {
+      lapply(x, function(x) {
+        gt::md(paste0("*", x, "*"))
+      })
+    }
+  ) |>
+  cols_align(
+    columns = 1:2,
+    align = "left"
+  )  |> 
+  cols_align(
+    columns = 3:ncol(d_tbl_1_cur),
+    align = "center"
+  )  |> 
+  cols_merge(
+    columns = c("ni_400", "fut_400"
+                ),
+    pattern = "<<{1}>><< ({2})>>"
+  ) |> 
+  cols_merge(
+    columns = c("ni_500", "fut_500"
+                ),
+    pattern = "<<{1}>><< ({2})>>"
+  )   |>
+  cols_merge(
+    columns = c("ni_600", "fut_600"
+                ),
+    pattern = "<<{1}>><< ({2})>>"
+  )   |> 
+  cols_width(
+    starts_with("ni") ~ px(100)
+  ) |>
+  tab_spanner(
+    label = md("Participants having reached primary endpoint"),
+    columns = 4:ncol(d_tbl_1_cur)
+  )  |>
+  cols_label(
+    # delta = "Diff at 12 month vs SoC",
+    trt = "",
+    ni_400 = html("400"),
+    ni_500 = html("500"),
+    ni_600 = html("600")
+  ) |>
+  tab_options(
+    table.font.size = pct(55),
+    latex.use_longtable = TRUE,
+    latex.header_repeat = TRUE 
+  ) |>
+  fmt_number(decimals = 2, drop_trailing_zeros = F)
+
+g_tbl
+```
+
+
+{{< pagebreak >}}
+
+## Sample size
+
+@tbl-n-1 shows the expected number of participants on each treatment arm under each scenario.
+
+```{r, echo = F, eval = T}
+#| label: sample_size_1
+#| code-summary: Compute expected sample size
+
+
+i <- 1
+d_N_by_rand <- data.table()
+
+for(i in 1:length(l)){
+  
+  # config for scenario
+  l_cfg <- copy(l[[i]]$l_spec)
+  # l_cfg$desc
+  
+  N_analysis <- length(l_cfg$N_pt)
+  N_trt <- 3
+  # 
+  d_grid <- CJ(
+    sim = 1:l_cfg$nsim,
+    ic = 1:N_analysis,
+    trt = 1:N_trt
+  )
+  d_grid$trt <- l[[i]]$l_spec$trt_lab[d_grid$trt]
+    
+  # pick up the baseline obs only, i.e. when the number enrolled
+  d_all <- copy(l[[i]]$d_all[state == "E"])
+  d_analy_set <- copy(l[[i]]$d_analys_sets)
+  d_analy_set <- d_analy_set[!is.na(t0_last), ]
+  d_analy_set[, ic := 1]
+  d_analy_set[, ic := cumsum(ic), by = sim]
+  
+  setkey(d_all, sim, t0)
+  setkey(d_analy_set,  sim, t0_last)
+
+  # Rolling join: find first cutoff_date >= enrol_date
+  d_all[
+    d_analy_set,
+    on = .(sim, t0 = t0_last),
+    roll = -Inf,
+    ic := i.ic
+  ]
+  
+  d_all[, ic := nafill(ic, type = "nocb"), by = sim]
+  
+  # how many randomisations per interim and trt arm (pt may have more than 
+  # one randomisation over their followup)
+  d_smry <- base::merge(
+    d_grid,
+    d_all[, .(.N), keyby = .(sim, ic, trt)],
+    by = c("sim", "ic", "trt"),
+    all.x = T
+  )
+  
+  # some arms may stop after interim 1 and so there would be no count for 
+  # subsequent interims
+  d_smry[is.na(N), N := 0]
+  d_smry[, N_cmtv := cumsum(N), keyby = .(sim, trt)]
+  
+  d_N_by_rand <- rbind(
+    d_N_by_rand,
+    cbind(
+      scenario = i, desc = l_cfg$desc, 
+      d_smry
+    )
+  )
+  
+}
+```
+
+
+
+
+```{r, eval = T}
+#| echo: FALSE
+#| label: tbl-n-1
+#| tbl-cap: ''
+#| tbl-pos: H
+
+# DONT assume that all arms ran to the final interim. The result is just an
+# artefact of imputation. Nevertheless it gives the true sample size by arm.
+d_N_trt <- d_N_by_rand[, .SD[.N], keyby = .(scenario, desc, sim, trt)]
+d_N_tot <- d_N_trt[, .(N_cmtv = sum(N_cmtv)), keyby = .(scenario, desc, sim) ]
+
+# add in total sample size
+d_tbl_1_cur <- rbind(
+  d_N_trt[, .(N_mu = mean(N_cmtv), N_sd = sd(N_cmtv)), keyby = .(scenario, desc, trt)],
+  d_N_tot[, .(trt = "all", N_mu = mean(N_cmtv), N_sd = sd(N_cmtv)), keyby = .(scenario, desc)]
+)
+
+
+# we are only interested in Deferred vs soc and Discontinued vs soc
+d_b_trt <- data.table()
+
+# for(i in 1:length(l)){
+#   l_cfg <- copy(l[[i]]$cfg)
+#   
+#   # main effect
+#   b_T <- unlist(l_cfg$b_T)
+#   # time interaction
+#   b_tT <- l_cfg$b_tT
+#   # cumulative effects
+#   b_trt <- c(
+#     b_T[1] + sum(b_tT[1, ]),
+#     b_T[2] + sum(b_tT[2, ])
+#   )
+#   
+#   d_tmp <- data.table(
+#     scenario = i, 
+#     trt = c("Deferred", "Discontinued"), 
+#     delta = c(b_trt[1], b_trt[2]))
+#   d_b_trt <- rbind(d_b_trt, d_tmp)
+# }
+
+# d_tbl_1_cur <- base::merge(
+#   d_tbl_1_cur, 
+#   d_b_trt, 
+#   by = c("scenario", "trt"),
+#   all.x = T)
+# 
+d_tbl_1_cur <- dcast(
+  d_tbl_1_cur,
+  scenario + desc ~ trt ,
+  value.var = list("N_mu", "N_sd"))
+
+# d_tbl_1_cur[, `:=`(delta_SoC = NULL, delta_all = NULL)]
+
+# setcolorder(d_tbl_1_cur, c("scenario", "desc", "delta_Deferred", "delta_Discontinued"))
+
+# d_tbl_1_cur <- d_tbl_1_cur[order(scenario, desc)]
+d_tbl_1_cur <- d_tbl_1_cur[, .SD, .SDcols = !c("scenario")]
+
+
+
+g_tbl <- d_tbl_1_cur |> 
+  gt(groupname_col = "desc")  |> 
+  gt::text_transform(
+    locations = cells_row_groups(),
+    fn = function(x) {
+      lapply(x, function(x) {
+        gt::md(paste0("*", x, "*"))
+      })
+    }
+  ) |>
+  fmt_number(
+    columns = starts_with("N_"),
+    decimals = 0, drop_trailing_zeros = TRUE) |>
+  # fmt_number(
+  #   columns = starts_with("delta"),
+  #   decimals = 2, drop_trailing_zeros = TRUE) |> 
+  # tab_spanner(
+  #   label = md("Diff at 12 month vs SoC"),
+  #   columns = starts_with("delta"),
+  # ) |>
+  tab_spanner(
+    label = md("Sample size, mean (sd)"),
+    columns =  starts_with("N_mu")
+  ) |>
+  # cols_align(
+  #   columns = starts_with("delta"),
+  #   align = "center"
+  # ) |>
+  cols_align(
+    columns = starts_with("N_mu"),
+    align = "center"
+  )  |>
+  cols_merge(
+    columns = c("N_mu_defer", "N_sd_defer"
+                ),
+    pattern = "<<{1}>><< ({2})>>"
+  ) |>
+  cols_merge(
+    columns = c("N_mu_delay", "N_sd_delay"
+                ),
+    pattern = "<<{1}>><< ({2})>>"
+  ) |>
+  cols_merge(
+    columns = c("N_mu_soc", "N_sd_soc"
+                ),
+    pattern = "<<{1}>><< ({2})>>"
+  ) |>
+  cols_merge(
+    columns = c("N_mu_all", "N_sd_all"
+                ),
+    pattern = "<<{1}>><< ({2})>>"
+  ) |>
+  cols_label(
+    # delta_Deferred = "defer",
+    # delta_Discontinued = "delay",
+    N_mu_defer = "defer",
+    N_mu_delay = "delay",
+    N_mu_soc = "soc",
+    N_mu_all = "Total"
+  ) |>
+  tab_options(
+    # table.width = pct(100),
+    table.font.size = pct(55)
+  ) 
+
+
+g_tbl
+```
