@@ -723,11 +723,13 @@ simulate_episode <- function(
   t_window   = 30,
   # evaluate at each time increment
   eval_times = seq(0, 30, by = 1),
-  # covariate profile
-  ppfev_std  = 0,
-  trt        = "soc"
+  trt        = "soc",
+  # sample data
+  d_cohort,
+  m_ix
   
 ) {
+  
   n_eval  <- length(eval_times)
   n_draws <- length(po_eh_shape)
   draw_idx <- sample(n_draws, S, replace = S > n_draws)
@@ -737,6 +739,7 @@ simulate_episode <- function(
   p_recovered <- matrix(NA_real_, nrow = n_eval, ncol = S)
   rmst        <- numeric(S)
   
+  s <- 1
   for (s in seq_len(S)) {
     
     d <- draw_idx[s]
@@ -750,7 +753,7 @@ simulate_episode <- function(
     )
     
     # scale parameter: mu = exp(b0 + b_ppfev * ppfev_std + b_trt)
-    log_mu <- po_eh_b_0[d] + po_eh_b_ppfev[d] * ppfev_std + eh_btrt
+    log_mu <- po_eh_b_0[d] + po_eh_b_ppfev[d] * d_cohort$ppfev_baseline[m_ix[,s]] + eh_btrt
     mu     <- exp(log_mu)
     
     # draw frailty for each patient, then scale
@@ -807,10 +810,11 @@ simulate_trajectory <- function(
   S         = 200,
   N_pop     = 2000,
   followup  = 365,
-  ppfev_std = 0,
   trt       = "soc",
   max_trans = 300L,
-  draw_idx_override = NULL
+  draw_idx_override = NULL,
+  d_cohort,
+  m_ix
 ) {
   
   if(is.null(draw_idx_override)){
@@ -836,7 +840,7 @@ simulate_trajectory <- function(
     # parameters
     he_shape <- po_he_shape[d]
     he_ua    <- po_he_u_a[d]
-    he_mu    <- exp(po_he_b_0[d] + po_he_b_ppfev[d] * ppfev_std)
+    he_mu    <- exp(po_he_b_0[d] + po_he_b_ppfev[d] * d_cohort$ppfev_baseline[m_ix[, s]])
     
     eh_btrt  <- switch(trt,
                        soc   = 0,
@@ -845,7 +849,7 @@ simulate_trajectory <- function(
     )
     eh_shape <- po_eh_shape[d]
     eh_ua    <- po_eh_u_a[d]
-    eh_mu    <- exp(po_eh_b_0[d] + po_eh_b_ppfev[d] * ppfev_std + eh_btrt)
+    eh_mu    <- exp(po_eh_b_0[d] + po_eh_b_ppfev[d] * d_cohort$ppfev_baseline[m_ix[, s]] + eh_btrt)
     
     # frailties
     u_he <- rgamma(N_pop, he_ua, he_ua)
@@ -964,20 +968,30 @@ compare_treatments <- function(
     # episode window for recovery metrics
     t_window   = 30,
     eval_times = seq(0, 30, by = 1),
-    # covariate profile
-    ppfev_std  = 0
+    # sample data
+    d_cohort
     ) {
   
+  # cohort covariate indexes to use in prediction
+  m_ix <- sapply(1:S, function(ii){
+    sample(1:nrow(d_cohort), size = N_pop, replace = T)  
+  })
+  
+  trt <- arms[1]
   results <- lapply(arms, function(trt) {
+    
     res <- simulate_episode(
       po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
       po_eh_b_delay, po_eh_b_defer, po_eh_u_a,
       # simulation settings
       S , N_pop ,
       t_window, eval_times,
-      # covariate profile
-      ppfev_std ,
-      trt = trt
+      # simulate each arm independently
+      trt = trt,
+      # sample data
+      d_cohort,
+      # which rows from the cohort data should be used in prediction
+      m_ix
       )
     res$recovery_curve[, trt := trt]
     list(curve = res$recovery_curve, rmst = cbind(trt = trt, res$rmst))
@@ -1006,13 +1020,19 @@ contrast_rmst <- function(
     N_pop      = 2000,
     # episode window for recovery metrics
     t_window   = 30,
-    # covariate profile
-    ppfev_std  = 0,
-    delta_ni = 0
+    delta_ni = 0,
+    # sample data for covariate profile
+    d_cohort
 ) {
   
   n_draws  <- length(po_eh_shape)
   draw_idx <- sample(n_draws, S, replace = S > n_draws)
+  
+  # cohort covariate indexes to use in prediction
+  m_ix <- sapply(1:S, function(ii){
+    sample(1:nrow(d_cohort), size = N_pop, replace = T)  
+  })
+  
   
   rmst_a <- rmst_b <- numeric(S)
   
@@ -1023,7 +1043,7 @@ contrast_rmst <- function(
       eh_btrt <- switch(trt, soc = 0,
                         delay = po_eh_b_delay[d],
                         defer = po_eh_b_defer[d])
-      mu  <- exp(po_eh_b_0[d] + po_eh_b_ppfev[d] * ppfev_std + eh_btrt)
+      mu  <- exp(po_eh_b_0[d] + po_eh_b_ppfev[d] * d_cohort$ppfev_baseline[m_ix[, s]] + eh_btrt)
       u_i <- rgamma(N_pop, po_eh_u_a[d], po_eh_u_a[d])
       soj <- (-log(runif(N_pop)) / (u_i * mu))^(1 / po_eh_shape[d])
       val <- mean(pmin(soj, t_window))
@@ -1056,15 +1076,21 @@ contrast_trajectory <- function(
     S         = 200,
     N_pop     = 2000,
     followup  = 365,
-    ppfev_std = 0,
-    trt       = "soc",
-    max_trans = 300L
+    max_trans = 300L,
+    d_cohort
 ) {
   # pass same draw_idx to both by fixing the RNG seed approach:
   # easier to just run both inside one loop with shared draw_idx
   
   n_draws  <- length(po_he_shape)
   draw_idx <- sample(n_draws, S, replace = S > n_draws)
+  
+  
+  
+  # cohort covariate indexes to use in prediction
+  m_ix <- sapply(1:S, function(ii){
+    sample(1:nrow(d_cohort), size = N_pop, replace = T)  
+  })
   
   # po_he_shape, po_he_b_0, po_he_b_ppfev, po_he_u_a,
   # # EH posterior draws
@@ -1084,10 +1110,12 @@ contrast_trajectory <- function(
     # EH posterior draws
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
     po_eh_b_delay, po_eh_b_defer, po_eh_u_a,
-    S ,N_pop, followup, ppfev_std,
+    S, N_pop, followup, 
     trt = trt_a,
     max_trans,
-    draw_idx_override = draw_idx
+    draw_idx_override = draw_idx,
+    d_cohort,
+    m_ix = m_ix
   )
   
   res_b <- simulate_trajectory(
@@ -1095,12 +1123,13 @@ contrast_trajectory <- function(
     # EH posterior draws
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
     po_eh_b_delay, po_eh_b_defer, po_eh_u_a,
-    S ,N_pop, followup, ppfev_std,
+    S ,N_pop, followup, 
     trt = trt_b,
     max_trans,
-    draw_idx_override = draw_idx
+    draw_idx_override = draw_idx,
+    d_cohort,
+    m_ix = m_ix
   )
-  
   
   contrast_time  <- res_b$draws$mean_time_E - res_a$draws$mean_time_E
   contrast_nexac <- res_b$draws$mean_n_exac - res_a$draws$mean_n_exac
@@ -1219,10 +1248,6 @@ example_stan_2 <- function(){
   table(d_tbl_full$state, d_tbl_full$N)
   
   
-  
-  
-  hist(d_tbl$E)
-  hist(d_tbl$H)
   
   # Exacerbations
   # The analysis proceeds on only those that have exacerbations
@@ -1389,7 +1414,6 @@ example_stan_2 <- function(){
   po_he_u_a <- d_post_he$u_a
   
   
-  
   l_res_1 <- compare_treatments(
     arms = c("soc", "delay", "defer"),
     po_eh_shape, 
@@ -1400,9 +1424,9 @@ example_stan_2 <- function(){
     N_pop      = 2000,
     # episode window for recovery metrics
     t_window   = l_spec$rmst_eh_horizon,
-    eval_times = seq(0, 30, by = 1),
-    # covariate profile
-    ppfev_std  = 0
+    eval_times = seq(0, l_spec$rmst_eh_horizon, by = 1),
+    # sample data for covariate profile
+    d_cohort
   )
   l_res_1
   
@@ -1417,9 +1441,9 @@ example_stan_2 <- function(){
     ) 
   
   l_res_1$rmsts$trt <- factor(l_res_1$rmsts$trt, levels = c("soc", "defer", "delay"))
-  p2 <- ggplot(l_res_1$rmsts, aes(x = trt, y = mean)) +
+  p2 <- ggplot(l_res_1$rmsts, aes(x = trt, y = rmst_mu)) +
     geom_point() +
-    geom_linerange(aes(ymin = lo, ymax = hi)) +
+    geom_linerange(aes(ymin = rmst_lo, ymax = rmst_hi)) +
     scale_x_discrete("") +
     scale_y_continuous("RMST") +
     theme_minimal() 
@@ -1427,6 +1451,8 @@ example_stan_2 <- function(){
   p1 + p2
   
   
+  
+
   d_res_2_delay <- contrast_rmst(
     trt_a = "soc", trt_b = "delay",
     
@@ -1437,9 +1463,9 @@ example_stan_2 <- function(){
     N_pop      = 2000,
     # episode window for recovery metrics
     t_window   = l_spec$rmst_eh_horizon,
-    # covariate profile
-    ppfev_std  = 0,
-    delta_ni = 0.75
+    delta_ni = 0.75,
+    # sample data for covariate profile
+    d_cohort
   )
   d_res_2_defer <- contrast_rmst(
     trt_a = "soc", trt_b = "defer",
@@ -1451,9 +1477,9 @@ example_stan_2 <- function(){
     N_pop      = 2000,
     # episode window for recovery metrics
     t_window   = l_spec$rmst_eh_horizon,
-    # covariate profile
-    ppfev_std  = 0,
-    delta_ni = 0.75
+    delta_ni = 0.75,
+    # sample data for covariate profile
+    d_cohort
   )
   d_res_2 <- rbind(d_res_2_delay, d_res_2_defer)
   kableExtra::kbl(d_res_2, format = "simple")
@@ -1467,6 +1493,8 @@ example_stan_2 <- function(){
   p1
   #
   
+  
+  #####
   l_res_3 <- contrast_trajectory(
     trt_a = "soc",
     trt_b = "delay",
@@ -1478,8 +1506,8 @@ example_stan_2 <- function(){
     S          = 200,
     N_pop      = 2000,
     followup  = 365,
-    ppfev_std  = 0,
-    max_trans = 300L
+    max_trans = 300L,
+    d_cohort
   )
   l_res_3
   
@@ -1652,6 +1680,11 @@ get_demo_spec <- function(){
   l_spec$N_pt <- 600
   l_spec$pt_per_day <- 0.57
   l_spec$ramp_up_days <- 120
+
+
+  
+  # day of enrolment
+  l_spec$t0 <- rep(1, l_spec$N_pt)
   
   
   l_spec$followup <- 365
@@ -1698,7 +1731,7 @@ get_demo_spec <- function(){
   l_spec$shape_eh <- 2.75  # originally 0.9 
   
   l_spec$trt_lab <- c("soc","delay","defer")
-  l_spec$trt_active <- c(1, 1, 1)
+  l_spec$trt_active <- rep(TRUE, 3)
   names(l_spec$trt_active) <- l_spec$trt_lab
   
   l_spec$is <- 1 

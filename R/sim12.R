@@ -161,13 +161,8 @@ run_trial <- function(
       # t0 is the entry time and is repeated 
       t_now <- d_all[, max(t0)]
       
-      # include all those who have reached the first follow up at the time of 
-      # the interim analysis - we don't need to wait for them to complete follow
-      # up in order to use them in the analysis - they still give us data on the 
-      # progression of fev1 up to their latest visit. mfit also uses this 
-      # perspective basically including pt if they have been on trt for at 
-      # least 4 weeks.
-      incl_ids <- d_all[t0 + l_spec$followup < t_now, id]
+      # has completed at least one exacerbation
+      incl_ids <- d_all[state == "E" & t0 + dur < t_now, id]
       l_mod <- get_sim12_stan_data(d_all[id %in% incl_ids])
       
       l_spec$t0_last[l_spec$ic] <- d_all[id %in% incl_ids, max(t0)]
@@ -243,17 +238,15 @@ run_trial <- function(
     # obtain rmst by simulation
     l_res_1 <- compare_treatments(
       arms = l_spec$trt_lab,
-      d_post_eh$eh_shape, 
-      d_post_eh$eh_b_0, d_post_eh$eh_b_ppfev, 
-      d_post_eh$eh_b_delay, d_post_eh$eh_b_defer, 
-      d_post_eh$eh_u_a,
+      d_post_eh$eh_shape, d_post_eh$eh_b_0, d_post_eh$eh_b_ppfev, 
+      d_post_eh$eh_b_delay, d_post_eh$eh_b_defer, d_post_eh$eh_u_a,
       # simulation settings
-      S          = 200, N_pop      = 10000,
+      S = 200, N_pop = 10000,
       # episode window for recovery metrics
       t_window   = l_spec$rmst_eh_horizon,
       eval_times = seq(0, 30, by = 1),
-      # covariate profile
-      ppfev_std  = 0
+      # sample data
+      d_all
     )
     # just pick up the episode level rmst stuff
     d_post_smry_2[
@@ -264,6 +257,12 @@ run_trial <- function(
     ]
     
     # obtain total time in exac and total number of exac by sim
+    # cohort covariate indexes to use in prediction
+    S = 100; N_pop = 1000
+    m_ix <- sapply(1:S, function(ii){
+      sample(1:nrow(d_all), size = N_pop, replace = T)  
+    })
+    
     d_tmp <- rbindlist(lapply(seq_along(l_spec$trt_lab), function(ii){
       l_tmp <-   simulate_trajectory(
         # HE posterior draws
@@ -274,11 +273,12 @@ run_trial <- function(
         d_post_eh$eh_b_delay, d_post_eh$eh_b_defer, 
         d_post_eh$eh_u_a,
         # settings
-        S         = 100, N_pop     = 1000,
-        followup  = 365, ppfev_std = 0,
-        trt       = l_spec$trt_lab[ii],
+        S, N_pop, followup = l_spec$followup, 
+        trt = l_spec$trt_lab[ii],
         max_trans = 300L,
-        draw_idx_override = NULL
+        draw_idx_override = NULL,
+        d_all,
+        m_ix
       )
       cbind(
         ic = l_spec$ic, 
@@ -303,22 +303,22 @@ run_trial <- function(
       d_post_eh$eh_shape, d_post_eh$eh_b_0, d_post_eh$eh_b_ppfev,
       d_post_eh$eh_b_delay, d_post_eh$eh_b_defer, d_post_eh$eh_u_a,
       # simulation settings
-      S          = 200, N_pop      = 10000,
+      S = 200, N_pop = 10000,
       # episode window for recovery metrics
       t_window   = l_spec$rmst_eh_horizon,
-      # covariate profile
-      ppfev_std  = 0, delta_ni = l_spec$dec_delta_ni
+      delta_ni = l_spec$dec_delta_ni,
+      d_all
     )
     d_res_defer <- contrast_rmst(
       trt_a = "soc", trt_b = "defer",
       d_post_eh$eh_shape, d_post_eh$eh_b_0, d_post_eh$eh_b_ppfev,
       d_post_eh$eh_b_delay, d_post_eh$eh_b_defer, d_post_eh$eh_u_a,
       # simulation settings
-      S          = 200,  N_pop      = 10000,
+      S = 200,  N_pop = 10000,
       # episode window for recovery metrics
       t_window   = l_spec$rmst_eh_horizon,
-      # covariate profile
-      ppfev_std  = 0,  delta_ni = l_spec$dec_delta_ni
+      delta_ni = l_spec$dec_delta_ni,
+      d_all
     )
     
     # evaluate decision rule, namely does the rmst indicate a longer duration of 
