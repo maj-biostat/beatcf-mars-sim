@@ -80,7 +80,7 @@ run_trial <- function(
     ic = 1:N_analys,
     par = c(
       "he_shape", "he_b_0", "he_b_ppfev", "he_u_a",
-      "eh_shape", "eh_b_0", "eh_b_ppfev", "eh_b_delay", "eh_b_discont", "eh_u_a"
+      "eh_shape", "eh_b_0", "eh_b_ppfev", "eh_b_defer", "eh_b_discont", "eh_u_a"
     )
   )
   d_post_smry_1[, mu := NA_real_]
@@ -113,7 +113,7 @@ run_trial <- function(
   d_pr_dec <- CJ(
     ic = 1:N_analys,
     rule = c("ni", "fut"),
-    trt = c("delay", "discont"),
+    trt = c("defer", "discont"),
     delta_rmst =  NA_real_,
     p = NA_real_,
     dec = NA_integer_
@@ -186,7 +186,7 @@ run_trial <- function(
     
     names(d_post_eh) <- c(
       "eh_shape", "eh_b_0", "eh_b_ppfev",
-      "eh_b_delay", "eh_b_discont", "eh_u_a"
+      "eh_b_defer", "eh_b_discont", "eh_u_a"
     )
     
     d_post_he <- data.table(
@@ -239,7 +239,7 @@ run_trial <- function(
     l_res_1 <- compare_treatments(
       arms = l_spec$trt_lab,
       d_post_eh$eh_shape, d_post_eh$eh_b_0, d_post_eh$eh_b_ppfev, 
-      d_post_eh$eh_b_delay, d_post_eh$eh_b_discont, d_post_eh$eh_u_a,
+      d_post_eh$eh_b_defer, d_post_eh$eh_b_discont, d_post_eh$eh_u_a,
       # simulation settings
       S = 200, N_pop = 10000,
       # episode window for recovery metrics
@@ -270,7 +270,7 @@ run_trial <- function(
         d_post_he$he_u_a,
         # EH posterior draws
         d_post_eh$eh_shape, d_post_eh$eh_b_0, d_post_eh$eh_b_ppfev,
-        d_post_eh$eh_b_delay, d_post_eh$eh_b_discont, 
+        d_post_eh$eh_b_defer, d_post_eh$eh_b_discont, 
         d_post_eh$eh_u_a,
         # settings
         S, N_pop, followup = l_spec$followup, 
@@ -298,10 +298,10 @@ run_trial <- function(
     
     
     # contrast rmst to l_spec$rmst_eh_horizon days
-    d_res_delay <- contrast_rmst(
-      trt_a = "soc", trt_b = "delay",
+    d_res_defer <- contrast_rmst(
+      trt_a = "soc", trt_b = "defer",
       d_post_eh$eh_shape, d_post_eh$eh_b_0, d_post_eh$eh_b_ppfev,
-      d_post_eh$eh_b_delay, d_post_eh$eh_b_discont, d_post_eh$eh_u_a,
+      d_post_eh$eh_b_defer, d_post_eh$eh_b_discont, d_post_eh$eh_u_a,
       # simulation settings
       S = 200, N_pop = 10000,
       # episode window for recovery metrics
@@ -312,7 +312,7 @@ run_trial <- function(
     d_res_discont <- contrast_rmst(
       trt_a = "soc", trt_b = "discont",
       d_post_eh$eh_shape, d_post_eh$eh_b_0, d_post_eh$eh_b_ppfev,
-      d_post_eh$eh_b_delay, d_post_eh$eh_b_discont, d_post_eh$eh_u_a,
+      d_post_eh$eh_b_defer, d_post_eh$eh_b_discont, d_post_eh$eh_u_a,
       # simulation settings
       S = 200,  N_pop = 10000,
       # episode window for recovery metrics
@@ -328,9 +328,9 @@ run_trial <- function(
     # NI
     d_pr_dec[
       rbind(
-        d_res_delay[, .(
+        d_res_defer[, .(
           ic = l_spec$ic,  rule = "ni", 
-          trt = "delay", 
+          trt = "defer", 
           delta = delta_mu,
           p = pr_lt_ni, 
           dec = as.integer(pr_lt_ni > l_spec$dec_thresh_ni))],
@@ -350,9 +350,9 @@ run_trial <- function(
     # futility
     d_pr_dec[
       rbind(
-        d_res_delay[, .(
+        d_res_defer[, .(
           ic = l_spec$ic,  rule = "fut", 
-          trt = "delay",
+          trt = "defer",
           delta = delta_mu,
           # probability of being greater than the ni margin
           p = 1-pr_lt_ni, 
@@ -370,7 +370,7 @@ run_trial <- function(
     ]
     
     d_stop <- d_pr_dec[
-      ic <= l_spec$ic & trt %in% c("delay", "discont"),
+      ic <= l_spec$ic & trt %in% c("defer", "discont"),
       .(resolved = as.integer(sum(dec) > 0)), keyby = .(trt)]
     
     if(all(d_stop$resolved)){
@@ -378,8 +378,8 @@ run_trial <- function(
       stop_enrol <- T
     } else if(any(d_stop$resolved)){
       
-      if(d_stop[trt == "delay", resolved]) {
-        l_spec$trt_active["delay"] <- FALSE
+      if(d_stop[trt == "defer", resolved]) {
+        l_spec$trt_active["defer"] <- FALSE
       }
       
       if(d_stop[trt == "discont", resolved]) {
@@ -489,7 +489,7 @@ run_sim12 <- function(){
       # table(d_tbl_full$state, d_tbl_full$N)
       # # naive average duration of E
       # ll$d_all[state == "E", .(.N, dur_mu = mean(dur)), keyby = trt]
-      # # units entering into each analysis (enrolment delay)
+      # # units entering into each analysis (enrolment defer)
       # ll$d_all[t0 %in% ll$l_spec$t0_last, .SD[1], keyby = id]
       # # posterior
       # ll$d_post_smry_1[ic == ll$stop_at, .(par, mu = round(mu, 3), lo = round(lo, 3), hi = round(hi, 3))]

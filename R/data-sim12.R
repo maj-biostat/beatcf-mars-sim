@@ -149,7 +149,7 @@ get_sim12_stan_data <- function(d_all){
   # The analysis proceeds on only those that have exacerbations
   d_tmp <- copy(d_all[state == "E"])
   d_tmp[, ppfev_std := ppfev_baseline]
-  d_tmp[, delay := as.numeric(trt == "delay")]
+  d_tmp[, defer := as.numeric(trt == "defer")]
   d_tmp[, discont := as.numeric(trt == "discont")]
   
   # However, a sojourn is censored if the patient was still in this state 
@@ -175,8 +175,8 @@ get_sim12_stan_data <- function(d_all){
   # d_obs or d_cens, as they have no contribution to the EH likelihood.
   
   
-  X_obs <- model.matrix(~-1 + ppfev_std + delay + discont, data = d_obs)
-  X_cens <- model.matrix(~-1 + ppfev_std + delay + discont, data = d_cens)
+  X_obs <- model.matrix(~-1 + ppfev_std + defer + discont, data = d_obs)
+  X_cens <- model.matrix(~-1 + ppfev_std + defer + discont, data = d_cens)
   
   ld_eh <- list(
     # completed sojourns
@@ -263,7 +263,7 @@ sim_study <- function(){
       evt_he = as.numeric(d_cohort$state == "H"),
       evt_eh = as.numeric(d_cohort$state == "E"),
       ppfev_std = d_cohort$ppfev_baseline,
-      trt = factor(d_cohort$trt, level = c("soc", "delay", "discont", "none"))
+      trt = factor(d_cohort$trt, level = c("soc", "defer", "discont", "none"))
       
     )
     
@@ -552,7 +552,7 @@ simulate_occupancy <- function(
     # posterior draws
   po_he_shape, po_he_b_0, po_he_b_ppfev, po_he_u_a,
   po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
-  po_eh_b_delay, po_eh_b_discont, po_eh_u_a,
+  po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
   # simulation settings
   S         = 100,
   N_pop     = 1000,
@@ -560,7 +560,7 @@ simulate_occupancy <- function(
   eval_times = seq(0, 365, by = 1),
   # covariate profile
   ppfev_std = 0,
-  trt       = "soc",   # "soc", "delay", "discont"
+  trt       = "soc",   # "soc", "defer", "discont"
   # max transitions per patient (safety cap)
   max_trans = 200L
 ) {
@@ -574,7 +574,7 @@ simulate_occupancy <- function(
   # treatment coefficient selector (applied to EH transition)
   b_trt_val <- switch(trt,
                       soc   = 0,
-                      delay = 1,  # will be multiplied by b_delay below
+                      defer = 1,  # will be multiplied by b_defer below
                       discont = 1   # will be multiplied by b_discont below
   )
   
@@ -597,7 +597,7 @@ simulate_occupancy <- function(
     eh_bfev  <- po_eh_b_ppfev[d]
     eh_btrt  <- switch(trt,
                        soc   = 0,
-                       delay = po_eh_b_delay[d],
+                       defer = po_eh_b_defer[d],
                        discont = po_eh_b_discont[d]
     )
     eh_ua <- po_eh_u_a[d]
@@ -695,7 +695,7 @@ simulate_occupancy <- function(
 simulate_episode <- function(
     # posterior draws (EH model only needed for primary metric)
   po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
-  po_eh_b_delay, po_eh_b_discont, po_eh_u_a,
+  po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
   # simulation settings
   S          = 200,
   N_pop      = 2000,
@@ -729,7 +729,7 @@ simulate_episode <- function(
     eh_ua    <- po_eh_u_a[d]
     eh_btrt  <- switch(trt,
                        soc   = 0,
-                       delay = po_eh_b_delay[d],
+                       defer = po_eh_b_defer[d],
                        discont = po_eh_b_discont[d]
     )
     
@@ -786,7 +786,7 @@ simulate_trajectory <- function(
   po_he_shape, po_he_b_0, po_he_b_ppfev, po_he_u_a,
   # EH posterior draws
   po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
-  po_eh_b_delay, po_eh_b_discont, po_eh_u_a,
+  po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
   # settings
   S         = 200,
   N_pop     = 2000,
@@ -825,7 +825,7 @@ simulate_trajectory <- function(
     
     eh_btrt  <- switch(trt,
                        soc   = 0,
-                       delay = po_eh_b_delay[d],
+                       defer = po_eh_b_defer[d],
                        discont = po_eh_b_discont[d]
     )
     eh_shape <- po_eh_shape[d]
@@ -940,9 +940,9 @@ simulate_trajectory <- function(
 # Call episodes once per arm, then contrast
 compare_treatments <- function(
     # arms to compare
-    arms = c("soc", "delay", "discont"), 
+    arms = c("soc", "defer", "discont"), 
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
-    po_eh_b_delay, po_eh_b_discont, po_eh_u_a,
+    po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
     # simulation settings
     S          = 200,
     N_pop      = 2000,
@@ -963,7 +963,7 @@ compare_treatments <- function(
     
     res <- simulate_episode(
       po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
-      po_eh_b_delay, po_eh_b_discont, po_eh_u_a,
+      po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
       # simulation settings
       S , N_pop ,
       t_window, eval_times,
@@ -981,7 +981,7 @@ compare_treatments <- function(
   curves <- rbindlist(lapply(results, `[[`, "curve"))
   rmsts  <- rbindlist(lapply(results, `[[`, "rmst"))
   
-  # pairwise RMST contrasts (delay vs soc, discont vs soc)
+  # pairwise RMST contrasts (defer vs soc, discont vs soc)
   # re-run with paired draws to get proper posterior contrast
   list(curves = curves, rmsts = rmsts)
 }
@@ -992,10 +992,10 @@ compare_treatments <- function(
 # exacerbation state for a population of patients under each draw of the 
 # posterior with the same draws being used for each treatment group.
 contrast_rmst <- function(
-    trt_a = "soc", trt_b = "delay",
+    trt_a = "soc", trt_b = "defer",
     
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
-    po_eh_b_delay, po_eh_b_discont, po_eh_u_a,
+    po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
     # simulation settings
     S          = 200,
     N_pop      = 2000,
@@ -1022,7 +1022,7 @@ contrast_rmst <- function(
     
     for (trt in c(trt_a, trt_b)) {
       eh_btrt <- switch(trt, soc = 0,
-                        delay = po_eh_b_delay[d],
+                        defer = po_eh_b_defer[d],
                         discont = po_eh_b_discont[d])
       mu  <- exp(po_eh_b_0[d] + po_eh_b_ppfev[d] * d_cohort$ppfev_baseline[m_ix[, s]] + eh_btrt)
       u_i <- rgamma(N_pop, po_eh_u_a[d], po_eh_u_a[d])
@@ -1048,11 +1048,11 @@ contrast_rmst <- function(
 
 contrast_trajectory <- function(
     trt_a = "soc",
-    trt_b = "delay",
+    trt_b = "defer",
     po_he_shape, po_he_b_0, po_he_b_ppfev, po_he_u_a,
     # EH posterior draws
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
-    po_eh_b_delay, po_eh_b_discont, po_eh_u_a,
+    po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
     # settings
     S         = 200,
     N_pop     = 2000,
@@ -1076,7 +1076,7 @@ contrast_trajectory <- function(
   # po_he_shape, po_he_b_0, po_he_b_ppfev, po_he_u_a,
   # # EH posterior draws
   # po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
-  # po_eh_b_delay, po_eh_b_discont, po_eh_u_a,
+  # po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
   # settings
   # S         = 200
   # N_pop     = 2000
@@ -1090,7 +1090,7 @@ contrast_trajectory <- function(
     po_he_shape, po_he_b_0, po_he_b_ppfev, po_he_u_a,
     # EH posterior draws
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
-    po_eh_b_delay, po_eh_b_discont, po_eh_u_a,
+    po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
     S, N_pop, followup, 
     trt = trt_a,
     max_trans,
@@ -1103,7 +1103,7 @@ contrast_trajectory <- function(
     po_he_shape, po_he_b_0, po_he_b_ppfev, po_he_u_a,
     # EH posterior draws
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
-    po_eh_b_delay, po_eh_b_discont, po_eh_u_a,
+    po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
     S ,N_pop, followup, 
     trt = trt_b,
     max_trans,
@@ -1196,7 +1196,7 @@ sim_weibullPH_rmst <- function(l_spec){
   u_eh <- rgamma(1, shape = l_spec$g_a, rate = l_spec$g_r)
   
   arms = 1:3
-  names(arms) <- c("soc", "delay", "discont")
+  names(arms) <- c("soc", "defer", "discont")
   
   b_trt <- c(0, -0.21875, -0.219)
   
@@ -1285,7 +1285,7 @@ example_stan_2 <- function(){
   # The analysis proceeds on only those that have exacerbations
   d_tmp <- copy(d_cohort[state == "E"])
   d_tmp[, ppfev_std := ppfev_baseline]
-  d_tmp[, delay := as.numeric(trt == "delay")]
+  d_tmp[, defer := as.numeric(trt == "defer")]
   d_tmp[, discont := as.numeric(trt == "discont")]
   
   # However, a sojourn is censored if the patient was still in this state 
@@ -1311,8 +1311,8 @@ example_stan_2 <- function(){
   # d_obs or d_cens, as they have no contribution to the EH likelihood.
   
   
-  X_obs <- model.matrix(~-1 + ppfev_std + delay + discont, data = d_obs)
-  X_cens <- model.matrix(~-1 + ppfev_std + delay + discont, data = d_cens)
+  X_obs <- model.matrix(~-1 + ppfev_std + defer + discont, data = d_obs)
+  X_cens <- model.matrix(~-1 + ppfev_std + defer + discont, data = d_cens)
   
   ld_1 <- list(
     # completed sojourns
@@ -1430,7 +1430,7 @@ example_stan_2 <- function(){
   po_eh_shape <- d_post_eh$shape
   po_eh_b_0 <- d_post_eh$b_0
   po_eh_b_ppfev <- d_post_eh$`b[1]`
-  po_eh_b_delay <- d_post_eh$`b[2]`
+  po_eh_b_defer <- d_post_eh$`b[2]`
   po_eh_b_discont <- d_post_eh$`b[3`
   po_eh_u_a <- d_post_eh$u_a
   
@@ -1447,9 +1447,9 @@ example_stan_2 <- function(){
   
   
   l_res_1 <- compare_treatments(
-    arms = c("soc", "delay", "discont"),
+    arms = c("soc", "defer", "discont"),
     po_eh_shape, 
-    po_eh_b_0, po_eh_b_ppfev, po_eh_b_delay, po_eh_b_discont, 
+    po_eh_b_0, po_eh_b_ppfev, po_eh_b_defer, po_eh_b_discont, 
     po_eh_u_a,
     # simulation settings
     S          = 200,
@@ -1472,7 +1472,7 @@ example_stan_2 <- function(){
       legend.position = "bottom"
     ) 
   
-  l_res_1$rmsts$trt <- factor(l_res_1$rmsts$trt, levels = c("soc", "delay", "discont"))
+  l_res_1$rmsts$trt <- factor(l_res_1$rmsts$trt, levels = c("soc", "defer", "discont"))
   p2 <- ggplot(l_res_1$rmsts, aes(x = trt, y = rmst_mu)) +
     geom_point() +
     geom_linerange(aes(ymin = rmst_lo, ymax = rmst_hi)) +
@@ -1485,11 +1485,11 @@ example_stan_2 <- function(){
   
   
 
-  d_res_2_delay <- contrast_rmst(
-    trt_a = "soc", trt_b = "delay",
+  d_res_2_defer <- contrast_rmst(
+    trt_a = "soc", trt_b = "defer",
     
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
-    po_eh_b_delay, po_eh_b_discont, po_eh_u_a,
+    po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
     # simulation settings
     S          = 200,
     N_pop      = 2000,
@@ -1503,7 +1503,7 @@ example_stan_2 <- function(){
     trt_a = "soc", trt_b = "discont",
     
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
-    po_eh_b_delay, po_eh_b_discont, po_eh_u_a,
+    po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
     # simulation settings
     S          = 200,
     N_pop      = 2000,
@@ -1513,7 +1513,7 @@ example_stan_2 <- function(){
     # sample data for covariate profile
     d_cohort
   )
-  d_res_2 <- rbind(d_res_2_delay, d_res_2_discont)
+  d_res_2 <- rbind(d_res_2_defer, d_res_2_discont)
   kableExtra::kbl(d_res_2, format = "simple")
   d_res_2[, contrast := paste0(trt_b, " - ", trt_a)]
   p1 <- ggplot(d_res_2, aes(x = contrast, y = delta_mu)) +
@@ -1529,11 +1529,11 @@ example_stan_2 <- function(){
   #####
   l_res_3 <- contrast_trajectory(
     trt_a = "soc",
-    trt_b = "delay",
+    trt_b = "defer",
     po_he_shape, po_he_b_0, po_he_b_ppfev, po_he_u_a,
     # EH posterior draws
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
-    po_eh_b_delay, po_eh_b_discont, po_eh_u_a,
+    po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
     # simulation settings
     S          = 200,
     N_pop      = 2000,
@@ -1563,53 +1563,13 @@ example_stan_1 <- function(){
   
   d_cohort <- get_sim12_cohort(l_spec)
   
-  # 
-  # int<lower=0> N_obs_he;
-  # int N_id_he;
-  # vector[N_obs_he] y_obs_he;
-  # array[N_obs_he] int id_he;
-  # // ppfev (mean centred)
-  # vector[N_obs_he] ppfev_he;
-  # 
-  # int<lower=0> N_obs_eh;
-  # int N_id_eh;
-  # vector[N_obs_eh] y_obs_eh;
-  # array[N_obs_eh] int id_eh;
-  # // ppfev (mean centred)
-  # vector[N_obs_eh] ppfev_eh;
-  # array[N_obs_eh] int trt_ix_eh;
-  
-  # d_tmp <- d_cohort[state == "E"]
-  # ld <- list(
-  #   N_obs_he = d_cohort[state == "H", .N],
-  #   N_id_he = d_cohort[state == "H", length(unique(id))],
-  #   y_obs_he = d_cohort[state == "H", dur],
-  #   id_he = d_cohort[state == "H", id],
-  #   ppfev_he = d_cohort[state == "H", ppfev_baseline],
-  #   
-  #   N_obs_eh = d_cohort[state == "E", .N],
-  #   N_id_eh = d_cohort[state == "E", length(unique(id))],
-  #   y_obs_eh = d_cohort[state == "E", dur],
-  #   id_eh = d_cohort[state == "E", id],
-  #   ppfev_eh = d_cohort[state == "E", ppfev_baseline],
-  #   trt_ix_eh = d_cohort[state == "E", factor(trt, levels = c("soc", "delay", "discont"))]
-  # )
-  
-  
-  # int<lower=0> N_obs;
-  # int N_id;
-  # vector[N_obs] y_obs;
-  # array[N_obs] int id;
-  # // ppfev (mean centred)
-  # vector[N_obs] ppfev;
-  # 
   d_tmp <- copy(d_cohort[state == "E"])
   d_tmp[, ppfev_std := ppfev_baseline]
-  d_tmp[, delay := as.numeric(trt == "delay")]
+  d_tmp[, defer := as.numeric(trt == "defer")]
   d_tmp[, discont := as.numeric(trt == "discont")]
   d_tmp[, id_idx := as.integer(factor(id))]
   X <- model.matrix(
-    ~-1 + ppfev_std + delay + discont,
+    ~-1 + ppfev_std + defer + discont,
     data = d_tmp)
   
   ld_1 <- list(
@@ -1758,11 +1718,11 @@ get_demo_spec <- function(){
   # as above but the log-hazard increases for every 10% increment in ppfev
   # i.e. more instantaneous risk of recovery
   l_spec$b_ppfev_recov <- 0.1
-  # trt is c("soc","delay","discont")
+  # trt is c("soc","defer","discont")
   l_spec$b_trt <- c(0, -0.3, -0.2)
   l_spec$shape_eh <- 2.75  # originally 0.9 
   
-  l_spec$trt_lab <- c("soc","delay","discont")
+  l_spec$trt_lab <- c("soc","defer","discont")
   l_spec$trt_active <- rep(TRUE, 3)
   names(l_spec$trt_active) <- l_spec$trt_lab
   

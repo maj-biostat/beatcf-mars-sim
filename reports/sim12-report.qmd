@@ -206,7 +206,7 @@ d_rmst <- data.table()
 for(i in 1:length(l)){
   
   # extract the decision matrix - sim, analysis, quantity, domain level decision
-  d_pr_dec <- copy(l[[i]]$d_pr_dec[trt %in% c("delay", "defer") & rule == "ni"])
+  d_pr_dec <- copy(l[[i]]$d_pr_dec[trt %in% c("defer", "discont") & rule == "ni"])
   
   l_cfg <- copy(l[[i]]$l_spec)
   
@@ -266,18 +266,18 @@ g_tbl <- d_tbl_1_cur |>
     align = "center"
   )   |>
   fmt_number(
-    columns = c("mu_defer", "mu_delay", "lo_defer", "lo_delay", "hi_defer", "hi_delay"), 
+    columns = c("mu_discont", "mu_defer", "lo_discont", "lo_defer", "hi_discont", "hi_defer"), 
     decimals = 2, drop_trailing_zeros = F) |>
   fmt_number(
     columns = c("N"), 
     decimals = 0, drop_trailing_zeros = F)  |> 
   cols_merge(
-    columns = c("mu_delay", "lo_delay", "hi_delay"
+    columns = c("mu_defer", "lo_defer", "hi_defer"
                 ),
     pattern = "<<{1}>><< ({2}, {3})>>"
   )   |>
   cols_merge(
-    columns = c("mu_defer", "lo_defer", "hi_defer"
+    columns = c("mu_discont", "lo_discont", "hi_discont"
                 ),
     pattern = "<<{1}>><< ({2}, {3})>>"
   )   |> 
@@ -290,8 +290,8 @@ g_tbl <- d_tbl_1_cur |>
   )  |>
   cols_label(
     # delta = "Diff at 12 month vs SoC",
-    mu_defer = html("defer"),
-    mu_delay = html("delay")
+    mu_discont = html("discont"),
+    mu_defer = html("defer")
   ) |>
   tab_options(
     table.font.size = pct(55),
@@ -326,7 +326,7 @@ d_cprob_dec <- data.table()
 for(i in 1:length(l)){
   
   # extract the decision matrix - sim, analysis, quantity, domain level decision
-  d_dec_1 <- copy(l[[i]]$d_pr_dec[trt %in% c("delay", "defer")])
+  d_dec_1 <- copy(l[[i]]$d_pr_dec[trt %in% c("defer", "discont")])
   
   # config for scenario
   l_cfg <- copy(l[[i]]$l_spec)
@@ -371,33 +371,7 @@ d_tbl_1_cur <- copy(d_cprob_dec)
 d_tbl_1_cur <- dcast(
   d_tbl_1_cur, scenario + desc + trt ~ rule + N, value.var = "pr_val")
 
-# d_b_trt <- data.table()
-# 
-# for(i in 1:length(l)){
-#   l_cfg <- copy(l[[i]]$cfg)
-#   
-#   # main effect
-#   b_T <- unlist(l_cfg$b_T)
-#   # time interaction
-#   b_tT <- l_cfg$b_tT
-#   # cumulative effects
-#   b_trt <- c(
-#     b_T[1] + sum(b_tT[1, ]),
-#     b_T[2] + sum(b_tT[2, ])
-#   )
-#   
-#   d_tmp <- data.table(
-#     scenario = i, 
-#     par = c("Deferred", "Discontinued"), 
-#     delta = b_trt
-#   )
-#   d_b_trt <- rbind(d_b_trt, d_tmp)
-# }
 
-# d_tbl_1_cur <- base::merge(d_tbl_1_cur, d_b_trt, by = c("scenario", "par"))
-
-# setcolorder(d_tbl_1_cur, c("scenario", "desc", "par", "delta"))
-# setorderv(d_tbl_1_cur, cols = c("scenario"))
 
 d_tbl_1_cur <- d_tbl_1_cur[, .SD, .SDcols = !c("scenario")]
 
@@ -555,45 +529,15 @@ d_tbl_1_cur <- rbind(
 )
 
 
-# we are only interested in Deferred vs soc and Discontinued vs soc
+# we are only interested in defer vs soc and discont vs soc
 d_b_trt <- data.table()
 
-# for(i in 1:length(l)){
-#   l_cfg <- copy(l[[i]]$cfg)
-#   
-#   # main effect
-#   b_T <- unlist(l_cfg$b_T)
-#   # time interaction
-#   b_tT <- l_cfg$b_tT
-#   # cumulative effects
-#   b_trt <- c(
-#     b_T[1] + sum(b_tT[1, ]),
-#     b_T[2] + sum(b_tT[2, ])
-#   )
-#   
-#   d_tmp <- data.table(
-#     scenario = i, 
-#     trt = c("Deferred", "Discontinued"), 
-#     delta = c(b_trt[1], b_trt[2]))
-#   d_b_trt <- rbind(d_b_trt, d_tmp)
-# }
 
-# d_tbl_1_cur <- base::merge(
-#   d_tbl_1_cur, 
-#   d_b_trt, 
-#   by = c("scenario", "trt"),
-#   all.x = T)
-# 
 d_tbl_1_cur <- dcast(
   d_tbl_1_cur,
   scenario + desc ~ trt ,
   value.var = list("N_mu", "N_sd"))
 
-# d_tbl_1_cur[, `:=`(delta_SoC = NULL, delta_all = NULL)]
-
-# setcolorder(d_tbl_1_cur, c("scenario", "desc", "delta_Deferred", "delta_Discontinued"))
-
-# d_tbl_1_cur <- d_tbl_1_cur[order(scenario, desc)]
 d_tbl_1_cur <- d_tbl_1_cur[, .SD, .SDcols = !c("scenario")]
 
 
@@ -631,12 +575,12 @@ g_tbl <- d_tbl_1_cur |>
     align = "center"
   )  |>
   cols_merge(
-    columns = c("N_mu_defer", "N_sd_defer"
+    columns = c("N_mu_discont", "N_sd_discont"
                 ),
     pattern = "<<{1}>><< ({2})>>"
   ) |>
   cols_merge(
-    columns = c("N_mu_delay", "N_sd_delay"
+    columns = c("N_mu_defer", "N_sd_defer"
                 ),
     pattern = "<<{1}>><< ({2})>>"
   ) |>
@@ -651,12 +595,10 @@ g_tbl <- d_tbl_1_cur |>
     pattern = "<<{1}>><< ({2})>>"
   ) |>
   cols_label(
-    # delta_Deferred = "defer",
-    # delta_Discontinued = "delay",
     N_mu_defer = "defer",
-    N_mu_delay = "delay",
+    N_mu_discont = "discont",
     N_mu_soc = "soc",
-    N_mu_all = "Total"
+    N_mu_all = "total"
   ) |>
   tab_options(
     # table.width = pct(100),

@@ -1,6 +1,6 @@
 default:
   desc: "Treatments decrease recovery below NI"
-  nsim: 50
+  nsim: 10
   mc_cores: 40
   
   # example trials
@@ -42,7 +42,7 @@ default:
   # linear predictor recovery
   mu_recov: -6.5  # originally -0.5
   
-  # trt is c("soc","delay","discont")
+  # trt is c("soc","defer","discont")
   b_trt: [0, -0.3, -0.3]
   
   
@@ -56,7 +56,7 @@ default:
   
   
   trt_active: [1, 1, 1]
-  trt_lab: ["soc", "delay", "discont"]
+  trt_lab: ["soc", "defer", "discont"]
   
   # decision reference values - 
   # will not tolerate rmst in the intervention arms being more than 
