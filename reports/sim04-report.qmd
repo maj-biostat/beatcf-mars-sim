@@ -106,7 +106,7 @@ for(i in 1:length(flist)){
 # Load all the files into a single list.
 
 # files of interest
-sim_lab <- "sim04-05"
+sim_lab <- "sim04-06"
 
 flist <- list.files(paste0(prefix_data, "/", sim_lab), pattern = "sim04")
 toks <- list()
@@ -199,9 +199,9 @@ The key configuration parameters that persist across all scenarios are shown bel
 # Design overview
 
 BEAT-CF-MARs is a non-inferiority study that uses a longitudinal design with lung function measured under each of the active treatment strategies at the follow up visits to 12 months post randomisation.
-Currently, a baseline reading and `r l_spec_1$n_sprty_obs` follow up visits are assumed (equally spaced over the 12 months).
+Currently, a baseline reading (where treatment assignment is assumed to have no differential effect) and `r l_spec_1$n_sprty_obs` equally spaced follow up visits are assumed.
 
-Participants are randomised with equal allocation to one of the three strategies at enrolment and this allocation is assumed to hold over the 12 month period.
+At the start of the study, participants are randomised with equal allocation to one of the three strategies at enrolment and this allocation is assumed to remain constant over the 12 month period.
 Whenever an exacerbation occurs (participants may have $0, 1, 2, \dots$ exacerbations) the treatment regime that was assigned is implemented per the protocol specification.
 
 The primary outcome measure, ppFEV1 (percent predicted forced expiratory volume in one second) characterises lung function on how well a person can exhale air in one second compared to what is expected for someone of their age, height, sex, and race.
@@ -219,6 +219,83 @@ Variations on the design might include:
 + Model the number/frequency/severity of exacerbations with the goal of characterising more of the variation and therefore improve precision on the treatment effects of interest
 + Re-randomised participants to alternative treatments over the 12 month period; patients would be randomised on each exacerbation in a cross-over type design
 + Focus attention on one of the two active arms rather than both (in an attempt to make the most of our 600 patients)
+
+## Similar studies
+
+
+### STOP PEDS
+
+The STOP PEDS RCT (Streamlined Treatnent of Pulmonary Exacerbations in Pediatrics RCT) aims to assess the safety and effectiveness of two management strategies for outpatient pulmonary exacerbations (PEx) in children with CF.
+STOP PEDS was based on a pilot study in which the cases of mild PEx in children aged 6 to 18 were randomised to immediate or tailored antibiotic therapy.
+Of the 121 enrolments, 94 had at least one PEx and among the 33 assigned to tailored therapy, only 10 received oral antibiotics which was higher than the expected (hypothesisded) <10% that would avoid antibiotics.
+
+STOP PEDS adopts the same antibiotic strategies as the pilot study.
+In the main cohort, children aged 6 to 18 on modulator therapy will be enrolled in a healthy state and followed for 12 months. 
+At the time of the first PEx, participants that meet the study treatment criteria will be randomised to immediate or tailored therapy; which will be the treatment strategy used over the remainder of the 12 months if subsequent PEx occur.
+The overall goal of the main STOP PEDS cohort is to assess the long- and short-term efficacy and safety of two approaches for the treatment of outpatient PEx in children with CF: immediate antibiotics vs. tailored therapy. 
+Specifically, the study will evaluate the difference in pulmonary function between arms by evaluating change in percent predicted FEV1 (ppFEV1) (primary) and lung clearance index (LCI) (secondary) over one year. 
+
+![Main cohort schema](`r paste0(prefix_fig, "/stop-ped-flow.png")`)
+
+Two additional cohorts include children aged 3 to 5 on modulator therapy and children aged 6 to 18 not on modulator therapy.
+These latter two cohorts will enrolled when well and followed through a single PEx under randomised treatment.
+
+In the main cohort, participants are enrolled in a healthy state, undergoes a baseline assessment and a PEx antibiotic is selected for that participant (can be updated).
+Caregivers are instructed to contact the research time between 3 and 7 days of the onset of new respiratory symptoms and at the time of a new PEx participants will be assessed (remotely or in person at clinic) for eligibility for randomised treatment.
+Randomisation occurs at the first PEx that meets the study requirements and all subsequent elgible PEx will be treated with the same assignment.
+After randomisation, follow up occurs on day 5, 8, 15 and 22.
+If symptoms meet criteria, participants in the tailored arm start oral antibiotics.
+Participants complete a diary daily for 7 days then every other day to day 15.
+At day 28 a final visit occurs where participants perform spirometry and if symptoms have not returned to baseline or ppFEV is more than 10% below the most recent well state, the participant is referred for additional management.
+At 12 months after enrolment, spirometry occurs and particpants exit the study.
+
+The primary hypothesis is that tailored therapy is non-inferior to immediate antibiotics as measured by the one-year change in ppFEV1.
+The non-inferiority margin of 3% will be used and non-inferiority claimed if the lower bound for the 95% CI for the difference between arms in the one-year change in ppFEV1 is greater than -3.
+
+The study aims to recruit 311 participants.
+This is based on a sample size calculation, which assumes: 
+
++ SD for the 12 month change in ppFEV1 is 9.1 for 6-11 year olds and 7.3 for 12-18 year olds.
++ one-sided t-test alpha of 0.05 and power of 0.8
++ 3% non-inferiority margin
++ 67% of the enrolments have a PEx eligible for randomised treatment
++ 15% are lost to follow up
+
+Based on the above, I think the sample size calculation could be implemented as shown below.
+
+In narrative form, we assume the total sample size based on the 311 and work backwards to compute the power under the rest of the assumptions.
+That is, we first multiply by the proportion that have a PEx and proportion that are retained within the study to get the number of events per arm.
+A simulation loop then generates the change in ppFEV1 from baseline to follow up for each treatment arm ($Y_j$ $j = 0, 1$) assuming a mean of zero and SD of 8.
+These differences are then differenced to obtain delta as the treatment effect of interest, which is put through a one-sided t.test with a mean of zero, from which the lower bound of the CI is compared to the NI margin of 3%.
+The average of the number of times that we claim success gives us the power.
+
+\footnotesize
+```{r}
+#| echo: true
+#| hold: true
+
+N <- floor(311 * (1-0.33) * (1-0.15))
+N <- N + (N %% 2)
+n_sim <- 10000
+
+win <- unlist(lapply(1:n_sim, function(ii){
+  # Assume no difference between groups and SD = 8 as a compromise between 
+  # the 7 and 9 listed above.
+  # It not entirely clear to me whether they are assuming that the SD between 
+  # baseline and follow up is 8 or whether the difference between arms is 
+  # being assumed to be 8. I will assume the former
+  y_0 <- rnorm(N/2, 0, 8)
+  y_1 <- rnorm(N/2, 0, 8)
+  
+  delta <- y_1 - y_0
+  out <- t.test(delta, alternative = "greater")
+  # out
+  out$conf.int[1] > -3
+}))
+mean(win)
+
+```
+\normalsize
 
 
 
@@ -328,7 +405,7 @@ ix_q <- sapply(q_age0, function(z){
 id_q <- d[ix_q, id]
 ```
 
-For example, the mean and observed ppFEV1 along with the residual autocorrelation function for participants at the approxiamte `r paste0(100*q_p, "%", collapse = ", ")` percentiles for baseline age are shown in @fig-ppfev1-age0-ex.
+For example, the observed ppFEV1 values and the mean along with the residual autocorrelation function for participants at the approxiamte `r paste0(100*q_p, "%", collapse = ", ")` percentiles for baseline age are shown in @fig-ppfev1-age0-ex.
 
 ```{r, echo = F}
 #| label: fig-ppfev1-age0-ex
@@ -421,7 +498,7 @@ l_spec_tmp$ie <- l_spec_tmp$N
 
 ```
 
-As another example, observed ppFEV1 for a random selection of `r l_spec_tmp$N` participants followed over 12 months (no differential treatment groups) are shown in @fig-ppfev1-age-prog.
+As another example, observed ppFEV1 for a random selection of `r l_spec_tmp$N` participants with no differential treatment group effects and followed over 12 months are shown in @fig-ppfev1-age-prog.
 
 ```{r, echo = F}
 #| label: fig-ppfev1-age-prog
@@ -505,8 +582,8 @@ The decision thresholds and evidential thresholds are shown in @tbl-dec-threshol
 
 d_dec_pars <- data.table(
   desc = c("NI", "Futility"),
-  ref_value = c(l_spec_1$delta$ni, l_spec_1$delta$inf),
-  threshold = c(l_spec_1$thresh$ni, l_spec_1$thresh$inf)
+  ref_value = c(l_spec_1$delta$ni, l_spec_1$delta$fut),
+  threshold = c(l_spec_1$thresh$ni, l_spec_1$thresh$fut)
 )
 
 
@@ -538,7 +615,7 @@ This approach is adopted for each interim and the final analysis and is reflecte
 
 The trial setup is such that if the intervention were beneficial, it would reduce the rate of decline for ppFEV1 and we are therefore considering negative non-inferiority margins.
 Specifically, if an intervention arm is non-inferior to the reference arm, then the follow up ppFEV1 on the intervention will be reduced by no more than the non-inferiority margin.
-Conversely, if the ppFEV1 on the intervention arm falls below the futility reference vaule with very high probability, then we conclude futility.
+Conversely, if the ppFEV1 on the intervention arm falls below the futility reference vaule with high probability, then we conclude futility.
 
 + For non-inferiority, we evaluate $\text{Pr}(\delta > \epsilon_{NI}) > \zeta_{NI}$ where $\delta$ is the relevant difference in mean ppFEV1, $\epsilon_{NI}$ and $\zeta_{NI}$ correspond to a non-inferiority margin and an evidential requirement in terms of a probability threshold.
 + For futility, we evaluate $\text{Pr}(\delta < \epsilon_{fut}) > \zeta_{fut}$ where $\epsilon_{fut}$ and $\zeta_{fut}$ correspond to a reference value and an evidential minimum in terms of a probability threshold.
