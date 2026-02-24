@@ -16,7 +16,7 @@ library(emmeans)
 # Study design
 n_patients <- 600
 n_days <- 365
-n_simulations <- 10  # Start with 100, increase for final analysis
+n_simulations <- 50  # Start with 100, increase for final analysis
 
 # True treatment effects to simulate under
 scenarios <- list(
@@ -300,6 +300,8 @@ sim_id <- 1
 
 # for (scenario in scenarios) {
   
+  tictoc::tic()
+
   scenario <- scenarios[[1]]
   
   cat("\n")
@@ -341,7 +343,6 @@ sim_id <- 1
   
   # Calculate operating characteristics
   cat("\nOperating Characteristics:\n")
-  cat("-"*70, "\n\n")
   
   cat("RECOVERY (Time to recovery - Cox model):\n")
   cat(sprintf("  Delayed - Non-inferiority power: %.1f%%\n",
@@ -357,6 +358,8 @@ sim_id <- 1
   
   cat(sprintf("Mean exacerbations per dataset: %.1f\n", 
               mean(results_dt$n_exacerb, na.rm = TRUE)))
+  
+  tictoc::toc()
   
   # Store results
   results_all[[scenario$name]] <- results_dt
