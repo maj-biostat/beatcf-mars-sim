@@ -80,7 +80,7 @@ run_trial <- function(
     ic = 1:N_analys,
     par = c(
       "he_shape", "he_b_0", "he_b_ppfev", "he_u_a",
-      "eh_shape", "eh_b_0", "eh_b_ppfev", "eh_b_delay", "eh_b_defer", "eh_u_a"
+      "eh_shape", "eh_b_0", "eh_b_ppfev", "eh_b_delay", "eh_b_discont", "eh_u_a"
     )
   )
   d_post_smry_1[, mu := NA_real_]
@@ -113,7 +113,7 @@ run_trial <- function(
   d_pr_dec <- CJ(
     ic = 1:N_analys,
     rule = c("ni", "fut"),
-    trt = c("delay", "defer"),
+    trt = c("delay", "discont"),
     delta_rmst =  NA_real_,
     p = NA_real_,
     dec = NA_integer_
@@ -186,7 +186,7 @@ run_trial <- function(
     
     names(d_post_eh) <- c(
       "eh_shape", "eh_b_0", "eh_b_ppfev",
-      "eh_b_delay", "eh_b_defer", "eh_u_a"
+      "eh_b_delay", "eh_b_discont", "eh_u_a"
     )
     
     d_post_he <- data.table(
@@ -239,7 +239,7 @@ run_trial <- function(
     l_res_1 <- compare_treatments(
       arms = l_spec$trt_lab,
       d_post_eh$eh_shape, d_post_eh$eh_b_0, d_post_eh$eh_b_ppfev, 
-      d_post_eh$eh_b_delay, d_post_eh$eh_b_defer, d_post_eh$eh_u_a,
+      d_post_eh$eh_b_delay, d_post_eh$eh_b_discont, d_post_eh$eh_u_a,
       # simulation settings
       S = 200, N_pop = 10000,
       # episode window for recovery metrics
@@ -270,7 +270,7 @@ run_trial <- function(
         d_post_he$he_u_a,
         # EH posterior draws
         d_post_eh$eh_shape, d_post_eh$eh_b_0, d_post_eh$eh_b_ppfev,
-        d_post_eh$eh_b_delay, d_post_eh$eh_b_defer, 
+        d_post_eh$eh_b_delay, d_post_eh$eh_b_discont, 
         d_post_eh$eh_u_a,
         # settings
         S, N_pop, followup = l_spec$followup, 
@@ -301,7 +301,7 @@ run_trial <- function(
     d_res_delay <- contrast_rmst(
       trt_a = "soc", trt_b = "delay",
       d_post_eh$eh_shape, d_post_eh$eh_b_0, d_post_eh$eh_b_ppfev,
-      d_post_eh$eh_b_delay, d_post_eh$eh_b_defer, d_post_eh$eh_u_a,
+      d_post_eh$eh_b_delay, d_post_eh$eh_b_discont, d_post_eh$eh_u_a,
       # simulation settings
       S = 200, N_pop = 10000,
       # episode window for recovery metrics
@@ -309,10 +309,10 @@ run_trial <- function(
       delta_ni = l_spec$dec_delta_ni,
       d_all
     )
-    d_res_defer <- contrast_rmst(
-      trt_a = "soc", trt_b = "defer",
+    d_res_discont <- contrast_rmst(
+      trt_a = "soc", trt_b = "discont",
       d_post_eh$eh_shape, d_post_eh$eh_b_0, d_post_eh$eh_b_ppfev,
-      d_post_eh$eh_b_delay, d_post_eh$eh_b_defer, d_post_eh$eh_u_a,
+      d_post_eh$eh_b_delay, d_post_eh$eh_b_discont, d_post_eh$eh_u_a,
       # simulation settings
       S = 200,  N_pop = 10000,
       # episode window for recovery metrics
@@ -334,9 +334,9 @@ run_trial <- function(
           delta = delta_mu,
           p = pr_lt_ni, 
           dec = as.integer(pr_lt_ni > l_spec$dec_thresh_ni))],
-        d_res_defer[, .(
+        d_res_discont[, .(
           ic = l_spec$ic,  rule = "ni", 
-          trt = "defer", 
+          trt = "discont", 
           delta = delta_mu,
           p = pr_lt_ni, 
           dec = as.integer(pr_lt_ni > l_spec$dec_thresh_ni))]
@@ -358,9 +358,9 @@ run_trial <- function(
           p = 1-pr_lt_ni, 
           # decide futile if p of being gt ni margin is above threshold
           dec = as.integer(1-pr_lt_ni > l_spec$dec_thresh_fut))],
-        d_res_defer[, .(
+        d_res_discont[, .(
           ic = l_spec$ic,  rule = "fut", 
-          trt = "defer", 
+          trt = "discont", 
           delta = delta_mu, p = 1-pr_lt_ni, 
           dec = as.integer(1-pr_lt_ni > l_spec$dec_thresh_fut))]
       ),
@@ -370,7 +370,7 @@ run_trial <- function(
     ]
     
     d_stop <- d_pr_dec[
-      ic <= l_spec$ic & trt %in% c("delay", "defer"),
+      ic <= l_spec$ic & trt %in% c("delay", "discont"),
       .(resolved = as.integer(sum(dec) > 0)), keyby = .(trt)]
     
     if(all(d_stop$resolved)){
@@ -382,8 +382,8 @@ run_trial <- function(
         l_spec$trt_active["delay"] <- FALSE
       }
       
-      if(d_stop[trt == "defer", resolved]) {
-        l_spec$trt_active["defer"] <- FALSE
+      if(d_stop[trt == "discont", resolved]) {
+        l_spec$trt_active["discont"] <- FALSE
       }
     }
     log_info("Trial ", ix, " allocation after cohort ", 
