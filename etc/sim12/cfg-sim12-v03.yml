@@ -42,7 +42,7 @@ default:
   # linear predictor recovery
   mu_recov: -6.5  # originally -0.5
   
-  # trt is c("soc","delay","defer")
+  # trt is c("soc","delay","discont")
   b_trt: [0, -0.3, -0.3]
   
   
@@ -56,7 +56,7 @@ default:
   
   
   trt_active: [1, 1, 1]
-  trt_lab: ["soc", "delay", "defer"]
+  trt_lab: ["soc", "delay", "discont"]
   
   # decision reference values - 
   # will not tolerate rmst in the intervention arms being more than 
