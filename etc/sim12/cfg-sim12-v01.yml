@@ -58,7 +58,7 @@ default:
   # decision reference values - 
   # will not tolerate rmst in the intervention arms being more than 
   # dec_delta_ni than the soc group
-  dec_delta_ni: 0.5
+  dec_delta_ni: 1
   
   # decision probability thresholds 
   dec_thresh_ni: 0.98

@@ -1,4 +1,22 @@
 // Weibull-PH with Gamma frailty — marginalised over frailty
+
+functions {
+  
+  real rmst_weibull_scale(real tau, real w_shape, real w_scale) {
+    real s = 1.0 / w_shape;
+    real z = pow(tau / w_scale, w_shape);
+
+    return (w_scale / w_shape) * tgamma(s) * gamma_p(s, z);
+  }
+  
+  real rmst_weibull_ph(real tau, real w_shape, real w_scale) {
+    real s = 1.0 / w_shape;
+    real z = w_scale * pow(tau, w_shape);
+
+    return (1.0 / w_shape) * pow(w_scale, -1.0 / w_shape) * tgamma(s) * gamma_p(s, z);
+  }
+
+}
 data {
   int<lower=0> N_obs;       
   int<lower=0> N_cens; 
@@ -16,22 +34,26 @@ data {
   
   real<lower=0> pri_s_u;
 }
+transformed data{
+  int<lower = 0> N = N_obs + N_cens;
+}
 parameters {
   real<lower=0> shape;       // Weibull shape (alpha)
-  real          b_0;         // intercept
-  vector[P]     b;           // covariate effects
+  real b_0;         // intercept
+  vector[P] b;           // covariate effects
   real<lower=0> u_a;         // Gamma frailty shape (= rate, so mean = 1)
 }
 transformed parameters {
   // linear predictor per obs (no frailty here because we marginalise below)
   vector[N_obs]  log_mu_obs  = b_0 + X_obs  * b;
   vector[N_cens] log_mu_cens = b_0 + X_cens * b;
+  
 }
 model {
   // --- priors ---
   target += exponential_lpdf(shape | 1);
-  target += normal_lpdf(b_0   | 0, 3);
-  target += normal_lpdf(b     | 0, 3);
+  target += normal_lpdf(b_0 | 0, 3);
+  target += normal_lpdf(b | 0, 3);
   target += exponential_lpdf(u_a | pri_s_u);
 
   // Accumulate per-subject sufficient statistics
@@ -44,7 +66,7 @@ model {
   array[N_id]  int n_i;          
 
   sum_log_haz = rep_vector(0.0, N_id);
-  S               = rep_vector(0.0, N_id);
+  S = rep_vector(0.0, N_id);
   for (k in 1:N_id) {
     n_i[k] = 0;
   }
@@ -52,17 +74,17 @@ model {
   for (i in 1:N_obs) {
     int sid = id_obs[i];
     real y_alpha = pow(y_obs[i], shape);
-    real mu_i    = exp(log_mu_obs[i]);
+    real mu_i = exp(log_mu_obs[i]);
 
     sum_log_haz[sid] += log(shape) + log_mu_obs[i] + (shape - 1) * log(y_obs[i]);
-    S[sid]               += mu_i * y_alpha;
-    n_i[sid]             += 1;
+    S[sid] += mu_i * y_alpha;
+    n_i[sid] += 1;
   }
   
   for (i in 1:N_cens) {
-    int sid      = id_cens[i];
+    int sid = id_cens[i];
     real y_alpha = pow(y_cens[i], shape);
-    real mu      = exp(log_mu_cens[i]);
+    real mu = exp(log_mu_cens[i]);
 
     S[sid] += mu * y_alpha;
   }
@@ -78,6 +100,6 @@ model {
   }
 }
 generated quantities {
-  // Posterior mean frailty per subject (E[u | data] = (n_i + u_a)/(S_i + u_a))
-  // Can be computed here if needed for diagnostics
+
+  
 }

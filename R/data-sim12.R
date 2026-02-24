@@ -1158,8 +1158,27 @@ contrast_trajectory <- function(
 }
 
 
+lower_incomplete_gamma <- function(a, z) {
+  pgamma(z, shape = a) * gamma(a)
+}
 
-weibullPH_stats <- function(shape_ph, scale_ph, tau = 25){
+rmst_weibull_scale <- function(tau, w_shape, w_scale) {
+  s <- 1 / w_shape
+  z <- (tau / w_scale)^w_shape
+  (w_scale / w_shape) * gamma(s) * pgamma(z, shape = s)
+}
+
+rmst_weibull_ph <- function(tau, w_shape, w_scale) {
+  s <- 1 / w_shape
+  z <- w_scale * tau^w_shape
+  (1 / w_shape) * w_scale^(-1 / w_shape) * gamma(s) * pgamma(z, shape = s)
+}
+
+SweibullPH <- function(x, shape_ph, scale_ph){
+  1-flexsurv::pweibullPH(x, shape_ph, scale_ph)
+}
+
+weibullPH_summary_stats <- function(shape_ph, scale_ph, tau = 25){
   # aft scale
   aft_lambda <- scale_ph^(-1/shape_ph)
   # aft shape
@@ -1171,9 +1190,6 @@ weibullPH_stats <- function(shape_ph, scale_ph, tau = 25){
   # variance
   w_sd <- sqrt((aft_lambda^2)*(gamma(1 + 2/aft_k) - (gamma(1 + 1/aft_k))^2))
   
-  SweibullPH <- function(x, shape_ph, scale_ph){
-    1-flexsurv::pweibullPH(x, shape_ph, scale_ph)
-  }
   
   # plot(0:365, SweibullPH(0:365, shape_ph, scale_ph))
   
@@ -1182,6 +1198,57 @@ weibullPH_stats <- function(shape_ph, scale_ph, tau = 25){
   
   c(median = w_med, mean = w_mu, sd = w_sd, rmst = rmst$value)
 }
+
+sim_weibullPH_rmst <- function(l_spec){
+  
+  # intended to compute the rmst by treatment group marginalising over the 
+  # covariate space on which the model is based.
+  
+  # simulate from population and then average out irrelevant terms to get 
+  # rmst across trt groups
+  
+  age <- rlnorm(1e4, meanlog = log(l_spec$age_mean), sdlog = l_spec$age_sd)
+  age <- pmin(pmax(age, l_spec$age_min), l_spec$age_max)
+  ppfev_baseline <- (ppfev_0(age, sd_ppfev = 3) - l_spec$ppfev_ref) / l_spec$ppfev_increment
+  
+  # indep gamma frailty but with same param values for each transition
+  u_eh <- rgamma(1, shape = l_spec$g_a, rate = l_spec$g_r)
+  
+  arms = 1:3
+  names(arms) <- c("soc", "delay", "defer")
+  
+  b_trt <- c(0, -0.21875, -0.219)
+  
+  trt <- 1
+  rmst_mu <- unlist(lapply(arms, function(trt) {
+    
+    # and then compute the recovery time on that basis
+    lambda <- u_eh * exp(l_spec$mu_recov + 
+                           l_spec$b_ppfev_recov * ppfev_baseline + 
+                           b_trt[trt])
+    
+    rmst <- numeric(length(lambda))
+    
+    for(i in seq_along(rmst)){
+      res <- integrate(
+        SweibullPH, 0, 
+        l_spec$rmst_eh_horizon, 
+        shape_ph = l_spec$shape_eh, 
+        scale_ph = lambda[i])
+      
+      rmst[i] <- res$value
+    }
+    
+    mean(rmst)
+    
+  }))
+  
+  rmst_mu
+  rmst_mu[2] - rmst_mu[1]
+  rmst_mu[3] - rmst_mu[1]
+  
+}
+
 
 example_stan_2 <- function(){
   
@@ -1192,8 +1259,9 @@ example_stan_2 <- function(){
   
   l_spec$shape_he <- 2.85 # originally 1.1
   l_spec$mu_exacerb <- -16.1 # originally  -4.5
-  weibullPH_stats(
+  weibullPH_summary_stats(
     shape_ph = l_spec$shape_he, scale_ph = exp(l_spec$mu_exacerb), tau = 365)
+  rmst_weibull_ph(tau = 365, w_shape = l_spec$shape_he, w_scale = exp(l_spec$mu_exacerb))
 
   y_he <- flexsurv::rweibullPH(
     1e4, l_spec$shape_he, scale = exp(l_spec$mu_exacerb)
@@ -1203,27 +1271,10 @@ example_stan_2 <- function(){
   
   l_spec$shape_eh <- 2.75  # originally 0.9 
   l_spec$mu_recov <- -6.5  # originally -0.5
-  (res_1 <- weibullPH_stats(
+  (res_1 <- weibullPH_summary_stats(
     shape_ph = l_spec$shape_eh, scale_ph = exp(l_spec$mu_recov), tau = 25))
+  rmst_weibull_ph(tau = 25, w_shape = l_spec$shape_eh, w_scale = exp(l_spec$mu_recov))
   
-  log_hr <- seq(0.12,0.15, len = 100)
-  delta <- numeric(100)
-  for(ii in seq_along(log_hr)){
-    (res_2 <- weibullPH_stats(
-      shape_ph = l_spec$shape_eh, scale_ph = exp(l_spec$mu_recov - log_hr[ii]), tau = 25))
-    delta[ii] <- res_2["rmst"] - res_1["rmst"]
-  }
-  names(delta) <- paste0(log_hr)
-  delta
-  
-  (res_2 <- weibullPH_stats(
-    shape_ph = l_spec$shape_eh, scale_ph = exp(l_spec$mu_recov - 0.14168), tau = 25))
-  res_2["rmst"] - res_1["rmst"]
-  
-  y_eh <- flexsurv::rweibullPH(
-    1e4, l_spec$shape_eh, scale = exp(l_spec$mu_recov)
-  )
-  hist(y_eh)
   #
   
   # some of the cohort will have no exacerbation and so the event indicator 
@@ -1360,7 +1411,7 @@ example_stan_2 <- function(){
     output_dir = output_dir_mcmc,
     output_basename = foutname
   )
-  f_1_1$summary(variables = c("shape", "b_0", "b", "u_a"))
+  f_1_1$summary(variables = c("shape", "b_0", "b", "u_a", "rmst"))
   
   f_1_2 <- m3$sample(
     ld_2, iter_warmup = 500, iter_sampling = 500,
@@ -1369,7 +1420,7 @@ example_stan_2 <- function(){
     output_dir = output_dir_mcmc,
     output_basename = foutname
   )
-  f_1_2$summary(variables = c("shape", "b_0", "b", "u_a"))
+  f_1_2$summary(variables = c("shape", "b_0", "b", "u_a", "rmst"))
   # c(l_spec$shape_he, l_spec$shape_eh)
   # c(l_spec$mu_exacerb, l_spec$mu_recov)
   # c(l_spec$b_trt)

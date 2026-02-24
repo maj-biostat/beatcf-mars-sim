@@ -192,6 +192,119 @@ The key configuration parameters that persist across all scenarios are shown bel
 
 # Results
 
+## Effect size estimates
+
+
+```{r, echo = F, eval = T}
+#| label: trt_effect-smry
+#| code-summary: Treatment effects
+
+i <- 1
+d_rmst <- data.table()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  # extract the decision matrix - sim, analysis, quantity, domain level decision
+  d_pr_dec <- copy(l[[i]]$d_pr_dec[trt %in% c("delay", "defer") & rule == "ni"])
+  
+  l_cfg <- copy(l[[i]]$l_spec)
+  
+  # extrapolate the rmst forward to impute the effects in those sims that had
+  # early stopping
+  d_pr_dec[, delta_rmst := nafill(delta_rmst, type = "locf"), keyby = .(sim, trt)]
+  
+  d_smry <- d_pr_dec[, .(
+    mu = mean(delta_rmst),
+    lo = quantile(delta_rmst, prob = 0.025),
+    hi = quantile(delta_rmst, prob = 0.975)
+    ), keyby = .(ic, trt)]
+  
+  d_smry[, N := cumsum(l_cfg$N_pt)[ic]]
+    
+  d_rmst <- rbind(
+    d_rmst,
+    cbind(scenario = i, desc = l_cfg$desc, d_smry)
+  )
+}
+
+# kableExtra::kbl(d_rmst, format = "simple", digits = 2)
+```
+
+
+
+
+
+```{r, eval = T}
+#| echo: FALSE
+#| label: tbl-trt-effects
+#| tbl-cap: 'Delta RMST (treatment arm - soc): mean (CrI)'
+#| tbl-pos: H
+
+d_tbl_1_cur <- copy(d_rmst)
+d_tbl_1_cur <- dcast(
+  d_tbl_1_cur, scenario + desc + N ~ trt, value.var = c("mu", "lo", "hi"))
+
+d_tbl_1_cur <- d_tbl_1_cur[, .SD, .SDcols = !c("scenario")]
+
+g_tbl <- d_tbl_1_cur |> 
+  gt(groupname_col = "desc") |> 
+  gt::text_transform(
+    locations = cells_row_groups(),
+    fn = function(x) {
+      lapply(x, function(x) {
+        gt::md(paste0("*", x, "*"))
+      })
+    }
+  ) |>
+  cols_align(
+    columns = 1:2,
+    align = "left"
+  )  |> 
+  cols_align(
+    columns = 3:ncol(d_tbl_1_cur),
+    align = "center"
+  )   |>
+  fmt_number(
+    columns = c("mu_defer", "mu_delay", "lo_defer", "lo_delay", "hi_defer", "hi_delay"), 
+    decimals = 2, drop_trailing_zeros = F) |>
+  fmt_number(
+    columns = c("N"), 
+    decimals = 0, drop_trailing_zeros = F)  |> 
+  cols_merge(
+    columns = c("mu_delay", "lo_delay", "hi_delay"
+                ),
+    pattern = "<<{1}>><< ({2}, {3})>>"
+  )   |>
+  cols_merge(
+    columns = c("mu_defer", "lo_defer", "hi_defer"
+                ),
+    pattern = "<<{1}>><< ({2}, {3})>>"
+  )   |> 
+  # cols_width(
+  #   starts_with("ni") ~ px(100)
+  # ) |>
+  tab_spanner(
+    label = md("Difference in RMST (trt - soc): mean (CrI) of posterior means"),
+    columns = 2:ncol(d_tbl_1_cur)
+  )  |>
+  cols_label(
+    # delta = "Diff at 12 month vs SoC",
+    mu_defer = html("defer"),
+    mu_delay = html("delay")
+  ) |>
+  tab_options(
+    table.font.size = pct(55),
+    latex.use_longtable = TRUE,
+    latex.header_repeat = TRUE 
+  )
+
+g_tbl
+```
+
+
+{{< pagebreak >}}
+
 
 ## Probability of triggering decisions
 

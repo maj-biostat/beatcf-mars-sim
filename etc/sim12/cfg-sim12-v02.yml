@@ -43,7 +43,7 @@ default:
   mu_recov: -6.5  # originally -0.5
   
   # trt is c("soc","delay","defer")
-  b_trt: [0, -0.14168, -0.14168]
+  b_trt: [0, -0.21875, -0.21875]
   
   
   b_ppfev_recov: 0.1
@@ -61,7 +61,7 @@ default:
   # decision reference values - 
   # will not tolerate rmst in the intervention arms being more than 
   # dec_delta_ni than the soc group
-  dec_delta_ni: 0.5
+  dec_delta_ni: 1
   
   # decision probability thresholds 
   dec_thresh_ni: 0.98
