@@ -18,8 +18,8 @@ default:
   # details on age
   age_mu: 2.5
   age_sig: 0.75
-  age_lwr: 3
-  age_upr: 85
+  age_lwr: 6
+  age_upr: 75
   
   # number of obs evenly spaced over 12 months
   n_sprty_obs: 12
@@ -49,16 +49,16 @@ default:
     - [0, 0, 0, 0]
   
   # variability on baseline (well state) measure.
-  sigma_mu0: 3
+  sigma_mu0: 4
   
   sigma: 4
-  rho: 0.8
+  rho: 0.85
   
   
   # decision reference values
-  dec_delta_ni: -1
-  dec_delta_inf: -1
+  dec_delta_ni: -1.5
+  dec_delta_fut: -1.5
   # decision probability thresholds
-  dec_thresh_ni: 0.95
-  dec_thresh_inf: 0.70
+  dec_thresh_ni: 0.98
+  dec_thresh_fut: 0.60
     
