@@ -1,6 +1,4 @@
-# load libs, load config, initialise log
-
-source("R/libs.R")
+# depends on libs
 
 is_html <- knitr::is_html_output()
 # is_pdf <- knitr::is_latex_output()

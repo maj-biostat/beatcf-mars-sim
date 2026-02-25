@@ -1,6 +1,221 @@
 
 
 
+weibullPH_summary_stats <- function(shape_ph, scale_ph, tau = 25){
+  # aft scale
+  aft_lambda <- scale_ph^(-1/shape_ph)
+  # aft shape
+  aft_k <- shape_ph
+  # median
+  w_med <- aft_lambda * (log(2))^{1/aft_k}
+  # mean
+  w_mu <- aft_lambda * gamma(1 + (1/aft_k))
+  # variance
+  w_sd <- sqrt((aft_lambda^2)*(gamma(1 + 2/aft_k) - (gamma(1 + 1/aft_k))^2))
+  
+  
+  # plot(0:365, SweibullPH(0:365, shape_ph, scale_ph))
+  
+  rmst <- integrate(SweibullPH, 0, tau, shape_ph = shape_ph, scale_ph = scale_ph)
+  
+  
+  c(median = w_med, mean = w_mu, sd = w_sd, rmst = rmst$value)
+}
+
+lower_incomplete_gamma <- function(a, z) {
+  pgamma(z, shape = a) * gamma(a)
+}
+
+rmst_weibull_scale <- function(tau, w_shape, w_scale) {
+  s <- 1 / w_shape
+  z <- (tau / w_scale)^w_shape
+  (w_scale / w_shape) * gamma(s) * pgamma(z, shape = s)
+}
+
+rmst_weibull_ph <- function(tau, w_shape, w_scale) {
+  s <- 1 / w_shape
+  z <- w_scale * tau^w_shape
+  (1 / w_shape) * w_scale^(-1 / w_shape) * gamma(s) * pgamma(z, shape = s)
+}
+
+SweibullPH <- function(x, shape_ph, scale_ph){
+  1-flexsurv::pweibullPH(x, shape_ph, scale_ph)
+}
+
+# Manual parameter calibration and checks for simulating exacerbation and recovery.
+calibrate_weibull_ph <- function(){
+  # WeibullPH
+  # f(x) = amx^{a-1} exp(-m x^a)
+  # F(x) = 1 - exp(-m x^a)
+  # a = shape, m = scale
+  # covariates included through a linear model on the log scale parameter
+  # scale = exp(\mu + \beta*(ppfev - ppfev_ref) + u_i)
+  # 100 <= ppfev <= 55 (approx)
+  # mean is scale^(-1/shape) * Gamma(1 + 1/shape)
+  
+  # shape_he = 1.6
+  # scale_he = 0.001
+  
+  shape_he = 1.1
+  scale_he = 0.01
+  
+  cat("Days at median and upper\n")
+  flexsurv::qweibullPH(p = 0.5, shape = shape_he, scale = scale_he)
+  flexsurv::qweibullPH(p = 0.95, shape = shape_he, scale = scale_he)
+  scale_he^(-1/shape_he) * gamma(1 + 1/shape_he)
+  # sanity check
+  integrand_he <- function(x, shape, scale){
+    flexsurv::dweibullPH(x, shape, scale) * x
+  }
+  integrate(integrand_he, lower = 0, upper = Inf, shape = shape_he, scale = scale_he)
+  hist(flexsurv::rweibullPH(1e5, shape = shape_he, scale = scale_he))
+  plot(0:365, flexsurv::pweibullPH(0:365, shape = shape_he, scale = scale_he))
+  
+  # linear predictor and ppfev ref
+  mu_exacerb <- -4.5
+  beta_ppfev_exacerb <- -0.02
+  ppfev_ref <- 77.5 
+  
+  
+  
+  get_scale_exacerb(55)
+  get_scale_exacerb(100)
+  # plot(1:365, pweibullPH(1:365, shape = shape_he, scale = get_scale_exacerb(66)))
+  
+  
+  
+  shape_eh = 0.7
+  scale_eh = 0.14
+  
+  cat("Days at median and upper\n")
+  flexsurv::qweibullPH(p = 0.5, shape = shape_eh, scale = scale_eh)
+  flexsurv::qweibullPH(p = 0.95, shape = shape_eh, scale = scale_eh)
+  # mean
+  scale_eh^(-1/shape_eh) * gamma(1 + 1/shape_eh)
+  hist(flexsurv::rweibullPH(1e5, shape = shape_eh))
+  
+  plot(0:30, flexsurv::pweibullPH(0:30, shape = shape_eh, scale = scale_eh))
+  
+  
+  # linear predictor and ppfev ref
+  mu_recov <- -1.2
+  beta_ppfev_recov <- 0.02
+  ppfev_ref <- 77.5 
+  beta_trt <- -0.3
+  
+  
+  
+  get_scale_recov(55)
+  get_scale_recov(100)
+  plot(0:30, flexsurv::pweibullPH(0:30, shape = shape_eh, scale = get_scale_recov(55)))
+  plot(0:30, flexsurv::pweibullPH(0:30, shape = shape_eh, scale = get_scale_recov(100)))
+  
+  # to these we would then need to introduce correlated frailty terms.
+  
+  
+  
+  
+  
+  
+  
+  
+}
+
+#
+
+sim_weibullPH_rmst <- function(l_spec){
+  
+  # l_spec <- get_demo_spec()
+  # 
+  # l_spec$shape_he <- 2.85 # originally 1.1
+  # l_spec$mu_exacerb <- -16.1 # originally  -4.5
+  # weibullPH_summary_stats(
+  #   shape_ph = l_spec$shape_he, scale_ph = exp(l_spec$mu_exacerb), tau = 365)
+  # rmst_weibull_ph(tau = 365, w_shape = l_spec$shape_he, w_scale = exp(l_spec$mu_exacerb))
+  # 
+  # y_he <- flexsurv::rweibullPH(
+  #   1e4, l_spec$shape_he, scale = exp(l_spec$mu_exacerb)
+  # )
+  # hist(y_he, xlim = c(0, max(y_he)*1.1))
+  # c(median(y_he), mean(y_he), sd(y_he))
+  # 
+  # l_spec$shape_eh <- 2.75  # originally 0.9 
+  # l_spec$mu_recov <- -6.5  # originally -0.5
+  # (res_1 <- weibullPH_summary_stats(
+  #   shape_ph = l_spec$shape_eh, scale_ph = exp(l_spec$mu_recov), tau = 25))
+  # rmst_weibull_ph(tau = 25, w_shape = l_spec$shape_eh, w_scale = exp(l_spec$mu_recov))
+  
+  #
+  
+  # intended to compute the rmst by treatment group marginalising over the 
+  # covariate space on which the model is based.
+  
+  # simulate from population and then average out irrelevant terms to get 
+  # rmst across trt groups
+  
+  age <- rlnorm(1e4, meanlog = log(l_spec$age_mean), sdlog = l_spec$age_sd)
+  age <- pmin(pmax(age, l_spec$age_min), l_spec$age_max)
+  ppfev_baseline <- (ppfev_0(age, sd_ppfev = 3) - l_spec$ppfev_ref) / l_spec$ppfev_increment
+  
+  # indep gamma frailty but with same param values for each transition
+  u_eh <- rgamma(1, shape = l_spec$g_a, rate = l_spec$g_r)
+  
+  arms = 1:3
+  names(arms) <- c("soc", "defer", "discont")
+  
+  b_trt <- c(0, -0.21875, -0.219)
+  
+  trt <- 1
+  rmst_mu <- unlist(lapply(arms, function(trt) {
+    
+    # and then compute the recovery time on that basis
+    lambda <- u_eh * exp(l_spec$mu_recov + 
+                           l_spec$b_ppfev_recov * ppfev_baseline + 
+                           b_trt[trt])
+    
+    rmst <- numeric(length(lambda))
+    
+    for(i in seq_along(rmst)){
+      res <- integrate(
+        SweibullPH, 0, 
+        l_spec$rmst_eh_horizon, 
+        shape_ph = l_spec$shape_eh, 
+        scale_ph = lambda[i])
+      
+      rmst[i] <- res$value
+    }
+    
+    mean(rmst)
+    
+  }))
+  
+  rmst_mu
+  rmst_mu[2] - rmst_mu[1]
+  rmst_mu[3] - rmst_mu[1]
+  
+}
+
+#' Exponential decay for ppfev conditional on age with normal noise
+#' 
+#' f(x) = fev_max * exp(-k (age - age_ref)^p) + \epsilon
+#' \epsilon \sim N(0, sd_fev)
+#' 
+ppfev_0 <- function(age, age_min = 10, ppfev0_max = 100, k = 0.1, p = 0.5, sd_ppfev = 0) {
+  ppfev0_max * exp(-k * (age-age_min)^p) + rnorm(length(age), 0, sd_ppfev)
+}
+
+
+
+#' Inhomogeneous Poisson process
+#' 
+#' Simulate fixed n by thinning
+sim_ipp_thinning <- function(N = 2500, lambda = 1.52,
+                           rho = function(t) pmin(t/360, 1)){
+  
+  c(0, poisson::nhpp.event.times(lambda, N - 1, rho))
+}
+
+
 
 #' Inhomogeneous Poisson process (Ogata’s algorithm)
 #' 
@@ -40,7 +255,7 @@
 #' Keep each event at time t with with probability \lambda(t)/\lambda_{max}
 #' 
 #' where \lambda_{max} is the rate at which the enrolment stabilises.
-simulate_ipp_fixed_n <- function(
+sim_ipp_ogata <- function(
     N,
     lambda = function(t, lambda_inf = 1.52, ramp_up = 90) {
       lambda_inf * pmin(t/ramp_up, 1)

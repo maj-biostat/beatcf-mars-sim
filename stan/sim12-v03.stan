@@ -32,10 +32,16 @@ data {
   matrix[N_obs,  P] X_obs;
   matrix[N_cens, P] X_cens;
   
+  int<lower=0> compute_rmst;
+  real<lower=0> tau_rmst;
+  int trt_defer_col;
+  int trt_discont_col;
+
   real<lower=0> pri_s_u;
 }
 transformed data{
-  int<lower = 0> N = N_obs + N_cens;
+  
+  
 }
 parameters {
   real<lower=0> shape;       // Weibull shape (alpha)
@@ -101,5 +107,77 @@ model {
 }
 generated quantities {
 
+  // soc, defer, discont
+  vector[3] rmst = rep_vector(0.0, 3);
+  vector[2] delta = rep_vector(0.0, 2);
+  
+  if(compute_rmst){
+    
+    vector[N_obs] rmst_obs;
+    vector[N_cens] rmst_cens;
+    vector[N_obs]  log_mu_obs_pred;
+    vector[N_cens] log_mu_cens_pred;
+    matrix[N_obs,  P] X_obs_pred = X_obs;
+    matrix[N_cens, P] X_cens_pred = X_cens;
+  
+    // soc
+    X_obs_pred[, trt_defer_col] = rep_vector(0.0, N_obs);
+    X_cens_pred[, trt_defer_col] = rep_vector(0.0, N_cens);
+    X_obs_pred[, trt_discont_col] = rep_vector(0.0, N_obs);
+    X_cens_pred[, trt_discont_col] = rep_vector(0.0, N_cens);
+  
+    log_mu_obs_pred  = b_0 + X_obs_pred  * b;
+    log_mu_cens_pred = b_0 + X_cens_pred * b;
+  
+    for(i in 1:N_obs){
+      rmst_obs[i] = rmst_weibull_ph(tau_rmst, shape, exp(log_mu_obs_pred)[i]);
+    }
+    for(i in 1:N_cens){
+      rmst_cens[i] = rmst_weibull_ph(tau_rmst, shape, exp(log_mu_cens_pred)[i]);
+    }
+  
+    rmst[1] = mean(append_row(rmst_obs, rmst_cens));
+    
+    // defer
+    X_obs_pred[, trt_defer_col] = rep_vector(1.0, N_obs);
+    X_cens_pred[, trt_defer_col] = rep_vector(1.0, N_cens);
+    X_obs_pred[, trt_discont_col] = rep_vector(0.0, N_obs);
+    X_cens_pred[, trt_discont_col] = rep_vector(0.0, N_cens);
+  
+    log_mu_obs_pred  = b_0 + X_obs_pred  * b;
+    log_mu_cens_pred = b_0 + X_cens_pred * b;
+  
+    for(i in 1:N_obs){
+      rmst_obs[i] = rmst_weibull_ph(tau_rmst, shape, exp(log_mu_obs_pred)[i]);
+    }
+    for(i in 1:N_cens){
+      rmst_cens[i] = rmst_weibull_ph(tau_rmst, shape, exp(log_mu_cens_pred)[i]);
+    }
+  
+    rmst[2] = mean(append_row(rmst_obs, rmst_cens));
+    
+    
+    // discont
+    X_obs_pred[, trt_defer_col] = rep_vector(0.0, N_obs);
+    X_cens_pred[, trt_defer_col] = rep_vector(0.0, N_cens);
+    X_obs_pred[, trt_discont_col] = rep_vector(1.0, N_obs);
+    X_cens_pred[, trt_discont_col] = rep_vector(1.0, N_cens);
+  
+    log_mu_obs_pred  = b_0 + X_obs_pred  * b;
+    log_mu_cens_pred = b_0 + X_cens_pred * b;
+  
+    for(i in 1:N_obs){
+      rmst_obs[i] = rmst_weibull_ph(tau_rmst, shape, exp(log_mu_obs_pred)[i]);
+    }
+    for(i in 1:N_cens){
+      rmst_cens[i] = rmst_weibull_ph(tau_rmst, shape, exp(log_mu_cens_pred)[i]);
+    }
+  
+    rmst[3] = mean(append_row(rmst_obs, rmst_cens));
+    
+    delta[1] = rmst[2] - rmst[1];
+    delta[2] = rmst[3] - rmst[1];
+  }
+  
   
 }

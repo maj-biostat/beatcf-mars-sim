@@ -12,6 +12,7 @@ default:
   
   followup: 365
   rmst_eh_horizon: 25
+  rmst_he_horizon: 365
   
   # probability of missingness
   pr_ymis: 0.1

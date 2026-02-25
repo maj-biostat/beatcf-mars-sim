@@ -1,33 +1,33 @@
-suppressWarnings(library(data.table))
-suppressWarnings(library(mvtnorm))
-# for weibullph
-suppressWarnings(library(flexsurv))
-suppressWarnings(library(ggplot2))
-suppressWarnings(library(INLAjoint))
-suppressWarnings(library(pbapply))
-suppressWarnings(library(lobstr))
 
-suppressWarnings(library(patchwork))
+
+# source dependencies
+toks <- unlist(data.table::tstrsplit(getwd(), "/")) 
+if(toks[length(toks)] == "beatcf-mars-sim"){
+  prefix_cfg <- "./etc/sim12/"
+  prefix_stan <- "./stan"
+  prefix_fig <- "./fig"
+  prefix_data <- "./data"
+  prefix_r <- "./R"
+} else {
+  prefix_cfg <- "../etc/sim12/"
+  prefix_stan <- "../stan"
+  prefix_fig <- "../fig"
+  prefix_data <- "../data"
+  prefix_r <- "../R"
+}
+
+source(paste0(prefix_r, '/libs.R'))
+source(paste0(prefix_r, '/init.R'))
+source(paste0(prefix_r, '/util.R'))
+
+
 
 # todo 
 # review betancourt warping paper etc
 
 
-
-# Baseline ppfev with option for subject level heterogeneity
-# ppfev_0 <- function(age, A = 123, k = 0.4, p = 0.3, sd_ppfev = 3) {
-#   A * exp(-k * age^p) + rnorm(length(age), 0, sd_ppfev)
-# }
-
-# Baseline ppfev with option for subject level heterogeneity
-ppfev_0 <- function(age, age_min = 10, ppfev0_max = 100, k = 0.1, p = 0.5, sd_ppfev = 0) {
-  ppfev0_max * exp(-k * (age-age_min)^p) + rnorm(length(age), 0, sd_ppfev)
-}
-
-
-
-
-
+#' State transitions for patient to followup time
+#' 
 get_sim12_pt <- function(
     l_spec
   ){
@@ -36,6 +36,8 @@ get_sim12_pt <- function(
   # probably should include sex in this...?
   age <- rlnorm(1, meanlog = log(l_spec$age_mean), sdlog = l_spec$age_sd)
   age <- pmin(pmax(age, l_spec$age_min), l_spec$age_max)
+  # standardised baseline ppfev and convert so that unit change actually 
+  # corresponds to a 10% shift
   ppfev_baseline <- (ppfev_0(age, sd_ppfev = 3) - l_spec$ppfev_ref) / l_spec$ppfev_increment
   
   # indep gamma frailty but with same param values for each transition
@@ -116,7 +118,9 @@ get_sim12_pt <- function(
   
 }
 
-
+#' Wrapper to invoke state transition simulation for individual patients used
+#' to create cohort
+#' 
 get_sim12_cohort <- function(l_spec){
   
   pt_list <- list()
@@ -131,20 +135,15 @@ get_sim12_cohort <- function(l_spec){
   }
   
   d_cohort <- rbindlist(pt_list)
-  
   d_cohort[, dur := stop - start]
-  
-  
   d_cohort[]
-  
-  
   
 }
 
 
+#' Convert sample data.table into lists suitable for stan models
+#' 
 get_sim12_stan_data <- function(d_all){
-  
-  
   
   # The analysis proceeds on only those that have exacerbations
   d_tmp <- copy(d_all[state == "E"])
@@ -192,6 +191,9 @@ get_sim12_stan_data <- function(d_all){
     # dimensions
     N_id    = N_id,
     P       = ncol(X_obs),
+    compute_rmst = 1,
+    tau_rmst = l_spec$rmst_eh_horizon,
+    trt_defer_col = 2, trt_discont_col = 3,
     pri_s_u = 1
   )
   
@@ -234,6 +236,9 @@ get_sim12_stan_data <- function(d_all){
     # dimensions
     N_id    = N_id,
     P       = ncol(X_obs),
+    compute_rmst = 0,
+    tau_rmst = l_spec$rmst_he_horizon,
+    trt_defer_col = 2, trt_discont_col = 3,
     pri_s_u = 1
   )
   
@@ -244,476 +249,39 @@ get_sim12_stan_data <- function(d_all){
   
 }
 
-sim_study <- function(){
-  
-  n_sim <- 100
-  smry_list <- list()
-  
-  l_spec <- get_demo_spec()
-  
-  i <- 1
-  while(i <= n_sim){
-    
-    d_cohort <- get_sim12_cohort(l_spec)
-  
-    # for INLAjoint, I believe data.table causes some challenges
-    d <- data.frame(
-      id = d_cohort$id,
-      gap_time = d_cohort$dur,
-      evt_he = as.numeric(d_cohort$state == "H"),
-      evt_eh = as.numeric(d_cohort$state == "E"),
-      ppfev_std = d_cohort$ppfev_baseline,
-      trt = factor(d_cohort$trt, level = c("soc", "defer", "discont", "none"))
-      
-    )
-    
-    f1 <- joint(
-      formSurv =
-        list(
-          inla.surv(time = gap_time, event = evt_he) ~ ppfev_std + (1 | id),
-          inla.surv(time = gap_time, event = evt_eh) ~ ppfev_std + trt + (1 | id)
-        ),
-      basRisk= "weibullsurv", id = "id", dataSurv = d, control= list(config=TRUE)
-    )
-    
-    d_smry <- rbind(
-      cbind(
-        model = "S1",
-        parameter = rownames(summary(f1)$SurvEff[[1]]),
-        data.table(summary(f1)$SurvEff[[1]], hr = T)
-      ),
-      cbind(
-        model = "S1",
-        parameter = rownames(summary(f1)$ReffListS[[1]]),
-        data.table(summary(f1)$ReffListS[[1]])
-      ),
-      cbind(
-        model = "S2",
-        parameter = rownames(summary(f1)$SurvEff[[2]]),
-        data.table(summary(f1)$SurvEff[[2]], hr = T)
-      ),
-      cbind(
-        model = "S2",
-        parameter = rownames(summary(f1)$ReffListS[[2]]),
-        data.table(summary(f1)$ReffListS[[2]])
-      ),
-      fill = T
-    )
-    
-    smry_list[[i]] <- d_smry
-    
-    i <- i + 1
-    
-  }
-  
-  d_smry <- rbindlist(smry_list, idcol = "id_sim")
-  
-  # just extract means and see if they have any resemblence to the dgp params
-  d_smry[, .(
-    mu = mean(mean), 
-    q_025 = mean(`0.025quant`),
-    q_975 = mean(`0.975quant`),
-    mu_min = min(mean),
-    mu_max = max(mean)
-  ), keyby = .(model, parameter)]
- 
-}
 
-
-example_inla <- function(){
-  
-  
-  library(p3state.msm)
-  data(heart2)
-  
-  head(heart2, 10)
-  
-  # pt on waiting list and can be transplated and then die or just one or none
-  # (continue in waiting list)
-  
-  # times1: time of transplant/censoring time.
-  # delta: transplant indicator (1:yes; 0:no).
-  # times2: time to death since the transplant/censoring time.
-  # time: times1+times2.
-  # status: censoring indicator (1:dead; 0:alive).
-  # age: age-48 years.
-  # year: year of acceptance (in years after 1Nov1967).
-  # surgery: prior bypass surgery (1:yes; 0:no).
-  
-  # first col indicates transplant event
-  # second col indicates waiting list to death without transplant
-  # third col indicates death following transplant
-  # row with all zeros indicates censoring while on waiting list
-  event <- matrix(c(
-    heart2$delta, 
-    heart2$status * (1 - heart2$delta),
-    heart2$status * heart2$delta 
-    ), 
-    ncol= 3)
-  head(event)
-  
-  heart2$times3 <- ifelse(heart2$times2== 0, heart2$times1, heart2$times2)
-  
-  
-  m5.ms <- joint(formSurv= list(
-    inla.surv(times1, event[,1]) ~ age + year + surgery,
-    inla.surv(times3, event[,2]) ~ age + year + surgery,
-    inla.surv(times2, event[,3])~ age + year + surgery),
-    basRisk= rep("weibullsurv", 3), dataSurv= heart2)
-  
-  
-  summary(m5.ms)
-  
-  # surv.obj.ms3 <- inla.surv(time= heart2$time, truncation= heart2$times1,
-  #                           event = event[,3])
-  
-  
-  
-  t <- seq(0.1, 1000, by= 1)
-  riskW <- function(t, lambda, alpha) {
-    # instantaneous risk under weibullPH parameterisation
-    # with shape a and scale lambda
-    alpha*lambda*t^(alpha-1)
-  }
-  risk1 <- riskW(t, 
-                 lambda = exp(m5.ms$summary.fixed["Intercept_S1", "mean"]),
-                 alpha = m5.ms$summary.hyperpar$mean[1])
-  risk2 <- riskW(t, exp(m5.ms$summary.fixed["Intercept_S2", "mean"]),
-                 m5.ms$summary.hyperpar$mean[2])
-  
-  risk3 <- riskW(t, exp(m5.ms$summary.fixed["Intercept_S3", "mean"]),
-                 m5.ms$summary.hyperpar$mean[3])
-  
-  risk1s <- riskW(t, exp(m5.ms$summary.fixed["Intercept_S1", "mean"] +
-                           m5.ms$summary.fixed["surgery_S1", "mean"]),
-                  m5.ms$summary.hyperpar$mean[1])
-  risk2s <- riskW(t, exp(m5.ms$summary.fixed["Intercept_S2", "mean"] +
-                           m5.ms$summary.fixed["surgery_S2", "mean"]),
-                  m5.ms$summary.hyperpar$mean[2])
-  risk3s <- riskW(t, exp(m5.ms$summary.fixed["Intercept_S3", "mean"] +
-                           m5.ms$summary.fixed["surgery_S3", "mean"]),
-                  m5.ms$summary.hyperpar$mean[3])
-  
-  # probability of staying in state 1 given currently in state 1
-  # transition rate matrix is of the form
-  #     | -(\rho_{12} + \rho_{13})   \rho_{12}                  \rho_{13}                |
-  # Q = | \rho_{21}                -(\rho_{21}  + \rho_{23})    \rho_{23}                |
-  #     | \rho_{31}                  \rho_{32}                -(\rho_{31}  + \rho_{32})  |
-  
-  # state transition from exp(Q \Delta) where \Delta is the time interval
-  # here the increment is 1 unit
-  
-  # remaining on waiting list
-  p11 <- exp(-cumsum(risk1)-cumsum(risk2))
-  p11s <- exp(-cumsum(risk1s)-cumsum(risk2s))
-  
-  # remaining in the transplant state
-  p22 <- exp(-cumsum(risk3))
-  p22s <- exp(-cumsum(risk3s))
-  
-  # transition from waiting list to transplant
-  p12 <- cumsum(p11*risk1*p22)
-  plot(t, p12, type ="l")
-  p12s <- cumsum(p11s*risk1s*p22s)
-  
-  # transition from waiting list to death
-  p13 <- 1-p11-p12
-  p13s <- 1-p11s-p12s
-  
-  # transition from transplant to death
-  p23 <- 1-p22
-  p23s <- 1-p22s
-  #
-  
-  
-  
-}
-
-
-example_hesim <- function(){
-  
-  library("hesim")
-  library("data.table")
-  
-  # Treatment strategies
-  strategies <- data.table(
-    strategy_id = c(1, 2),
-    strategy_name  = c("SOC", "New"))
-  
-  # Patients
-  n_patients <- 1000
-  patients <- data.table(patient_id = 1:n_patients,
-                         age = rnorm(n_patients, mean = 45, sd = 7),
-                         female = rbinom(n_patients, size = 1, prob = .51))
-  patients[, grp_id := ifelse(female == 1, 1, 2)]
-  patients[, grp_name := ifelse(female == 1, "Female", "Male")]
-  
-  # (Non-death) health states
-  states <- data.table(state_id = c(1, 2),
-                       state_name = c("Stage 1", "Stage 2")) 
-  
-  # Transitions
-  tmat <- rbind(c(NA, 1, 2),
-                c(3, NA, 4),
-                c(NA, NA, NA))
-  colnames(tmat) <- rownames(tmat) <- c("Stage 1", "Stage 2", "Death")
-  transitions <- create_trans_dt(tmat)
-  transitions[, trans := factor(transition_id)]
-  
-  # Combining
-  hesim_dat <- hesim_data(strategies = strategies,
-                          patients = patients, 
-                          states = states,
-                          transitions = transitions)
-  print(hesim_dat)
-  
-  labs <- get_labels(hesim_dat)
-  print(labs)
-  
-  
-  library("flexsurv")
-  mstate_data <- data.table(mstate3_exdata$transitions)
-  mstate_data[, trans := factor(trans)]
-  mstate_data[1:20,][order(patient_id, Tstart)]
-  fit_wei <- flexsurv::flexsurvreg(Surv(years, status) ~ trans + 
-                                     factor(strategy_id):trans +
-                                     age:trans + 
-                                     female: trans +
-                                     shape(trans), 
-                                   data = mstate_data, 
-                                   dist = "weibull")
-  #
-  # Utility
-  utility_tbl <- stateval_tbl(
-    data.table(state_id = states$state_id,
-               mean = mstate3_exdata$utility$mean,
-               se = mstate3_exdata$utility$se),
-    dist = "beta"
-  )
-  
-  # Costs
-  drugcost_tbl <- stateval_tbl(
-    data.table(strategy_id = strategies$strategy_id,
-               est = mstate3_exdata$costs$drugs$costs),
-    dist = "fixed"
-  )
-  
-  medcost_tbl <- stateval_tbl(
-    data.table(state_id = states$state_id,
-               mean = mstate3_exdata$costs$medical$mean,
-               se = mstate3_exdata$costs$medical$se),
-    dist = "gamma"
-  )
-  
-  n_samples <- 1000
-  transmod_data <- expand(hesim_dat, 
-                          by = c("strategies", "patients", "transitions"))
-  head(transmod_data)
-  
-  transmod <- create_IndivCtstmTrans(fit_wei, transmod_data,
-                                     trans_mat = tmat, n = n_samples,
-                                     uncertainty = "normal")
-  class(transmod)
-  
-  
-  utilitymod <- create_StateVals(utility_tbl, n = n_samples, hesim_data = hesim_dat)
-  
-  # Costs
-  drugcostmod <- create_StateVals(drugcost_tbl, n = n_samples, hesim_data = hesim_dat)
-  medcostmod <- create_StateVals(medcost_tbl, n = n_samples, hesim_data = hesim_dat)
-  costmods <- list(drugs = drugcostmod,
-                   medical = medcostmod)
-  
-  ictstm <- IndivCtstm$new(trans_model = transmod,
-                           utility_model = utilitymod,
-                           cost_models = costmods)
-  
-  # creates 1000 samples of 1000 pt trajectories
-  ictstm$sim_disease()
-  ictstm$disprog_[1:20]
-  unique(ictstm$disprog_$sample)
-  unique(ictstm$disprog_$patient_id)
-  
-  d_fig <- ictstm$disprog_[sample == 1 & patient_id %in% 1:10]
-  
-  library(ggplot2)  
-  ggplot(d_fig, aes(x = time_stop, y = to)) +
-    geom_point() + 
-    geom_line() +
-    facet_wrap(~patient_id) 
-}
-
-
-
-
-
-
-simulate_occupancy <- function(
-    # posterior draws
-  po_he_shape, po_he_b_0, po_he_b_ppfev, po_he_u_a,
-  po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
-  po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
-  # simulation settings
-  S         = 100,
-  N_pop     = 1000,
-  followup  = 365,
-  eval_times = seq(0, 365, by = 1),
-  # covariate profile
-  ppfev_std = 0,
-  trt       = "soc",   # "soc", "defer", "discont"
-  # max transitions per patient (safety cap)
-  max_trans = 200L
-) {
-  
-  n_eval  <- length(eval_times)
-  n_draws <- length(po_he_shape)
-  
-  # sample S draw indices without replacement (or with, if S > n_draws)
-  draw_idx <- sample(n_draws, S, replace = S > n_draws)
-  
-  # treatment coefficient selector (applied to EH transition)
-  b_trt_val <- switch(trt,
-                      soc   = 0,
-                      defer = 1,  # will be multiplied by b_defer below
-                      discont = 1   # will be multiplied by b_discont below
-  )
-  
-  # result matrix: rows = eval_times, cols = posterior draws
-  # store proportion in H at each eval time for each draw
-  occ_H <- matrix(NA_real_, nrow = n_eval, ncol = S)
-  
-  s <- 1
-  for (s in seq_len(S)) {
-    
-    d <- draw_idx[s]
-    
-    he_shape <- po_he_shape[d]
-    he_b0    <- po_he_b_0[d]
-    he_bfev  <- po_he_b_ppfev[d]
-    he_ua    <- po_he_u_a[d]
-    
-    eh_shape <- po_eh_shape[d]
-    eh_b0    <- po_eh_b_0[d]
-    eh_bfev  <- po_eh_b_ppfev[d]
-    eh_btrt  <- switch(trt,
-                       soc   = 0,
-                       defer = po_eh_b_defer[d],
-                       discont = po_eh_b_discont[d]
-    )
-    eh_ua <- po_eh_u_a[d]
-    
-    u_he <- rgamma(N_pop, shape = he_ua, rate = he_ua)
-    u_eh <- rgamma(N_pop, shape = eh_ua, rate = eh_ua)
-    
-    # at given ppfev_std (scalar here, could be a vector for a population)
-    lam_he <- u_he * exp(he_b0 + he_bfev * ppfev_std)
-    lam_eh <- u_eh * exp(eh_b0 + eh_bfev * ppfev_std + eh_btrt)
-    
-    # Simulate enough transitions to cover followup for all patients.
-    # Strategy: simulate max_trans sojourn times per patient in bulk,
-    # compute cumulative transition times, then look up state at eval_times.
-    
-    # HE transitions: sojourn in H (transitions 1, 3, 5, ...)  -> N_pop x max_trans/2
-    # EH transitions: sojourn in E (transitions 2, 4, 6, ...)  -> N_pop x max_trans/2
-    n_he <- ceiling(max_trans / 2)
-    n_eh <- floor(max_trans / 2)
-    
-    # Simulate all sojourn times at once: N_pop x n_he matrices
-    # rweibullPH(n, shape, scale): scale = lambda in PH form
-    # Equivalent: (-log(U) / lambda)^(1/shape)
-    
-    # HE sojourns — one row per patient, one col per transition
-    U_he <- matrix(runif(N_pop * n_he), nrow = N_pop)
-    # broadcasting lam_he as column
-    soj_he <- (-log(U_he) / lam_he)^(1 / he_shape)   
-    
-    U_eh <- matrix(runif(N_pop * n_eh), nrow = N_pop)
-    soj_eh <- (-log(U_eh) / lam_eh)^(1 / eh_shape)
-    
-    # Interleave HE and EH columns: H1, E1, H2, E2, ...
-    # Transition times are cumulative sums of interleaved sojourns
-    # Interleaved sojourn matrix: N_pop x max_trans
-    soj_interleaved <- matrix(NA_real_, nrow = N_pop, ncol = n_he + n_eh)
-    he_cols <- seq(1, by = 2, length.out = n_he)
-    eh_cols <- seq(2, by = 2, length.out = n_eh)
-    soj_interleaved[, he_cols] <- soj_he
-    soj_interleaved[, eh_cols] <- soj_eh
-    
-    # Cumulative transition times: N_pop x max_trans
-    cum_times <- t(apply(soj_interleaved, 1, cumsum))
-    
-    # State at each transition boundary alternates H->E->H->E...
-    # Col k of cum_times is when the patient *leaves* state:
-    #   col 1 (he): leaves H, enters E
-    #   col 2 (eh): leaves E, enters H
-    #   etc.
-    # State just AFTER transition k:
-    #   odd k -> entered E
-    #   even k -> entered H
-    # So state at time t: count how many transitions have occurred by t (= n_crossed),
-    # if n_crossed is even -> in H, if odd -> in E
-    
-    # For each patient and eval time, count transitions crossed
-    # eval_times: length n_eval
-    # cum_times:  N_pop x max_trans
-    # Result: N_pop x n_eval matrix of states
-    
-    in_H <- matrix(NA, nrow = N_pop, ncol = n_eval)
-    
-    for (e in seq_len(n_eval)) {
-      tt <- eval_times[e]
-      # number of transitions crossed by time tt, per patient
-      n_crossed <- rowSums(cum_times <= tt)
-      # even crossings -> in H (started in H)
-      in_H[, e] <- (n_crossed %% 2L == 0L)
-    }
-    
-    occ_H[, s] <- colMeans(in_H)
-    
-  }
-  
-  # Summarise across posterior draws
-  data.table(
-    time     = eval_times,
-    mean_H   = rowMeans(occ_H),
-    lo_H     = apply(occ_H, 1, quantile, 0.025),
-    hi_H     = apply(occ_H, 1, quantile, 0.975),
-    mean_E   = 1 - rowMeans(occ_H),
-    lo_E     = 1 - apply(occ_H, 1, quantile, 0.975),
-    hi_E     = 1 - apply(occ_H, 1, quantile, 0.025)
-  )
-}
-
-# for each posterior draw, obtain the durations times for exacerbation for a
-# population of patients characterised by the covariate specification and
-# nominated treatment assignment
-# compute the proportion recovered over the evaluation interval to the 
-# max followup period stipulated in t_window
-# the proportion recovered is our proxy for the probability of recovered
-# with uncertainty propagated from the posterior draws.
-# compute the rmst (to t_window) as the average of the exacerbation duration
-simulate_episode <- function(
+#' Simulate exacerbations for artificial sample populations of arbitrary size 
+#' based on the posterior parameter draws and reference data set for 
+#' the sample covariate distribution. Used to calculate probability of 
+#' recovery over time and rmst for the exacerbation state.
+#' 
+#' For each posterior draw, obtain the durations times for exacerbation for a
+#' population of patients characterised by the covariate specification and
+#' nominated treatment assignment.
+#' Compute the proportion recovered over the evaluation interval to the 
+#' max followup period stipulated in t_window
+#' The proportion recovered is our proxy for the probability of recovered
+#' with uncertainty propagated from the posterior draws.
+#' Compute the rmst (to t_window) as the average of the exacerbation duration
+sim_episode <- function(
     # posterior draws (EH model only needed for primary metric)
   po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
   po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
-  # simulation settings
-  S          = 200,
-  N_pop      = 2000,
   # episode window for recovery metrics 
   # (for bound on restricted mean time to recovery)
   t_window   = 30,
   # evaluate at each time increment
   eval_times = seq(0, 30, by = 1),
-  trt        = "soc",
+  trt = "soc",
   # sample data
-  d_cohort,
-  m_ix
+  d_cohort
   
 ) {
   
+  S <- length(po_eh_shape)
+  N_pop <- nrow(d_cohort)
   n_eval  <- length(eval_times)
   n_draws <- length(po_eh_shape)
-  draw_idx <- sample(n_draws, S, replace = S > n_draws)
   
   # storage: recovery probability at each eval time, per draw
   # and RMST per draw
@@ -723,18 +291,16 @@ simulate_episode <- function(
   s <- 1
   for (s in seq_len(S)) {
     
-    d <- draw_idx[s]
-    
-    eh_shape <- po_eh_shape[d]
-    eh_ua    <- po_eh_u_a[d]
+    eh_shape <- po_eh_shape[s]
+    eh_ua    <- po_eh_u_a[s]
     eh_btrt  <- switch(trt,
                        soc   = 0,
-                       defer = po_eh_b_defer[d],
-                       discont = po_eh_b_discont[d]
+                       defer = po_eh_b_defer[s],
+                       discont = po_eh_b_discont[s]
     )
     
     # scale parameter: mu = exp(b0 + b_ppfev * ppfev_std + b_trt)
-    log_mu <- po_eh_b_0[d] + po_eh_b_ppfev[d] * d_cohort$ppfev_baseline[m_ix[,s]] + eh_btrt
+    log_mu <- po_eh_b_0[s] + po_eh_b_ppfev[s] * d_cohort$ppfev_baseline + eh_btrt
     mu     <- exp(log_mu)
     
     # draw frailty for each patient, then scale
@@ -777,37 +343,28 @@ simulate_episode <- function(
 }
 
 
-# simulates transitions H -> E and E -> H for a population of patients in order 
-# to estimate the total number of exacerbations and the mean total duration of 
-# exacerbations over the year. uncertainty is propogated from the posterior 
-# draws
-simulate_trajectory <- function(
+#' Simulate sojourn times for h-> and e->h for an arbitrary sized population 
+#' representative of the sample distribution based on the observed covariate
+#' distribution up to the maximum follow up time.
+#' 
+#' Used to estimate the total number of exacerbations under each treatment 
+#' group as well as the the mean total duration in an exacerbations state 
+#' over the followup period with uncertainty is propogated from the posterior.
+sim_trajectory <- function(
     # HE posterior draws
   po_he_shape, po_he_b_0, po_he_b_ppfev, po_he_u_a,
   # EH posterior draws
   po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
   po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
   # settings
-  S         = 200,
-  N_pop     = 2000,
   followup  = 365,
   trt       = "soc",
   max_trans = 300L,
-  draw_idx_override = NULL,
-  d_cohort,
-  m_ix
+  d_cohort
 ) {
   
-  if(is.null(draw_idx_override)){
-    n_draws  <- length(po_he_shape)
-    draw_idx <- sample(n_draws, S, replace = S > n_draws)
-  } else {
-    n_draws  <- length(draw_idx_override)
-    draw_idx <- draw_idx_override
-    # reset S based on fixed set of draws
-    S <- length(draw_idx)
-  }
-  
+  S <- length(po_he_shape)
+  N_pop <- nrow(d_cohort)
   
   # per-draw summaries
   mean_time_E  <- numeric(S)
@@ -816,21 +373,19 @@ simulate_trajectory <- function(
   s <- 1
   for (s in seq_len(S)) {
     
-    d <- draw_idx[s]
-    
     # parameters
-    he_shape <- po_he_shape[d]
-    he_ua    <- po_he_u_a[d]
-    he_mu    <- exp(po_he_b_0[d] + po_he_b_ppfev[d] * d_cohort$ppfev_baseline[m_ix[, s]])
+    he_shape <- po_he_shape[s]
+    he_ua    <- po_he_u_a[s]
+    he_mu    <- exp(po_he_b_0[s] + po_he_b_ppfev[s] * d_cohort$ppfev_baseline)
     
     eh_btrt  <- switch(trt,
                        soc   = 0,
-                       defer = po_eh_b_defer[d],
-                       discont = po_eh_b_discont[d]
+                       defer = po_eh_b_defer[s],
+                       discont = po_eh_b_discont[s]
     )
-    eh_shape <- po_eh_shape[d]
-    eh_ua    <- po_eh_u_a[d]
-    eh_mu    <- exp(po_eh_b_0[d] + po_eh_b_ppfev[d] * d_cohort$ppfev_baseline[m_ix[, s]] + eh_btrt)
+    eh_shape <- po_eh_shape[s]
+    eh_ua    <- po_eh_u_a[s]
+    eh_mu    <- exp(po_eh_b_0[s] + po_eh_b_ppfev[s] * d_cohort$ppfev_baseline + eh_btrt)
     
     # frailties
     u_he <- rgamma(N_pop, he_ua, he_ua)
@@ -934,18 +489,16 @@ simulate_trajectory <- function(
   )
 }
 
-# contrast for mean time in E state and mean number of exacerbation
 
 
-# Call episodes once per arm, then contrast
-compare_treatments <- function(
+#' Wraps sim_episode to compute probability of recovery and rmst for 
+#' exacerbation state under each treatment arm.
+#' 
+compare_trts <- function(
     # arms to compare
     arms = c("soc", "defer", "discont"), 
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
     po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
-    # simulation settings
-    S          = 200,
-    N_pop      = 2000,
     # episode window for recovery metrics
     t_window   = 30,
     eval_times = seq(0, 30, by = 1),
@@ -953,26 +506,17 @@ compare_treatments <- function(
     d_cohort
     ) {
   
-  # cohort covariate indexes to use in prediction
-  m_ix <- sapply(1:S, function(ii){
-    sample(1:nrow(d_cohort), size = N_pop, replace = T)  
-  })
   
   trt <- arms[1]
   results <- lapply(arms, function(trt) {
     
-    res <- simulate_episode(
+    res <- sim_episode(
       po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
       po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
-      # simulation settings
-      S , N_pop ,
-      t_window, eval_times,
-      # simulate each arm independently
-      trt = trt,
-      # sample data
-      d_cohort,
-      # which rows from the cohort data should be used in prediction
-      m_ix
+      t_window, 
+      eval_times,
+      trt = trt, # simulate each arm independently
+      d_cohort   # sample data
       )
     res$recovery_curve[, trt := trt]
     list(curve = res$recovery_curve, rmst = cbind(trt = trt, res$rmst))
@@ -986,19 +530,20 @@ compare_treatments <- function(
   list(curves = curves, rmsts = rmsts)
 }
 
-# compares the rmst to the specified t_window limit across treatment groups
-# under assumed covariate pattern
-# estimates obtained by repeatedly simulating sourjoun times for the 
-# exacerbation state for a population of patients under each draw of the 
-# posterior with the same draws being used for each treatment group.
-contrast_rmst <- function(
+
+
+
+
+### TODO - fix next two to use sample data at current sample size rather than resampled version 
+### from artificial data set.
+
+#' Computes rmst across treatment groups based on draws from the posterior 
+#' and the covariate distribution using the sample data.
+compare_rmst <- function(
     trt_a = "soc", trt_b = "defer",
     
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
     po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
-    # simulation settings
-    S          = 200,
-    N_pop      = 2000,
     # episode window for recovery metrics
     t_window   = 30,
     delta_ni = 0,
@@ -1006,27 +551,21 @@ contrast_rmst <- function(
     d_cohort
 ) {
   
-  n_draws  <- length(po_eh_shape)
-  draw_idx <- sample(n_draws, S, replace = S > n_draws)
   
-  # cohort covariate indexes to use in prediction
-  m_ix <- sapply(1:S, function(ii){
-    sample(1:nrow(d_cohort), size = N_pop, replace = T)  
-  })
-  
+  S <- length(po_eh_shape)
+  N_pop <- nrow(d_cohort)
   
   rmst_a <- rmst_b <- numeric(S)
   
   for (s in seq_len(S)) {
-    d <- draw_idx[s]
     
     for (trt in c(trt_a, trt_b)) {
       eh_btrt <- switch(trt, soc = 0,
-                        defer = po_eh_b_defer[d],
-                        discont = po_eh_b_discont[d])
-      mu  <- exp(po_eh_b_0[d] + po_eh_b_ppfev[d] * d_cohort$ppfev_baseline[m_ix[, s]] + eh_btrt)
-      u_i <- rgamma(N_pop, po_eh_u_a[d], po_eh_u_a[d])
-      soj <- (-log(runif(N_pop)) / (u_i * mu))^(1 / po_eh_shape[d])
+                        defer = po_eh_b_defer[s],
+                        discont = po_eh_b_discont[s])
+      mu  <- exp(po_eh_b_0[s] + po_eh_b_ppfev[s] * d_cohort$ppfev_baseline + eh_btrt)
+      u_i <- rgamma(N_pop, po_eh_u_a[s], po_eh_u_a[s])
+      soj <- (-log(runif(N_pop)) / (u_i * mu))^(1 / po_eh_shape[s])
       val <- mean(pmin(soj, t_window))
       if (trt == trt_a) rmst_a[s] <- val else rmst_b[s] <- val
     }
@@ -1034,28 +573,26 @@ contrast_rmst <- function(
   
   contrast <- rmst_b - rmst_a
   data.table(
-    trt_a    = trt_a,
-    trt_b    = trt_b,
-    delta_mu     = mean(contrast),
-    delta_lo       = quantile(contrast, 0.025),
-    delta_hi       = quantile(contrast, 0.975),
+    trt_a = trt_a,
+    trt_b = trt_b,
+    delta_mu = mean(contrast),
+    delta_lo = quantile(contrast, 0.025),
+    delta_hi = quantile(contrast, 0.975),
     # does trt_b result in a rmst that is above the rmst for trt_a by less
     # than the ni margin
     pr_lt_ni = mean(contrast < delta_ni)   
   )
 }
 
-
-contrast_trajectory <- function(
+#' Wrapper for simulating trajectory under arbitrary population.
+#' 
+compare_trajectory <- function(
     trt_a = "soc",
     trt_b = "defer",
     po_he_shape, po_he_b_0, po_he_b_ppfev, po_he_u_a,
     # EH posterior draws
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
     po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
-    # settings
-    S         = 200,
-    N_pop     = 2000,
     followup  = 365,
     max_trans = 300L,
     d_cohort
@@ -1063,53 +600,26 @@ contrast_trajectory <- function(
   # pass same draw_idx to both by fixing the RNG seed approach:
   # easier to just run both inside one loop with shared draw_idx
   
-  n_draws  <- length(po_he_shape)
-  draw_idx <- sample(n_draws, S, replace = S > n_draws)
-  
-  
-  
-  # cohort covariate indexes to use in prediction
-  m_ix <- sapply(1:S, function(ii){
-    sample(1:nrow(d_cohort), size = N_pop, replace = T)  
-  })
-  
-  # po_he_shape, po_he_b_0, po_he_b_ppfev, po_he_u_a,
-  # # EH posterior draws
-  # po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
-  # po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
-  # settings
-  # S         = 200
-  # N_pop     = 2000
-  # followup  = 365
-  # ppfev_std = 0
-  # trt       = "soc"
-  # max_trans = 300L
-  # draw_idx_override = NULL
-  
-  res_a <- simulate_trajectory(
+  res_a <- sim_trajectory(
     po_he_shape, po_he_b_0, po_he_b_ppfev, po_he_u_a,
     # EH posterior draws
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
     po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
-    S, N_pop, followup, 
+    followup, 
     trt = trt_a,
     max_trans,
-    draw_idx_override = draw_idx,
-    d_cohort,
-    m_ix = m_ix
+    d_cohort
   )
   
-  res_b <- simulate_trajectory(
+  res_b <- sim_trajectory(
     po_he_shape, po_he_b_0, po_he_b_ppfev, po_he_u_a,
     # EH posterior draws
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
     po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
-    S ,N_pop, followup, 
+    followup, 
     trt = trt_b,
     max_trans,
-    draw_idx_override = draw_idx,
-    d_cohort,
-    m_ix = m_ix
+    d_cohort
   )
   
   contrast_time  <- res_b$draws$mean_time_E - res_a$draws$mean_time_E
@@ -1117,146 +627,35 @@ contrast_trajectory <- function(
   
   list(
     time_E = data.table(
-      trt_a       = trt_a,  
+      trt_a = trt_a,  
       trt_b = trt_b,
       mean_E_trt_a = res_a$time_E$mean,
       mean_E_trt_b = res_b$time_E$mean,
-      delta_mu        = mean(contrast_time),
-      delta_lo          = quantile(contrast_time, 0.025),
-      delta_hi          = quantile(contrast_time, 0.975),
+      delta_mu = mean(contrast_time),
+      delta_lo = quantile(contrast_time, 0.025),
+      delta_hi = quantile(contrast_time, 0.975),
       pr_positive = mean(contrast_time > 0)
     ),
     n_exac = data.table(
-      trt_a       = trt_a,  trt_b = trt_b,
+      trt_a = trt_a,  trt_b = trt_b,
       n_exac_trt_a = res_a$n_exac$mean,
       n_exac_trt_b = res_b$n_exac$mean,
-      delta_mu        = mean(contrast_nexac),
-      delta_lo          = quantile(contrast_nexac, 0.025),
-      delta_hi          = quantile(contrast_nexac, 0.975),
+      delta_mu = mean(contrast_nexac),
+      delta_lo = quantile(contrast_nexac, 0.025),
+      delta_hi = quantile(contrast_nexac, 0.975),
       pr_positive = mean(contrast_nexac > 0)
     )
   )
 }
 
 
-lower_incomplete_gamma <- function(a, z) {
-  pgamma(z, shape = a) * gamma(a)
-}
-
-rmst_weibull_scale <- function(tau, w_shape, w_scale) {
-  s <- 1 / w_shape
-  z <- (tau / w_scale)^w_shape
-  (w_scale / w_shape) * gamma(s) * pgamma(z, shape = s)
-}
-
-rmst_weibull_ph <- function(tau, w_shape, w_scale) {
-  s <- 1 / w_shape
-  z <- w_scale * tau^w_shape
-  (1 / w_shape) * w_scale^(-1 / w_shape) * gamma(s) * pgamma(z, shape = s)
-}
-
-SweibullPH <- function(x, shape_ph, scale_ph){
-  1-flexsurv::pweibullPH(x, shape_ph, scale_ph)
-}
-
-weibullPH_summary_stats <- function(shape_ph, scale_ph, tau = 25){
-  # aft scale
-  aft_lambda <- scale_ph^(-1/shape_ph)
-  # aft shape
-  aft_k <- shape_ph
-  # median
-  w_med <- aft_lambda * (log(2))^{1/aft_k}
-  # mean
-  w_mu <- aft_lambda * gamma(1 + (1/aft_k))
-  # variance
-  w_sd <- sqrt((aft_lambda^2)*(gamma(1 + 2/aft_k) - (gamma(1 + 1/aft_k))^2))
-  
-  
-  # plot(0:365, SweibullPH(0:365, shape_ph, scale_ph))
-  
-  rmst <- integrate(SweibullPH, 0, tau, shape_ph = shape_ph, scale_ph = scale_ph)
-  
-  
-  c(median = w_med, mean = w_mu, sd = w_sd, rmst = rmst$value)
-}
-
-sim_weibullPH_rmst <- function(l_spec){
-  
-  # intended to compute the rmst by treatment group marginalising over the 
-  # covariate space on which the model is based.
-  
-  # simulate from population and then average out irrelevant terms to get 
-  # rmst across trt groups
-  
-  age <- rlnorm(1e4, meanlog = log(l_spec$age_mean), sdlog = l_spec$age_sd)
-  age <- pmin(pmax(age, l_spec$age_min), l_spec$age_max)
-  ppfev_baseline <- (ppfev_0(age, sd_ppfev = 3) - l_spec$ppfev_ref) / l_spec$ppfev_increment
-  
-  # indep gamma frailty but with same param values for each transition
-  u_eh <- rgamma(1, shape = l_spec$g_a, rate = l_spec$g_r)
-  
-  arms = 1:3
-  names(arms) <- c("soc", "defer", "discont")
-  
-  b_trt <- c(0, -0.21875, -0.219)
-  
-  trt <- 1
-  rmst_mu <- unlist(lapply(arms, function(trt) {
-    
-    # and then compute the recovery time on that basis
-    lambda <- u_eh * exp(l_spec$mu_recov + 
-                           l_spec$b_ppfev_recov * ppfev_baseline + 
-                           b_trt[trt])
-    
-    rmst <- numeric(length(lambda))
-    
-    for(i in seq_along(rmst)){
-      res <- integrate(
-        SweibullPH, 0, 
-        l_spec$rmst_eh_horizon, 
-        shape_ph = l_spec$shape_eh, 
-        scale_ph = lambda[i])
-      
-      rmst[i] <- res$value
-    }
-    
-    mean(rmst)
-    
-  }))
-  
-  rmst_mu
-  rmst_mu[2] - rmst_mu[1]
-  rmst_mu[3] - rmst_mu[1]
-  
-}
 
 
-example_stan_2 <- function(){
+#' Prototyping.
+example_stan <- function(){
   
   
   m3 <- cmdstanr::cmdstan_model("stan/sim12-v03.stan")
-  
-  l_spec <- get_demo_spec()
-  
-  l_spec$shape_he <- 2.85 # originally 1.1
-  l_spec$mu_exacerb <- -16.1 # originally  -4.5
-  weibullPH_summary_stats(
-    shape_ph = l_spec$shape_he, scale_ph = exp(l_spec$mu_exacerb), tau = 365)
-  rmst_weibull_ph(tau = 365, w_shape = l_spec$shape_he, w_scale = exp(l_spec$mu_exacerb))
-
-  y_he <- flexsurv::rweibullPH(
-    1e4, l_spec$shape_he, scale = exp(l_spec$mu_exacerb)
-  )
-  hist(y_he, xlim = c(0, max(y_he)*1.1))
-  c(median(y_he), mean(y_he), sd(y_he))
-  
-  l_spec$shape_eh <- 2.75  # originally 0.9 
-  l_spec$mu_recov <- -6.5  # originally -0.5
-  (res_1 <- weibullPH_summary_stats(
-    shape_ph = l_spec$shape_eh, scale_ph = exp(l_spec$mu_recov), tau = 25))
-  rmst_weibull_ph(tau = 25, w_shape = l_spec$shape_eh, w_scale = exp(l_spec$mu_recov))
-  
-  #
   
   # some of the cohort will have no exacerbation and so the event indicator 
   # for the healthy state record should have an event indicator set to zero 
@@ -1265,7 +664,7 @@ example_stan_2 <- function(){
   # similarly, the last record for each pt will almost certainly be censored
   # again, this is administrative censoring at 365 days
   
-  
+  l_spec <- get_demo_spec()
   d_cohort <- get_sim12_cohort(l_spec)
   
   d_tbl <- d_cohort[, .N, by = .(id, state)]
@@ -1328,6 +727,9 @@ example_stan_2 <- function(){
     # dimensions
     N_id    = N_id,
     P       = ncol(X_obs),
+    compute_rmst = 1,
+    tau_rmst = l_spec$rmst_eh_horizon,
+    trt_defer_col = 2, trt_discont_col = 3,
     pri_s_u = 1
   )
   
@@ -1377,6 +779,9 @@ example_stan_2 <- function(){
     # dimensions
     N_id    = N_id,
     P       = ncol(X_obs),
+    compute_rmst = 0,
+    tau_rmst = 365,
+    trt_defer_col = 2, trt_discont_col = 3,
     pri_s_u = 1
   )
   
@@ -1392,7 +797,7 @@ example_stan_2 <- function(){
     output_dir = output_dir_mcmc,
     output_basename = foutname
   )
-  f_1_1$summary(variables = c("shape", "b_0", "b", "u_a", "rmst"))
+  f_1_1$summary(variables = c("shape", "b_0", "b", "u_a", "rmst", "delta"))
   
   f_1_2 <- m3$sample(
     ld_2, iter_warmup = 500, iter_sampling = 500,
@@ -1401,7 +806,7 @@ example_stan_2 <- function(){
     output_dir = output_dir_mcmc,
     output_basename = foutname
   )
-  f_1_2$summary(variables = c("shape", "b_0", "b", "u_a", "rmst"))
+  f_1_2$summary(variables = c("shape", "b_0", "b", "u_a", "rmst", "delta"))
   # c(l_spec$shape_he, l_spec$shape_eh)
   # c(l_spec$mu_exacerb, l_spec$mu_recov)
   # c(l_spec$b_trt)
@@ -1410,7 +815,7 @@ example_stan_2 <- function(){
   # laplace approx
   f_2_1_optim <- m3$optimize(data = ld_1, jacobian = TRUE)
   f_2_1 <- m3$laplace(data = ld_1, mode = f_2_1_optim, draws = 2000)
-  f_2_1$summary(variables = c("shape", "b_0", "b", "u_a"))
+  f_2_1$summary(variables = c("shape", "b_0", "b", "u_a", "rmst", "delta"))
   c(l_spec$shape_eh, l_spec$mu_recov, l_spec$b_ppfev_recov, l_spec$b_trt[-1], l_spec$g_a)
   
   f_2_2_optim <- m3$optimize(data = ld_2, jacobian = TRUE)
@@ -1431,7 +836,7 @@ example_stan_2 <- function(){
   po_eh_b_0 <- d_post_eh$b_0
   po_eh_b_ppfev <- d_post_eh$`b[1]`
   po_eh_b_defer <- d_post_eh$`b[2]`
-  po_eh_b_discont <- d_post_eh$`b[3`
+  po_eh_b_discont <- d_post_eh$`b[3]`
   po_eh_u_a <- d_post_eh$u_a
   
   d_post_he <- data.table(
@@ -1445,15 +850,18 @@ example_stan_2 <- function(){
   po_he_b_ppfev <- d_post_he$`b[1]`
   po_he_u_a <- d_post_he$u_a
   
+  arms = c("soc", "defer", "discont")
+  # episode window for recovery metrics
+  t_window   = l_spec$rmst_eh_horizon
+  eval_times = seq(0, l_spec$rmst_eh_horizon, by = 1)
   
-  l_res_1 <- compare_treatments(
+  
+  
+  l_res_1 <- compare_trts(
     arms = c("soc", "defer", "discont"),
     po_eh_shape, 
     po_eh_b_0, po_eh_b_ppfev, po_eh_b_defer, po_eh_b_discont, 
     po_eh_u_a,
-    # simulation settings
-    S          = 200,
-    N_pop      = 2000,
     # episode window for recovery metrics
     t_window   = l_spec$rmst_eh_horizon,
     eval_times = seq(0, l_spec$rmst_eh_horizon, by = 1),
@@ -1462,7 +870,7 @@ example_stan_2 <- function(){
   )
   l_res_1
   
-  library(ggplot2)
+  
   p1 <- ggplot(l_res_1$curves, aes(x = time, y = mean, group = trt, col = trt)) +
     geom_line() +
     scale_x_continuous("Day", breaks = seq(0, 25, 5)) +
@@ -1482,31 +890,23 @@ example_stan_2 <- function(){
    
   p1 + p2
   
-  
-  
 
-  d_res_2_defer <- contrast_rmst(
+  d_res_2_defer <- compare_rmst(
     trt_a = "soc", trt_b = "defer",
     
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
     po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
-    # simulation settings
-    S          = 200,
-    N_pop      = 2000,
     # episode window for recovery metrics
     t_window   = l_spec$rmst_eh_horizon,
     delta_ni = 0.75,
     # sample data for covariate profile
     d_cohort
   )
-  d_res_2_discont <- contrast_rmst(
+  d_res_2_discont <- compare_rmst(
     trt_a = "soc", trt_b = "discont",
     
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
     po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
-    # simulation settings
-    S          = 200,
-    N_pop      = 2000,
     # episode window for recovery metrics
     t_window   = l_spec$rmst_eh_horizon,
     delta_ni = 0.75,
@@ -1526,17 +926,13 @@ example_stan_2 <- function(){
   #
   
   
-  #####
-  l_res_3 <- contrast_trajectory(
+  l_res_3 <- compare_trajectory(
     trt_a = "soc",
     trt_b = "defer",
     po_he_shape, po_he_b_0, po_he_b_ppfev, po_he_u_a,
     # EH posterior draws
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
     po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
-    # simulation settings
-    S          = 200,
-    N_pop      = 2000,
     followup  = 365,
     max_trans = 300L,
     d_cohort
@@ -1550,115 +946,11 @@ example_stan_2 <- function(){
   
 }
 
-example_stan_1 <- function(){
-  
-  
-  m1 <- cmdstanr::cmdstan_model("stan/sim12-v02.stan")
-  
-  l_spec <- get_demo_spec()
-  l_spec$N_pt <- 1000
-  l_spec$is <- 1
-  l_spec$ie <- 1000
-  
-  
-  d_cohort <- get_sim12_cohort(l_spec)
-  
-  d_tmp <- copy(d_cohort[state == "E"])
-  d_tmp[, ppfev_std := ppfev_baseline]
-  d_tmp[, defer := as.numeric(trt == "defer")]
-  d_tmp[, discont := as.numeric(trt == "discont")]
-  d_tmp[, id_idx := as.integer(factor(id))]
-  X <- model.matrix(
-    ~-1 + ppfev_std + defer + discont,
-    data = d_tmp)
-  
-  ld_1 <- list(
-    N_obs = nrow(d_tmp),
-    N_id = length(unique(d_tmp$id)),
-    y_obs = d_tmp$dur,
-    P = ncol(X),
-    X = X,
-    # ensure ids are contiguous (some pt might not have pex)
-    id = d_tmp$id_idx,
-    pri_s_u = 1
-  )
-  
-  d_tmp <- copy(d_cohort[state == "H"])
-  d_tmp[, ppfev_std := ppfev_baseline]
-  d_tmp[, id_idx := as.integer(factor(id))]
-  X <- model.matrix(
-    ~-1 + ppfev_std,
-    data = d_tmp)
-  
-  ld_2 <- list(
-    N_obs = nrow(d_tmp),
-    N_id = length(unique(d_tmp$id)),
-    y_obs = d_tmp$dur,
-    P = ncol(X),
-    X = X,
-    id = d_tmp$id_idx,
-    pri_s_u = 1
-  )
-  
-  output_dir_mcmc <- paste0(getwd(), "/tmp")
-  foutname <- paste0(
-    format(Sys.time(), format = "%Y%m%d%H%M%S"), "sim12")
-  
-  # # mcmc
-  f_1_1 <- m1$sample(
-    ld_1, iter_warmup = 500, iter_sampling = 500,
-    parallel_chains = 1, chains = 1, refresh = 10, show_exceptions = T,
-    max_treedepth = 11,
-    output_dir = output_dir_mcmc,
-    output_basename = foutname
-  )
-  f_1_1$summary(variables = c("shape", "b_0", "b", "u_a", "u_r"))
-  
-  f_1_2 <- m1$sample(
-    ld_2, iter_warmup = 500, iter_sampling = 500,
-    parallel_chains = 1, chains = 1, refresh = 10, show_exceptions = T,
-    max_treedepth = 11,
-    output_dir = output_dir_mcmc,
-    output_basename = foutname
-  )
-  f_1_2$summary(variables = c("shape", "b_0", "b", "u_a", "u_r"))
-  # c(l_spec$shape_he, l_spec$shape_eh)
-  # c(l_spec$mu_exacerb, l_spec$mu_recov)
-  # c(l_spec$b_trt)
-  # l_spec$b_ppfev_recov
-  
-  # laplace approx
-  f_2_1_optim <- m1$optimize(data = ld_1, jacobian = TRUE)
-  f_2_1 <- m1$laplace(data = ld_1, mode = f_2_1_optim, draws = 2000)
-  f_2_1$summary(variables = c("shape", "b_0", "b", "u_a", "u_r"))
-  c(l_spec$shape_eh, l_spec$mu_recov, l_spec$b_ppfev_recov, l_spec$b_trt[-1], l_spec$sd_eh)
-  
-  f_2_2_optim <- m1$optimize(data = ld_2, jacobian = TRUE)
-  f_2_2 <- m1$laplace(data = ld_2, mode = f_2_2_optim, draws = 2000)
-  f_2_2$summary(variables = c("shape", "b_0", "b", "u_a", "u_r"))
-  c(l_spec$shape_eh, l_spec$mu_recov, l_spec$b_ppfev_recov, l_spec$b_trt[-1], l_spec$sd_eh)
-  
-  # variational inference
-  f_3 <- m1$pathfinder(
-    ld_1, num_paths=20,
-    single_path_draws=200,
-    history_size=50, max_lbfgs_iters=100,
-    refresh = 0, draws = 2000)
-  f_3$summary(variables = c("shape", "b_0", "b", "u_a", "u_r"))
-  
-  
-  
-  
-  
-  f_3 <- flexsurvreg(Surv(y, rep(1, length(y)))~trt_obs,  dist="weibullPH")
-  f_3
-  c(shape_eh, exp(b_0), b_trt)
-  
-}
-
-
+#' Utility function for generating a boilerplate simulation spec used to 
+#' control DGP, decision thresholds and basically anything needed in the 
+#' prototyping.
+#' 
 get_demo_spec <- function(){
-  
   
   l_spec <- list()
   
@@ -1733,96 +1025,4 @@ get_demo_spec <- function(){
 }
 
 
-get_scale_exacerb <- function(ppfev) {
-  log_scale <- mu_exacerb + beta_ppfev_exacerb * (ppfev - ppfev_ref)
-  exp(log_scale)
-}
-
-
-get_scale_recov <- function(ppfev = 55) {
-  log_scale <- mu_recov + beta_ppfev_recov * (ppfev - ppfev_ref) + beta_trt
-  exp(log_scale)
-}
-
-
-# Manual parameter calibration and checks for simulating exacerbation and recovery.
-calibrate_weibull_ph <- function(){
-  # WeibullPH
-  # f(x) = amx^{a-1} exp(-m x^a)
-  # F(x) = 1 - exp(-m x^a)
-  # a = shape, m = scale
-  # covariates included through a linear model on the log scale parameter
-  # scale = exp(\mu + \beta*(ppfev - ppfev_ref) + u_i)
-  # 100 <= ppfev <= 55 (approx)
-  # mean is scale^(-1/shape) * Gamma(1 + 1/shape)
-  
-  # shape_he = 1.6
-  # scale_he = 0.001
-  
-  shape_he = 1.1
-  scale_he = 0.01
-  
-  cat("Days at median and upper\n")
-  flexsurv::qweibullPH(p = 0.5, shape = shape_he, scale = scale_he)
-  flexsurv::qweibullPH(p = 0.95, shape = shape_he, scale = scale_he)
-  scale_he^(-1/shape_he) * gamma(1 + 1/shape_he)
-  # sanity check
-  integrand_he <- function(x, shape, scale){
-    flexsurv::dweibullPH(x, shape, scale) * x
-  }
-  integrate(integrand_he, lower = 0, upper = Inf, shape = shape_he, scale = scale_he)
-  hist(flexsurv::rweibullPH(1e5, shape = shape_he, scale = scale_he))
-  plot(0:365, flexsurv::pweibullPH(0:365, shape = shape_he, scale = scale_he))
-  
-  # linear predictor and ppfev ref
-  mu_exacerb <- -4.5
-  beta_ppfev_exacerb <- -0.02
-  ppfev_ref <- 77.5 
-  
-  
-  
-  get_scale_exacerb(55)
-  get_scale_exacerb(100)
-  # plot(1:365, pweibullPH(1:365, shape = shape_he, scale = get_scale_exacerb(66)))
-  
-  
-  
-  shape_eh = 0.7
-  scale_eh = 0.14
-  
-  cat("Days at median and upper\n")
-  flexsurv::qweibullPH(p = 0.5, shape = shape_eh, scale = scale_eh)
-  flexsurv::qweibullPH(p = 0.95, shape = shape_eh, scale = scale_eh)
-  # mean
-  scale_eh^(-1/shape_eh) * gamma(1 + 1/shape_eh)
-  hist(flexsurv::rweibullPH(1e5, shape = shape_eh))
-  
-  plot(0:30, flexsurv::pweibullPH(0:30, shape = shape_eh, scale = scale_eh))
-  
-  
-  # linear predictor and ppfev ref
-  mu_recov <- -1.2
-  beta_ppfev_recov <- 0.02
-  ppfev_ref <- 77.5 
-  beta_trt <- -0.3
-  
-  
-  
-  get_scale_recov(55)
-  get_scale_recov(100)
-  plot(0:30, flexsurv::pweibullPH(0:30, shape = shape_eh, scale = get_scale_recov(55)))
-  plot(0:30, flexsurv::pweibullPH(0:30, shape = shape_eh, scale = get_scale_recov(100)))
-  
-  # to these we would then need to introduce correlated frailty terms.
-  
-  
-  
-  
-  
-  
-  
-  
-}
-
-#
 

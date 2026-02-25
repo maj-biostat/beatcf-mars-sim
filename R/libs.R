@@ -8,9 +8,7 @@ suppressPackageStartupMessages(library("git2r"))
 # for devtools:
 # https://forum.posit.co/t/failling-install-devtools-error-onload-failed-in-loadnamespace-for-pkgload/64787
 
-# relies on ‘gt’ version ‘1.0.0.9000’, use 
-# devtools::install_github("rstudio/gt")
-# to install.
+# relies on ‘gt’ version ‘1.0.0.9000’, use devtools::install_github("rstudio/gt") to install.
 suppressPackageStartupMessages(suppressWarnings(library("gt")))
 suppressPackageStartupMessages(library("jsonlite"))
 suppressPackageStartupMessages(library("knitr"))
@@ -37,9 +35,13 @@ suppressPackageStartupMessages(library(mvtnorm))
 suppressPackageStartupMessages(library(mgcv))
 suppressPackageStartupMessages(library(nlme))
 suppressPackageStartupMessages(library(INLA))
+suppressPackageStartupMessages(library(INLAjoint))
 
-
-library(DiagrammeR)
+# for weibullph
+suppressPackageStartupMessages(library(flexsurv))
+suppressPackageStartupMessages(library(lobstr))
+suppressPackageStartupMessages(library(patchwork))
+suppressPackageStartupMessages(library(DiagrammeR))
 
 # install.packages(
 #   c(
