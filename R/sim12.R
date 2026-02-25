@@ -232,6 +232,7 @@ run_trial <- function(
     ]
     
     # total time and number of exacerbations (by simulation)
+    ix_sample <- sample(1:nrow(d_post_eh), size = pmin(500, nrow(d_post_eh)))
     l_traj <- lapply(l_spec$trt_lab, function(z) {
       l <- sim_trajectory(
         # HE posterior draws
@@ -246,6 +247,7 @@ run_trial <- function(
         d_post_eh$eh_b_defer, 
         d_post_eh$eh_b_discont, 
         d_post_eh$eh_u_a,
+        ix_sample,
         followup  = 365,
         trt = z,
         max_trans = 50L,

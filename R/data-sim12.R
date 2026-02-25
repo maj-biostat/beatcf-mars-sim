@@ -356,6 +356,7 @@ sim_trajectory <- function(
   # EH posterior draws
   po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
   po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
+  ix_sampl,
   # settings
   followup  = 365,
   trt       = "soc",
@@ -363,7 +364,7 @@ sim_trajectory <- function(
   d_cohort
 ) {
   
-  S <- length(po_he_shape)
+  S <- length(ix_sampl)
   N_pop <- nrow(d_cohort)
   
   # per-draw summaries
@@ -374,18 +375,18 @@ sim_trajectory <- function(
   for (s in seq_len(S)) {
     
     # parameters
-    he_shape <- po_he_shape[s]
-    he_ua    <- po_he_u_a[s]
-    he_mu    <- exp(po_he_b_0[s] + po_he_b_ppfev[s] * d_cohort$ppfev_baseline)
+    he_shape <- po_he_shape[ix_sampl[s]]
+    he_ua    <- po_he_u_a[ix_sampl[s]]
+    he_mu    <- exp(po_he_b_0[ix_sampl[s]] + po_he_b_ppfev[ix_sampl[s]] * d_cohort$ppfev_baseline)
     
     eh_btrt  <- switch(trt,
                        soc   = 0,
                        defer = po_eh_b_defer[s],
                        discont = po_eh_b_discont[s]
     )
-    eh_shape <- po_eh_shape[s]
-    eh_ua    <- po_eh_u_a[s]
-    eh_mu    <- exp(po_eh_b_0[s] + po_eh_b_ppfev[s] * d_cohort$ppfev_baseline + eh_btrt)
+    eh_shape <- po_eh_shape[ix_sampl[s]]
+    eh_ua    <- po_eh_u_a[ix_sampl[s]]
+    eh_mu    <- exp(po_eh_b_0[ix_sampl[s]] + po_eh_b_ppfev[ix_sampl[s]] * d_cohort$ppfev_baseline + eh_btrt)
     
     # frailties
     u_he <- rgamma(N_pop, he_ua, he_ua)
@@ -593,6 +594,8 @@ compare_trajectory <- function(
     # EH posterior draws
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
     po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
+    # indexes the posterior draws to use
+    ix_sampl,
     followup  = 365,
     max_trans = 300L,
     d_cohort
@@ -605,6 +608,7 @@ compare_trajectory <- function(
     # EH posterior draws
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
     po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
+    ix_sampl,
     followup, 
     trt = trt_a,
     max_trans,
@@ -616,6 +620,7 @@ compare_trajectory <- function(
     # EH posterior draws
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
     po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
+    ix_sampl,
     followup, 
     trt = trt_b,
     max_trans,
@@ -925,7 +930,9 @@ example_stan <- function(){
   p1
   #
   
-  
+  ix_sample <- sample(1:length(po_he_shape), size = 500, replace = F)
+  # ix_sample <- 1:length(po_he_shape)
+  tictoc::tic()
   l_res_3 <- compare_trajectory(
     trt_a = "soc",
     trt_b = "defer",
@@ -933,10 +940,13 @@ example_stan <- function(){
     # EH posterior draws
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
     po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
+    ix_sample,
+    
     followup  = 365,
     max_trans = 50L,
     d_cohort
   )
+  tictoc::toc()
   l_res_3
   
   
