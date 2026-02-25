@@ -359,7 +359,7 @@ sim_trajectory <- function(
   # settings
   followup  = 365,
   trt       = "soc",
-  max_trans = 300L,
+  max_trans = 50L,
   d_cohort
 ) {
   
@@ -934,7 +934,7 @@ example_stan <- function(){
     po_eh_shape, po_eh_b_0, po_eh_b_ppfev,
     po_eh_b_defer, po_eh_b_discont, po_eh_u_a,
     followup  = 365,
-    max_trans = 300L,
+    max_trans = 50L,
     d_cohort
   )
   l_res_3

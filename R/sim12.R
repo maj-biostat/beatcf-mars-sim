@@ -84,19 +84,24 @@ run_trial <- function(
   d_post_smry_1[, lo := NA_real_]
   d_post_smry_1[, hi := NA_real_]
   
-
+  # total duration in exacerbation and number of exac
+  d_post_smry_2 <- CJ(
+    ic = 1:N_analys,
+    trt = l_spec$trt_lab,
+    par = c("tot_ex_t", "n_ex")
+  )
+  d_post_smry_2[, mu := NA_real_]
+  d_post_smry_2[, lo := NA_real_]
+  d_post_smry_2[, hi := NA_real_]
   
-  # # total duration in exacerbation and number of exac
-  # d_post_smry_3 <- CJ(
-  #   ic = 1:N_analys,
-  #   trt = l_spec$trt_lab
-  # )
-  # d_post_smry_3[, tot_t_mu := NA_real_]
-  # d_post_smry_3[, tot_t_lo := NA_real_]
-  # d_post_smry_3[, tot_t_hi := NA_real_]
-  # d_post_smry_3[, n_exac_mu := NA_real_]
-  # d_post_smry_3[, n_exac_lo := NA_real_]
-  # d_post_smry_3[, n_exac_hi := NA_real_]
+  # difference in total exacerbation duration
+  d_post_smry_3 <- CJ(
+    ic = 1:N_analys,
+    par = c("delta_tot_ex_t_defer", "delta_tot_ex_t_discont")
+  )
+  d_post_smry_3[, mu := NA_real_]
+  d_post_smry_3[, lo := NA_real_]
+  d_post_smry_3[, hi := NA_real_]
   
   # 
   # decisions 
@@ -226,6 +231,83 @@ run_trial <- function(
       )
     ]
     
+    # total time and number of exacerbations (by simulation)
+    l_traj <- lapply(l_spec$trt_lab, function(z) {
+      l <- sim_trajectory(
+        # HE posterior draws
+        d_post_he$he_shape, 
+        d_post_he$he_b_0, 
+        d_post_he$he_b_ppfev, 
+        d_post_he$he_u_a,
+        # EH posterior draws
+        d_post_eh$eh_shape, 
+        d_post_eh$eh_b_0, 
+        d_post_eh$eh_b_ppfev,
+        d_post_eh$eh_b_defer, 
+        d_post_eh$eh_b_discont, 
+        d_post_eh$eh_u_a,
+        followup  = 365,
+        trt = z,
+        max_trans = 50L,
+        d_all)
+    })
+    
+    d_tot_ex_t <- rbindlist(lapply(l_traj, function(z){
+      z$time_E
+    }), idcol = "trt")
+    d_tot_ex_t[, trt := l_spec$trt_lab[trt]]
+    d_tot_ex_t[, par := "tot_ex_t"]
+    d_tot_ex_t[, ic := l_spec$ic]
+    
+    d_n_ex <- rbindlist(lapply(l_traj, function(z){
+      z$n_exac
+    }), idcol = "trt")
+    d_n_ex[, trt := l_spec$trt_lab[trt]]
+    d_n_ex[, par := "n_ex"]
+    d_n_ex[, ic := l_spec$ic]
+    
+    d_post_smry_2[
+      d_tot_ex_t,
+      on = .(ic, trt, par), `:=`(
+        mu = i.tot_t_mu, lo = i.tot_t_lo, hi = i.tot_t_hi
+      )
+    ]
+    d_post_smry_2[
+      d_n_ex,
+      on = .(ic, trt, par), `:=`(
+        mu = i.n_exac_mu, lo = i.n_exac_lo, hi = i.n_exac_hi
+      )
+    ]
+    
+    delta_1 <- l_traj[[2]]$draws$mean_time_E - l_traj[[1]]$draws$mean_time_E
+    delta_2 <- l_traj[[3]]$draws$mean_time_E - l_traj[[1]]$draws$mean_time_E
+    d_delta <- data.table(
+      ic = l_spec$ic,
+      par = c(
+        "delta_tot_ex_t_defer",
+        "delta_tot_ex_t_discont"
+      ),
+      mu = c(
+        mean(delta_1),
+        mean(delta_2)
+      ),
+      lo = c(
+        quantile(delta_1, probs = c(0.025)),
+        quantile(delta_2, probs = c(0.025))
+      ),
+      hi = c(
+        quantile(delta_1, probs = c(0.975)),
+        quantile(delta_2, probs = c(0.975))
+      )
+    )
+    d_post_smry_3[
+      d_delta,
+      on = .(ic, par), `:=`(
+        mu = i.mu, lo = i.lo, hi = i.hi
+      )
+    ]
+    
+    
     # evaluate decision rule, namely does the rmst indicate a longer duration of 
     # recovery in the intervention group relative to the soc group that is 
     # above the level that we are willing to tolerate
@@ -318,6 +400,8 @@ run_trial <- function(
   l_ret <- list(
     d_all = d_all,
     d_post_smry_1 = d_post_smry_1,
+    d_post_smry_2 = d_post_smry_2,
+    d_post_smry_3 = d_post_smry_3,
     d_pr_dec = d_pr_dec,
     stop_at = stop_at,
     l_spec = l_spec
