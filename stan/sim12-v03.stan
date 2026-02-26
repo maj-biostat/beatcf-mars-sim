@@ -119,6 +119,9 @@ generated quantities {
     vector[N_cens] log_mu_cens_pred;
     matrix[N_obs,  P] X_obs_pred = X_obs;
     matrix[N_cens, P] X_cens_pred = X_cens;
+    
+    vector[N_obs] u_obs;
+    vector[N_cens] u_cens;
   
     // soc
     X_obs_pred[, trt_defer_col] = rep_vector(0.0, N_obs);
@@ -130,10 +133,13 @@ generated quantities {
     log_mu_cens_pred = b_0 + X_cens_pred * b;
   
     for(i in 1:N_obs){
-      rmst_obs[i] = rmst_weibull_ph(tau_rmst, shape, exp(log_mu_obs_pred)[i]);
+      u_obs[i] = gamma_rng(u_a, u_a) ;
+      
+      rmst_obs[i] = rmst_weibull_ph(tau_rmst, shape, u_obs[i] * exp(log_mu_obs_pred)[i]);
     }
     for(i in 1:N_cens){
-      rmst_cens[i] = rmst_weibull_ph(tau_rmst, shape, exp(log_mu_cens_pred)[i]);
+      u_cens[i] = gamma_rng(u_a, u_a) ;
+      rmst_cens[i] = rmst_weibull_ph(tau_rmst, shape, u_cens[i] * exp(log_mu_cens_pred)[i]);
     }
   
     rmst[1] = mean(append_row(rmst_obs, rmst_cens));
@@ -148,10 +154,10 @@ generated quantities {
     log_mu_cens_pred = b_0 + X_cens_pred * b;
   
     for(i in 1:N_obs){
-      rmst_obs[i] = rmst_weibull_ph(tau_rmst, shape, exp(log_mu_obs_pred)[i]);
+      rmst_obs[i] = rmst_weibull_ph(tau_rmst, shape, u_obs[i] * exp(log_mu_obs_pred)[i]);
     }
     for(i in 1:N_cens){
-      rmst_cens[i] = rmst_weibull_ph(tau_rmst, shape, exp(log_mu_cens_pred)[i]);
+      rmst_cens[i] = rmst_weibull_ph(tau_rmst, shape, u_cens[i] * exp(log_mu_cens_pred)[i]);
     }
   
     rmst[2] = mean(append_row(rmst_obs, rmst_cens));
@@ -167,10 +173,10 @@ generated quantities {
     log_mu_cens_pred = b_0 + X_cens_pred * b;
   
     for(i in 1:N_obs){
-      rmst_obs[i] = rmst_weibull_ph(tau_rmst, shape, exp(log_mu_obs_pred)[i]);
+      rmst_obs[i] = rmst_weibull_ph(tau_rmst, shape, u_obs[i] * exp(log_mu_obs_pred)[i]);
     }
     for(i in 1:N_cens){
-      rmst_cens[i] = rmst_weibull_ph(tau_rmst, shape, exp(log_mu_cens_pred)[i]);
+      rmst_cens[i] = rmst_weibull_ph(tau_rmst, shape, u_cens[i] * exp(log_mu_cens_pred)[i]);
     }
   
     rmst[3] = mean(append_row(rmst_obs, rmst_cens));
