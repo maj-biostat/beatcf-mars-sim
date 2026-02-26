@@ -27,26 +27,19 @@ default:
   # per 10% increment
   ppfev_increment: 10
 
-  # frailty parameters to link recurrences
-  sd_he: 0.3
-  sd_eh: 0.3 
-  rho_frailty: -0.4
-  # alt indep gamma frailty
-  g_a: 10
-  g_r: 10
-  
   ppfev_ref: 77.5
   
   # linear predictor exacerbation
   
+  # alt indep gamma frailty
+  g_a: 10
+  g_r: 10
+  
   # exacerbation -> healthy
   # linear predictor recovery
   mu_recov: -6.5  # originally -0.5
-  
   # trt is c("soc","defer","discont")
-  b_trt: [0, -0.3, -0.3]
-  
-  
+  b_trt: [0, 0, 0]
   b_ppfev_recov: 0.1
   shape_eh: 2.75  # originally 0.9 
   
@@ -54,6 +47,8 @@ default:
   mu_exacerb: -16.1 # originally  -4.5
   b_ppfev_exacerb: -0.2
   shape_he: 2.85 # originally 1.1
+  
+  pri_s_u: 0.1
   
   
   trt_active: [1, 1, 1]

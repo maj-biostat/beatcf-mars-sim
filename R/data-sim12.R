@@ -194,7 +194,7 @@ get_sim12_stan_data <- function(d_all){
     compute_rmst = 1,
     tau_rmst = l_spec$rmst_eh_horizon,
     trt_defer_col = 2, trt_discont_col = 3,
-    pri_s_u = 1
+    pri_s_u = l_spec$pri_s_u
   )
   
   # Every subject appears in d_tmp_he (state == "H") since all subjects
@@ -239,7 +239,7 @@ get_sim12_stan_data <- function(d_all){
     compute_rmst = 0,
     tau_rmst = l_spec$rmst_he_horizon,
     trt_defer_col = 2, trt_discont_col = 3,
-    pri_s_u = 1
+    pri_s_u = l_spec$pri_s_u
   )
   
   list(
@@ -735,7 +735,7 @@ example_stan <- function(){
     compute_rmst = 1,
     tau_rmst = l_spec$rmst_eh_horizon,
     trt_defer_col = 2, trt_discont_col = 3,
-    pri_s_u = 1
+    pri_s_u = l_spec$pri_s_u
   )
   
   # Every subject appears in d_tmp_he (state == "H") since all subjects
@@ -787,7 +787,7 @@ example_stan <- function(){
     compute_rmst = 0,
     tau_rmst = 365,
     trt_defer_col = 2, trt_discont_col = 3,
-    pri_s_u = 1
+    pri_s_u = l_spec$pri_s_u
   )
   
   output_dir_mcmc <- paste0(getwd(), "/tmp")
@@ -1023,6 +1023,9 @@ get_demo_spec <- function(){
   # trt is c("soc","defer","discont")
   l_spec$b_trt <- c(0, -0.3, -0.2)
   l_spec$shape_eh <- 2.75  # originally 0.9 
+  
+  
+  l_spec$pri_s_u <- 0.1
   
   l_spec$trt_lab <- c("soc","defer","discont")
   l_spec$trt_active <- rep(TRUE, 3)
