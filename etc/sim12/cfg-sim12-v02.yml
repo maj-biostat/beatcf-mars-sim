@@ -39,7 +39,7 @@ default:
   # linear predictor recovery
   mu_recov: -6.5  # originally -0.5
   # trt is c("soc","defer","discont")
-  b_trt: [0, 0, 0]
+  b_trt: [0, -0.25805, -0.25805]
   b_ppfev_recov: 0.1
   shape_eh: 2.75  # originally 0.9 
   

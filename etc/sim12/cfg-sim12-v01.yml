@@ -23,6 +23,8 @@ default:
   age_sd: 0.4
   age_min: 10
   age_max: 60
+  
+  
   # used to scale ppfev at baseline so that parameters are 
   # per 10% increment
   ppfev_increment: 10
