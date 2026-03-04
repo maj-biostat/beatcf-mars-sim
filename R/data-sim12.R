@@ -32,10 +32,16 @@ get_sim12_pt <- function(
     l_spec
   ){
   
-  # baseline 
-  # probably should include sex in this...?
-  age <- rlnorm(1, meanlog = log(l_spec$age_mean), sdlog = l_spec$age_sd)
-  age <- pmin(pmax(age, l_spec$age_min), l_spec$age_max)
+  # age distribution - truncated log normal - restrict age to (age_lwr,age_upr)
+  p_lt_age_lwr <- plnorm(
+    l_spec$age_min, meanlog = log(l_spec$age_mean), sdlog = l_spec$age_sd, lower.tail = T)
+  p_gt_age_upr <- plnorm(
+    l_spec$age_max, meanlog = log(l_spec$age_mean), sdlog = l_spec$age_sd, lower.tail = F)
+  # sample u in [p0, 1)
+  u <- p_lt_age_lwr + runif(1, 0, (1 - (p_lt_age_lwr + p_gt_age_upr))) 
+  age <- qlnorm(u, meanlog = log(l_spec$age_mean), sdlog = l_spec$age_sd)
+  
+  
   # standardised baseline ppfev and convert so that unit change actually 
   # corresponds to a 10% shift
   ppfev_baseline <- (ppfev_0(age, sd_ppfev = 3) - l_spec$ppfev_ref) / l_spec$ppfev_increment
@@ -535,8 +541,7 @@ compare_trts <- function(
 
 
 
-### TODO - fix next two to use sample data at current sample size rather than resampled version 
-### from artificial data set.
+
 
 #' Computes rmst across treatment groups based on draws from the posterior 
 #' and the covariate distribution using the sample data.
@@ -670,7 +675,16 @@ example_stan <- function(){
   # again, this is administrative censoring at 365 days
   
   l_spec <- get_demo_spec()
+  
+  # l_spec$shape_he <- 2.9
+  l_spec$mu_exacerb <- -15.6
   d_cohort <- get_sim12_cohort(l_spec)
+  
+  weibullPH_summary_stats(shape_ph = l_spec$shape_he, scale_ph = exp(l_spec$mu_exacerb))
+  # mean
+  exp(l_spec$mu_exacerb)^(-1/l_spec$shape_he) * gamma(1 + 1/l_spec$shape_he)
+  
+  hist(flexsurv::rweibullPH(1e5, shape = l_spec$shape_he, scale = exp(l_spec$mu_exacerb)))
   
   d_tbl <- d_cohort[, .N, by = .(id, state)]
   all_ids <- unique(d_cohort$id); all_states <- c("H", "E")
@@ -955,87 +969,5 @@ example_stan <- function(){
   
   
 }
-
-#' Utility function for generating a boilerplate simulation spec used to 
-#' control DGP, decision thresholds and basically anything needed in the 
-#' prototyping.
-#' 
-get_demo_spec <- function(){
-  
-  l_spec <- list()
-  
-  l_spec$desc <- "ppFEV1 equal in all"
-  l_spec$nsim <- 100
-  l_spec$mc_cores <- 40
-  
-  # example trials
-  l_spec$nex <- 5
-  # enrolment
-  l_spec$N_pt <- 600
-  l_spec$pt_per_day <- 0.57
-  l_spec$ramp_up_days <- 120
-
-
-  
-  # day of enrolment
-  l_spec$t0 <- rep(1, l_spec$N_pt)
-  
-  
-  l_spec$followup <- 365
-  l_spec$rmst_eh_horizon <- 25
-  
-  # probability of missingness
-  l_spec$pr_ymis <- 0.1
-  
-  # take log of mean before use in rlnorm
-  l_spec$age_mean <-35
-  # use as is:
-  l_spec$age_sd <- 0.4
-  l_spec$age_min <- 10
-  l_spec$age_max <- 60
-  
-  # frailty parameters to link recurrences
-  l_spec$sd_he <- 0.3
-  l_spec$sd_eh <- 0.3 
-  l_spec$rho_frailty <- -0.4
-  
-  l_spec$ppfev_ref <- 77.5
-  l_spec$ppfev_increment <- 10
-  
-  
-  l_spec$g_a <- 10
-  l_spec$g_r <- 10
-  
-  # linear predictor exacerbation
-  l_spec$mu_exacerb <- -16.1 # originally  -4.5
-  # applied to (ppfev_baseline - reference value) / increment
-  # so that at zero the linear predictor relates to the reference value 
-  # and a unit change corresponds relates to a 10% increment in ppfev
-  # so here the log-hazard decreases for every 10% increment in ppfev
-  l_spec$b_ppfev_exacerb <- -0.2
-  l_spec$shape_he <- 2.9 # originally 1.1
-  
-  # linear predictor recovery
-  l_spec$mu_recov <- -6.5  # originally -0.5
-  # as above but the log-hazard increases for every 10% increment in ppfev
-  # i.e. more instantaneous risk of recovery
-  l_spec$b_ppfev_recov <- 0.1
-  # trt is c("soc","defer","discont")
-  l_spec$b_trt <- c(0, -0.3, -0.2)
-  l_spec$shape_eh <- 2.75  # originally 0.9 
-  
-  
-  l_spec$pri_s_u <- 0.1
-  
-  l_spec$trt_lab <- c("soc","defer","discont")
-  l_spec$trt_active <- rep(TRUE, 3)
-  names(l_spec$trt_active) <- l_spec$trt_lab
-  
-  l_spec$is <- 1 
-  l_spec$ie <- sum(l_spec$N_pt)
-  l_spec
-  
-}
-
 
 
