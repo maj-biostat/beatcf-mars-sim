@@ -14,8 +14,8 @@ ggplot2::theme_update(axis.text.y = element_text(size = 8))
 # g_cbbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
 
 # Logs
-f_log <- file.path("./logs", "log.txt")
-log_appender(appender_file(f_log))
-# message(Sys.time(), " Log file initialised ", f_log)
-log_info("*** START UP ***")
+# f_log <- file.path("./logs", "log.txt")
+# log_appender(appender_file(f_log))
+# # message(Sys.time(), " Log file initialised ", f_log)
+# log_info("*** START UP ***")
 

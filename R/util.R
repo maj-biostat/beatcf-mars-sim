@@ -62,24 +62,25 @@ calibrate_weibull_ph <- function(){
   cat("Days at median and upper\n")
   flexsurv::qweibullPH(p = 0.5, shape = shape_he, scale = scale_he)
   flexsurv::qweibullPH(p = 0.95, shape = shape_he, scale = scale_he)
+  # expected value
   scale_he^(-1/shape_he) * gamma(1 + 1/shape_he)
-  # sanity check
+  # sanity check for expected value
   integrand_he <- function(x, shape, scale){
     flexsurv::dweibullPH(x, shape, scale) * x
   }
   integrate(integrand_he, lower = 0, upper = Inf, shape = shape_he, scale = scale_he)
   hist(flexsurv::rweibullPH(1e5, shape = shape_he, scale = scale_he))
-  plot(0:365, flexsurv::pweibullPH(0:365, shape = shape_he, scale = scale_he))
+  plot(0:365, flexsurv::pweibullPH(0:365, shape = shape_he, scale = scale_he), type = "l")
   
   # linear predictor and ppfev ref
   mu_exacerb <- -4.5
-  beta_ppfev_exacerb <- -0.02
+  beta_ppfev_exacerb <- -0.2
   ppfev_ref <- 77.5 
   
   
   
-  get_scale_exacerb(55)
-  get_scale_exacerb(100)
+  # get_scale_exacerb(55)
+  # get_scale_exacerb(100)
   # plot(1:365, pweibullPH(1:365, shape = shape_he, scale = get_scale_exacerb(66)))
   
   
@@ -105,8 +106,8 @@ calibrate_weibull_ph <- function(){
   
   
   
-  get_scale_recov(55)
-  get_scale_recov(100)
+  # get_scale_recov(55)
+  # get_scale_recov(100)
   plot(0:30, flexsurv::pweibullPH(0:30, shape = shape_eh, scale = get_scale_recov(55)))
   plot(0:30, flexsurv::pweibullPH(0:30, shape = shape_eh, scale = get_scale_recov(100)))
   
@@ -123,29 +124,9 @@ calibrate_weibull_ph <- function(){
 
 #
 
-sim_weibullPH_rmst <- function(l_spec){
+sim_weibullPH_rmst <- function(){
   
-  # l_spec <- get_demo_spec()
-  # 
-  # l_spec$shape_he <- 2.85 # originally 1.1
-  # l_spec$mu_exacerb <- -16.1 # originally  -4.5
-  # weibullPH_summary_stats(
-  #   shape_ph = l_spec$shape_he, scale_ph = exp(l_spec$mu_exacerb), tau = 365)
-  # rmst_weibull_ph(tau = 365, w_shape = l_spec$shape_he, w_scale = exp(l_spec$mu_exacerb))
-  # 
-  # y_he <- flexsurv::rweibullPH(
-  #   1e4, l_spec$shape_he, scale = exp(l_spec$mu_exacerb)
-  # )
-  # hist(y_he, xlim = c(0, max(y_he)*1.1))
-  # c(median(y_he), mean(y_he), sd(y_he))
-  # 
-  # l_spec$shape_eh <- 2.75  # originally 0.9 
-  # l_spec$mu_recov <- -6.5  # originally -0.5
-  # (res_1 <- weibullPH_summary_stats(
-  #   shape_ph = l_spec$shape_eh, scale_ph = exp(l_spec$mu_recov), tau = 25))
-  # rmst_weibull_ph(tau = 25, w_shape = l_spec$shape_eh, w_scale = exp(l_spec$mu_recov))
-  
-  #
+  l_spec <- get_demo_spec()
   
   # intended to compute the rmst by treatment group marginalising over the 
   # covariate space on which the model is based.
@@ -153,17 +134,24 @@ sim_weibullPH_rmst <- function(l_spec){
   # simulate from population and then average out irrelevant terms to get 
   # rmst across trt groups
   
-  age <- rlnorm(1e4, meanlog = log(l_spec$age_mean), sdlog = l_spec$age_sd)
-  age <- pmin(pmax(age, l_spec$age_min), l_spec$age_max)
+  # age distribution - truncated log normal - restrict age to (age_lwr,age_upr)
+  p_lt_age_lwr <- plnorm(
+    l_spec$age_min, meanlog = log(l_spec$age_mean), sdlog = l_spec$age_sd, lower.tail = T)
+  p_gt_age_upr <- plnorm(
+    l_spec$age_max, meanlog = log(l_spec$age_mean), sdlog = l_spec$age_sd, lower.tail = F)
+  # sample u in [p0, 1)
+  u <- p_lt_age_lwr + runif(1e4, 0, (1 - (p_lt_age_lwr + p_gt_age_upr))) 
+  age <- qlnorm(u, meanlog = log(l_spec$age_mean), sdlog = l_spec$age_sd)
+  
   ppfev_baseline <- (ppfev_0(age, sd_ppfev = 3) - l_spec$ppfev_ref) / l_spec$ppfev_increment
   
   # indep gamma frailty but with same param values for each transition
-  u_eh <- rgamma(1, shape = l_spec$g_a, rate = l_spec$g_r)
+  u_eh <- rgamma(1e4, shape = l_spec$g_a, rate = l_spec$g_r)
   
   arms = 1:3
   names(arms) <- c("soc", "defer", "discont")
   
-  b_trt <- c(0, -0.21875, -0.219)
+  b_trt <- c(0, -0.25805, -0.2585)
   
   trt <- 1
   rmst_mu <- unlist(lapply(arms, function(trt) {
@@ -279,5 +267,87 @@ sim_ipp_ogata <- function(
   events
 }
 
+
+
+#' Utility function for generating a boilerplate simulation spec used to 
+#' control DGP, decision thresholds and basically anything needed in the 
+#' prototyping.
+#' 
+get_demo_spec <- function(){
+  
+  l_spec <- list()
+  
+  l_spec$desc <- "ppFEV1 equal in all"
+  l_spec$nsim <- 100
+  l_spec$mc_cores <- 40
+  
+  # example trials
+  l_spec$nex <- 5
+  # enrolment
+  l_spec$N_pt <- 600
+  l_spec$pt_per_day <- 0.57
+  l_spec$ramp_up_days <- 120
+  
+  
+  
+  # day of enrolment
+  l_spec$t0 <- rep(1, l_spec$N_pt)
+  
+  
+  l_spec$followup <- 365
+  l_spec$rmst_eh_horizon <- 25
+  
+  # probability of missingness
+  l_spec$pr_ymis <- 0.1
+  
+  # take log of mean before use in rlnorm
+  l_spec$age_mean <-35
+  # use as is:
+  l_spec$age_sd <- 0.4
+  l_spec$age_min <- 10
+  l_spec$age_max <- 60
+  
+  # frailty parameters to link recurrences
+  l_spec$sd_he <- 0.3
+  l_spec$sd_eh <- 0.3 
+  l_spec$rho_frailty <- -0.4
+  
+  l_spec$ppfev_ref <- 77.5
+  l_spec$ppfev_increment <- 10
+  
+  
+  l_spec$g_a <- 10
+  l_spec$g_r <- 10
+  
+  # linear predictor exacerbation
+  l_spec$mu_exacerb <- -16.1 # originally  -4.5
+  # applied to (ppfev_baseline - reference value) / increment
+  # so that at zero the linear predictor relates to the reference value 
+  # and a unit change corresponds relates to a 10% increment in ppfev
+  # so here the log-hazard decreases for every 10% increment in ppfev
+  l_spec$b_ppfev_exacerb <- -0.2
+  l_spec$shape_he <- 2.9 # originally 1.1
+  
+  # linear predictor recovery
+  l_spec$mu_recov <- -6.5  # originally -0.5
+  # as above but the log-hazard increases for every 10% increment in ppfev
+  # i.e. more instantaneous risk of recovery
+  l_spec$b_ppfev_recov <- 0.1
+  # trt is c("soc","defer","discont")
+  l_spec$b_trt <- c(0, -0.3, -0.2)
+  l_spec$shape_eh <- 2.75  # originally 0.9 
+  
+  
+  l_spec$pri_s_u <- 0.1
+  
+  l_spec$trt_lab <- c("soc","defer","discont")
+  l_spec$trt_active <- rep(TRUE, 3)
+  names(l_spec$trt_active) <- l_spec$trt_lab
+  
+  l_spec$is <- 1 
+  l_spec$ie <- sum(l_spec$N_pt)
+  l_spec
+  
+}
 
 
