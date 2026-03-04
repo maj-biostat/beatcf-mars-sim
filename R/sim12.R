@@ -20,6 +20,13 @@ if (length(args)<1) {
   log_info("Scenario config ", args[2])
 }
 
+
+f_log <- file.path("./logs", "log.txt")
+log_appender(appender_file(f_log))
+# message(Sys.time(), " Log file initialised ", f_log)
+log_info("*** START UP ***")
+
+
 # Log setup
 f_log_sim <- file.path("./logs", "log-sim.txt")
 log_appender(appender_file(f_log_sim))
