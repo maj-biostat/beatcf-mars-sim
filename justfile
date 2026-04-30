@@ -73,6 +73,16 @@ runsim12:
   just sim12 ../etc/sim12/cfg-sim12-v02.yml
   just sim12 ../etc/sim12/cfg-sim12-v03.yml
   
+
+sim14 cfg:
+  Rscript --vanilla ./R/sim14.R run_sim14 {{cfg}}
+  just cleantmp
+
+runsim14:
+  just sim14 ../etc/sim14/cfg-sim14-v01.yml
+  just sim14 ../etc/sim14/cfg-sim14-v02.yml
+  just sim14 ../etc/sim14/cfg-sim14-v03.yml
+  
 report rep:
   quarto render reports/{{rep}} --to pdf
 

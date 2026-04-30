@@ -1,0 +1,30 @@
+toc: true
+toc-depth: 2
+lof: true
+lot: true
+number-sections: true
+highlight-style: github
+link-citations: true
+# revise margins
+geometry:
+  - top=30mm
+  - left=25mm
+
+format:
+  pdf:
+    pdf-engine: xelatex
+    keep-tex: true
+    documentclass: scrreprt
+    papersize: a4
+    fontsize: 12pt
+    linestretch: 1.25
+    fig-pos: "H"
+    code-tools:
+      source: true
+      toggle: false
+    code-block-bg: lightgray
+
+execute:
+  message: false
+  warning: false
+  echo: false

@@ -1,0 +1,82 @@
+default:
+  desc: "Treatments equivalent"
+  nsim: 20
+  mc_cores: 40
+  
+  # example trials
+  nex: 5
+  # enrolment
+  N_pt: [500, 100, 100]
+  pt_per_day: 0.57
+  ramp_up_days: 120
+  
+  followup: 365
+  
+  # rmst is a summary of interest
+  rmst_eh_horizon: 25
+  rmst_he_horizon: 365
+  
+  # probability of missingness
+  pr_ymis: 0.1
+  
+  # take log of mean before use in rlnorm
+  age_mean: 35
+  # use as is:
+  age_sd: 0.4
+  age_min: 10
+  age_max: 60
+  
+  # used to scale ppfev at baseline so that parameters are 
+  # per 10% increment
+  ppfev_increment: 10
+
+  ppfev_ref: 77.5
+  
+  # linear predictor exacerbation
+  
+  # alt indep gamma frailty
+  g_a: 10
+  g_r: 10
+  
+  # exacerbation -> healthy
+  # linear predictor for exacerbation state impacting duration of recovery
+  mu_eh: -6.5  # originally -0.5
+  # trt is c("soc","defer","discont")
+  # negative effects result in reducing the intensity of transition
+  # from exacerbation to health (people get better slower)
+  b_trt_eh: [0, 0, 0]
+  b_ppfev_eh: 0.1
+  shape_eh: 2.75  # originally 0.9 
+  
+  # healthy -> exacerbation
+  # linear predictor for healthy state impacting period to relapse occurs
+  mu_he: -16.1 # originally  -4.5
+  # positive effects result in increasing the intensity of transition
+  # from health to exacerbation (people relapse sooner)
+  b_trt_he: [0, 0, 0]
+  b_ppfev_he: -0.2
+  shape_he: 2.85 # originally 1.1
+  
+  pri_s_u: 0.1
+  
+  # controls which trt can be allocated
+  trt_active: [1, 1, 1]
+  trt_lab: ["soc", "defer", "discont"]
+  
+  # decision reference values - think of these as the non-inferiority margins
+  
+  # will not tolerate rmst in the intervention arms being dec_eh_delta_ni 
+  # more than the soc group for the exacerbation state, i.e. we do not want 
+  # the recovery period to drag on due to the revised abx schedule
+  dec_eh_delta_ni: 2
+  # will not tolerate rmst in the intervention arms being dec_he_delta_ni 
+  # less than the soc group for the healthy state, i.e. we do not want to bring
+  # relapse on more rapidly due to the revised abx schedule
+  dec_he_delta_ni: -20
+  
+  # decision probability thresholds - 
+  
+  # level of certainty we require to make claims
+  dec_thresh_ni: 0.97
+  dec_thresh_fut: 0.60
+    

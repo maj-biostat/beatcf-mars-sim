@@ -1,0 +1,995 @@
+---
+title: BEAT CF MARS
+subtitle: |
+    Simulation Report
+date: last-modified
+date-format: "D MMMM YYYY"
+author: Mark Jones
+editor: source
+bibliography: ../etc/refs.bib
+csl: ../etc/elsevier-harvard.csl
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE
+)
+```
+
+```{r}
+#| label: load-data
+#| code-summary: Data load
+#| echo: false
+
+# uml digs
+suppressPackageStartupMessages(library(nomnoml))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(qs))
+suppressPackageStartupMessages(library(git2r))
+suppressPackageStartupMessages(suppressWarnings(library(gt)))
+suppressPackageStartupMessages(library(ggh4x))
+suppressPackageStartupMessages(library(lubridate))
+suppressPackageStartupMessages(library(scales))
+suppressPackageStartupMessages(library(patchwork))
+suppressPackageStartupMessages(library(pbapply))
+
+
+toks <- unlist(tstrsplit(getwd(), "/")) 
+if(toks[length(toks)] == "beatcf-mars-sim"){
+  prefix_cfg <- "./etc/sim14/"
+  prefix_stan <- "./stan"
+  prefix_fig <- "./fig"
+  prefix_data <- "./data"
+  prefix_r <- "./R"
+} else {
+  prefix_cfg <- "../etc/sim14/"
+  prefix_stan <- "../stan"
+  prefix_fig <- "../fig"
+  prefix_data <- "../data"
+  prefix_r <- "../R"
+}
+
+
+
+source(paste0(prefix_r, "/libs.R"))
+source(paste0(prefix_r, "/init.R"))
+source(paste0(prefix_r, "/util.R"))
+source(paste0(prefix_r, "/data-sim14.R"))
+
+
+# Each input file corresponds to the results from a single simulation
+# scenario/configuration.
+# Load all the files into a single list.
+
+# files of interest
+sim_lab <- "sim14-01"
+
+flist <- list.files(paste0(prefix_data, "/", sim_lab), pattern = "sim14")
+toks <- list()
+l <- list()
+i <- 1
+
+for(i in 1:length(flist)){
+
+  l[[i]] <- qs::qread(file.path(paste0(prefix_data, "/", sim_lab), flist[i]))
+  toks[[i]] <-  unlist(tstrsplit(flist[i], "[-.]"))
+}
+
+N_sims <- l[[1]]$cfg$nsim
+
+
+
+# temp to replace
+# l_spec <- get_prototype_cfg()
+l_spec_1 <- l[[1]]$l_spec
+
+desc_labs <- character()
+
+for(i in 1:length(l)){
+  
+  desc_labs <- c(desc_labs, l[[i]]$l_spec$desc)
+  
+}
+
+```
+
+{{< pagebreak >}}
+
+::: summary
+|     |        |
+|:----|:------------|
+|Study title:  |  BEAT-CF MARS |
+|Reference intervention: |  Standard airway clearance therapy at least twice per day for 14 days, plus 14 days of oral antibiotics commencing as soon as practicable (and ≥ 72 hours and < 7 days) after onset of new or acute worsening of cough. |   
+|Intervention: | (1) Deferred antibiotic strategy (2) Early discontinuation antibiotic strategy. |   
+|Outcome: | Time to recovery from onset of exacerbation |   
+|Study design:  |   Bayesian adaptive trial with early stopping rules | 
+|Sponsor:  |    University of Sydney, NSW, Australia | 
+Protocol: |  todo |
+|Registration:  |    todo | 
+|HREC:  |   todo | 
+|Study date of first consent:  |   todo | 
+|Principal coordinating investigators:  |   Tom Snelling | 
+:::
+
+<!-- 
+Note that the above relies on the pandoc extension implemented in the lua file 
+in the etc directory. It additionally relies on the presence of a custom style
+in word called study summary. It will currently only work for word (because I
+cannot be bothered to implement it in anything else at the moment).
+-->
+
+
+{{< pagebreak >}}
+
+# Version history {.unlisted .unnumbered}
+
+| Version    |   Date     | Change    |   Reason     |
+|:----|:------------|:----|:------------|
+| 0.1 | 2026-03-04 | First version revised design | N/A |
+| 0.2 | 2026-03-04 | Incorporate carry-over effects into the healthy state | N/A |
+
+
+{{< pagebreak >}}
+
+
+# note
+
+so sorry... had a long Exec call. Assumption of back to 100% of baseline after 14 days is a big call
+
+could the CRISS be used as an eligibility criteria (for a unique PEx), given that we will have the participant's score in a healthy state? e.g. drop in score of 11 points
+
+Time to next exacerbation would certainly have to be a data point for analysis, clinically we know some people never quite get back to baseline before their next one
+
+You may also want to capture if post a strategy, an event occurs in which they are not eligible for randomisation (eg because too sick or too soon), over a defined period
+
+That is such an important point. In STOP PEDS we have everyone increase airway clearance 
+
+would be quite interested in what the consumers would think on the airway clearance therapy. Thought would also need to be given to what we accept as airway clearance - some will be using exercise but may stop this if unwell..
+
+The added/increase in airway clearance while waiting is perhaps a result of years of advice that has been to increase airway clearance while unwell
+
+But clinically we are seeing many who don't.... baseline of none and when unwell do none at wait for the ABs to kick in. It is quite heterogeneous compared to previous practice now with ETI
+
+Use CI?:
+https://discourse.datamethods.org/t/restricted-mean-survival-time-and-comparing-treatments-under-non-proportional-hazards/2686/5
+
+
+
+# Introduction
+
+This report documents the simulation and associated results for the operating characteristics for the BEAT-CF MARS study where the experimentation focuses on differential characteristics of the patient health over time as represented under an assumed multi-state model.
+
+The report is an operational document that will be updated, as necessary, over the course of the study.
+It should be read in conjunction with the relevant versions of the protocol and statistical analysis plan.
+
+We provide the data generation assumptions, modelling approaches, scenarios and results that were used to explore the design.
+These results are based on simulation `r sim_lab` with `r N_sims` simulated trials run per scenario.
+The key configuration parameters that persist across all scenarios are shown below:
+
++ Interim analyses: `r cumsum(l_spec_1$N_pt)`
++ Futility evaluation at: `r cumsum(l_spec_1$N_pt)`
++ Non-inferiority evaluation at: `r cumsum(l_spec_1$N_pt)`
++ Enrolment per day after ramp up: `r l_spec_1$pt_per_day`
++ Ramp up period (days): `r l_spec_1$ramp_up_days`
+
+Parameters referring to participant characteristics
+
++ Expected age: `r l_spec_1$age_mean`
++ SD age: `r l_spec_1$age_sd`
++ Min. age: `r l_spec_1$age_min`
++ Max. age: `r l_spec_1$age_max`
+
+Lung function is represented by simulated baseline ppFEV1 based on age at enrolment.
+
+Decision quantities:
+
++ Reference (NI margin) value for excess exacerbation days: `r l_spec_1$dec_eh_delta_ni`
++ Reference (NI margin) value for reduction in days of health: `r l_spec_1$dec_he_delta_ni`
++ Evidential threshold for non-inferiority (probability): `r l_spec_1$dec_thresh_ni`
++ Evidential threshold for futility (probability): `r l_spec_1$dec_thresh_fut`
+
+
+# Design overview
+
+BEAT-CF-MARs is a non-inferiority study that considers participant health state transitions over a 12 month period from entry.
+Participant health is represented by a multi-state model with two states as shown below.
+
+![](../fig/msm-01.drawio.png){width=400 height=100 fig-align="center"}
+
+Each participant is enrolled into the study in a healthy state and is followed as they cycle between one or more exacerbation to healthy cycles^[Participants will be followed for the entire duration of their exacerbation period irrespective of whether they overrun 12 months followup or not. Thus, a participant starting an exacerbation at 11 months and 28 days will be followed until they return to a healthy state even if this means their follow up exceeds 12 months.]. 
+At the start of each exacerbation, participants are randomised to one of the three treatment strategies:
+
++ standard of care
++ *deferred* treatment
++ early *discontinuation* of treatment
+
+and then followed until recovery is reported.
+
+Initially, participants are randomised with equal allocation to one of the three strategies, however, the treatment set may be revised based on the analysis of the accruing data.
+
+The primary outcome is the time to recovery from an exacerbation state treating the start time of the exacerbation as known^[In practice the exacerbation period is interval censored as the start and end times are unknown.]
+
+For comparison of groups, we consider the absolute difference in the restricted mean survival time for recovery to 25 days across groups, marginalised over the covariate distribution and any latent variables.
+As such, only participants that have exacerbations contribute to the estimatation of treatment effects, although all participants are included in the analyses.
+
+The design includes adaptation that permits early stopping of treatment arms for non-inferiority or futility.
+The control arm of standard of care remains the reference arm throughout.
+
+## Extensions
+
+While we exclude explicit models for ppFEV as the primary focus of the study, we record baseline ppFEV1 for all participants as well as ppFEV1 at 12 months post enrolment.
+Additionally, we aim to capture ppFEV1 as often as possible on an ad-hoc basis for all participants, although measures are expected to mostly align with quarterly clinic visits or leverage home spirometry should it be available.
+Given observations of ppFEV1 and a longitudinal model, we could jointly model lung-function and state transition in a joint model.
+
+
+## Similar studies - STOP PEDS
+
+The STOP PEDS RCT (Streamlined Treatnent of Pulmonary Exacerbations in Pediatrics RCT) aims to assess the safety and effectiveness of two management strategies for outpatient pulmonary exacerbations (PEx) in children with CF.
+STOP PEDS was based on a pilot study in which the cases of mild PEx in children aged 6 to 18 were randomised to immediate or tailored antibiotic therapy.
+Of the 121 enrolments, 94 had at least one PEx and among the 33 assigned to tailored therapy, only 10 received oral antibiotics which was higher than the expected (hypothesised) <10% that would avoid antibiotics.
+
+STOP PEDS adopts the same antibiotic strategies as the pilot study.
+In the main cohort, children aged 6 to 18 on modulator therapy will be enrolled in a healthy state and followed for 12 months. 
+At the time of the first PEx, participants that meet the study treatment criteria will be randomised to immediate or tailored therapy; which will be the treatment strategy used over the remainder of the 12 months if subsequent PEx occur.
+The overall goal of the main STOP PEDS cohort is to assess the long- and short-term efficacy and safety of two approaches for the treatment of outpatient PEx in children with CF: immediate antibiotics vs. tailored therapy. 
+Specifically, the study will evaluate the difference in pulmonary function between arms by evaluating change in percent predicted FEV1 (ppFEV1) (primary) and lung clearance index (LCI) (secondary) over one year. 
+
+![Main cohort schema](`r paste0(prefix_fig, "/stop-ped-flow.png")`)
+
+Two additional cohorts include children aged 3 to 5 on modulator therapy and children aged 6 to 18 not on modulator therapy.
+These latter two cohorts will enrolled when well and followed through a single PEx under randomised treatment.
+
+In the main cohort, participants are enrolled in a healthy state, undergo a baseline assessment and a PEx antibiotic is selected for that participant (which can be updated at a later stage).
+Caregivers are instructed to contact the research time between 3 and 7 days of the onset of new respiratory symptoms and at the time of a new PEx, participants will be assessed (remotely or in person at clinic) for eligibility for randomised treatment.
+Randomisation occurs at the first PEx that meets the study requirements and all subsequent elgible PEx will be treated with the same assignment.
+After randomisation, follow up occurs on day 5, 8, 15 and 22.
+If symptoms meet criteria, participants in the tailored arm start oral antibiotics.
+Participants complete a diary daily for 7 days then every other day to day 15.
+At day 28 a final visit occurs where participants perform spirometry and if symptoms have not returned to baseline or ppFEV is more than 10% below the most recent well state, the participant is referred for additional management.
+At 12 months after enrolment, spirometry occurs and particpants exit the study.
+
+The primary hypothesis is that tailored therapy is non-inferior to immediate antibiotics as measured by the one-year change in ppFEV1.
+The non-inferiority margin of 3% will be used and non-inferiority claimed if the lower bound for the 95% CI for the difference between arms in the one-year change in ppFEV1 is greater than -3.
+
+The study aims to recruit 311 participants.
+This is based on a sample size calculation, which assumes: 
+
++ SD for the 12 month change in ppFEV1 is 9.1 for 6-11 year olds and 7.3 for 12-18 year olds.
++ one-sided t-test alpha of 0.05 and power of 0.8
++ 3% non-inferiority margin
++ 67% of the enrolments have a PEx eligible for randomised treatment
++ 15% are lost to follow up
+
+Based on the above, I think the sample size calculation could be implemented as shown below.
+
+In narrative form, we assume the total sample size based on the 311 and work backwards to compute the power under the rest of the assumptions.
+That is, we first multiply by the proportion that have a PEx and proportion that are retained within the study to get the number of events per arm.
+A simulation loop then generates the change in ppFEV1 from baseline to follow up for each treatment arm ($Y_j$ $j = 0, 1$) assuming a mean of zero and SD of 8.
+These differences are then differenced to obtain delta as the treatment effect of interest, which is put through a one-sided t.test with a mean of zero, from which the lower bound of the CI is compared to the NI margin of 3%.
+The average of the number of times that we claim success gives us the power.
+
+\footnotesize
+```{r}
+#| echo: true
+#| hold: true
+
+N <- floor(311 * (1-0.33) * (1-0.15))
+N <- N + (N %% 2)
+n_sim <- 10000
+
+win <- unlist(lapply(1:n_sim, function(ii){
+  # Assume no difference between groups and SD = 8 as a compromise between 
+  # the 7 and 9 listed above.
+  # It not entirely clear to me whether they are assuming that the SD between 
+  # baseline and follow up is 8 or whether the difference between arms is 
+  # being assumed to be 8. I will assume the former
+  y_0 <- rnorm(N/2, 0, 8)
+  y_1 <- rnorm(N/2, 0, 8)
+  
+  delta <- y_1 - y_0
+  out <- t.test(delta, alternative = "greater")
+  # out
+  out$conf.int[1] > -3
+}))
+mean(win)
+
+```
+\normalsize
+
+# Model specification
+
+## Multi-state models
+
+Following @Jackson2026 and @Gorfine2025, the general setup for multistate models considers a series of event times for an individual that indicate times for switching state.
+The work here focuses on continuous time with observed start and end times of all bar the last transition, but a discrete time formulation is also possible.
+
+Formally, we let $t=0$ be the origin time and assume that states are observed from onset.
+The multistate process is denoted by $\{Z(s), 0 \le s\}$ with history $H(t) = \{Z(s), 0 \le s < t\} = \mathcal{H}_t$.
+For recurrent states, let $T_k^{(r)}$ represent the $r^{th}$ entry time into state $k$. 
+State transitions are assumed to be governed by transition intensities/hazards:
+
+$$
+\begin{aligned}
+\lambda_{ab}(t, z(t), \mathcal{H}_t) = \lim_{\delta t\to 0} \frac{1}{\delta t} P(Z(t+\delta t)=b | Z(t) = a, z(t), \mathcal{H}_t)
+\end{aligned}
+$$
+
+which represent the instantaneous risk of moving from state $a$ state $b$ and being zero if the transition is not possible.
+In a semi-Markov model $\lambda_{ab}(t)$ is defined as a function of time since entry into the current state $\lambda_{ab}(t, \mathcal{H}_t) = \lambda_{ab}(B(t), \mathcal{H}_t)$ where $B(t)$ now gives the gap times.
+
+An example closely related to the approach adopted here is provided in @Cook2018 (section 3.2.4) on recurrent outbreaks and recovery of symptoms from herpes simplex.
+Their approach considers a model with intensities:
+
+$$
+\begin{aligned}
+\lambda_{i12}(t | \mathcal{H}_i(t^--)) = \lambda_{12}(t)
+\end{aligned}
+$$
+
+for the onset of outbreaks^[That is from state 1 to state 2.] (the depdendence on history is only though the present state) and 
+
+$$
+\begin{aligned}
+\lambda_{i21}(t | \mathcal{H}_i(t^--)) = h_{21}(B_i(t))
+\end{aligned}
+$$
+
+for the duration of the outbreakss^[That is from state 2 back to state 1.] where $B(t)$ is the time since entry to the state occupied at time $t$.
+The process is thus being assumed to involve intensities for some transitions that have a Markov form and some with a semi-Markov form.
+The rationale for the Markov component was to enable consideration of risk as a function of time since entry to a randomised study since it was conceivable that outbreak intensity increased as a function of the cumulative number of outbreaks.
+
+## Model adopted in BEAT-CF-MARS simulations
+
+For beat cf mars, we consider recurrent exacerbation and healthy states denoted by 
+
+$$
+\begin{aligned}
+\mathcal{S} = \{H, E\}
+\end{aligned}
+$$
+
+with $H$ denoting healthy and $E$ exacerbation. 
+The process is assumed to be recurrent with $k = 1, 2, \dots K_i$ simply indexing the exacerbation for participant $i$ and $K_i$ being the random number of exacerbations experienced over the 12 month follow up.
+For each exacerbation $k$:
+
++ $T_{ik}^H$ is the soujourn time in a healthy state prior to the $k^{th}$ exacerbation, e.g. time from enrolment to the first exacerbation.
++ $T_{ik}^E$ si the soujourn time during exacerbation $k$, i.e. time from onset to recovery.
+
+We assume both state transitions are semi Markov; time spent in state is relevant, but full trajectory of transitions is not.
+For the purposes of the simulations, a Weibull proportional hazards model is assumed, however, this assumption may be relaxed in the actual trial analysis model.
+
+We assume a frailty structure to account for between participant heterogeneity and within participant correlation for recurrence.
+For simplicity we assume independent frailties:
+
+$$
+\begin{aligned}
+u_i^H &\sim \text{Gamma}(\theta_H^{-1}, \theta_H^{-1}) \\
+u_i^E &\sim \text{Gamma}(\theta_E^{-1}, \theta_E^{-1}) \\
+\end{aligned}
+$$
+
+and for identifiability we have $E[u_i^E] = E[u_i^H] = 1$.
+Conditional on the participant frailty, we assume the soujourn times within each state are independent.
+
+For the transition from being in an exacerbation state ($E$) to a healthy state ($H$) for participant $i$ during the $k$ exacerbation with $t$ being the soujourn time (with censoring assumed as necessary due to loss to follow up, withdrawal etc) we assume:
+
+$$
+\begin{aligned}
+\lambda_{ik}^E(t | u_i^E) = u_i^E \lambda_0^E \exp(\beta_1^E ppFEVi + \beta_2^E (trt_{ik} = \text{defer}) + \beta_3^E (trt_{ik} = \text{discont}))
+\end{aligned}
+$$
+
+where 
+
++ $\lambda_0^E = \rho_E\kappa_E  t^{\rho_E - 1}$ is the Weibull baseline hazard with shape $\rho_E$ and scale $\kappa_E$
++ ppFEVi is the ppFEV1 at the time of enrolment (baseline ppFEV1)
++ $u_i^E$ is the participant level frailty for the exacerbation state
+
+and treatment indicators are included to indicate the randomised treatment for each exacerbation.
+
+We assume that the Weibull shape parameter is constant over all healthy periods, the effect of ppfev1 is log linear and the soujourn time resets at each state entry.
+
+For the transition from $H$ to $E$ for participant $i$ during the $k$ healthy period with $t$ being the soujourn time (time to next exacerbation):
+
+$$
+\begin{aligned}
+\lambda_{i1}^H(t | u_i^H) &= \begin{cases}
+			u_i^H \lambda_0^H \exp(\beta_1^H ppFEVi), & \text{if $k = 1$}\\
+      u_i^H \lambda_0^H \exp(\beta_1^H ppFEVi + \beta_2^E (trt_{i,{k-1}} = \text{defer}) + \beta_3^E (trt_{i,{k-1}} = \text{discont})), & \text{if $k > 1$}\\
+		 \end{cases}
+\end{aligned}
+$$
+
+where
+
++ $\lambda_0^H = \rho_H\kappa_H  t^{\rho_H - 1}$ is the Weibull baseline hazard with shape $\rho_H$ and scale $\kappa_H$
++ ppFEVi is the ppFEV1 at the time of enrolment (baseline ppFEV1)
++ $u_i^H$ is the participant level frailty for the healthy state 
+
+and treatment indicators are included to indicate the previous randomised treatment for each exacerbation, i.e. the treatment policy they were assigned to during the previous exacerbation.
+
+Participants that do not experience an exacerbation contribute only to the healthy model parameters with their entire follow-up corresponding to a single censored healthy sojourn censored at 12 months.
+
+
+# Treatment effects
+
+We adopt the difference between groups in the restricted mean survival time (area under the survival curve) as a way to characterise treatment effects @Zhao2016, @Uno2016.
+
+We consider restricted mean survival time in the exacerbation state to $\tau =$ 25 days with the interpretation being the expected time to recovery over 25 days if an exacerbation were treated with strategy $a$ in the study population.
+The value of $\tau$ was selected as a plausible (albeit arbitrary) upper limit for recovery period.
+
+For each participant, the conditional RMST is
+
+$$
+\begin{aligned}
+\mu(\tau | u_i^E, x) = \int_0^\tau S^E(t | u_i^E, x) dt
+\end{aligned}
+$$
+
+with $S^E$ denoting the Weibull survival function for the exacerbation model.
+
+The counterfactual rmst under each treatment is estimated by marginalising over the gamma frailty and observed covariate distribution.
+Differences between the counterfactuals then constitute the target. treatment effects.
+
+In terms of implementation, at each posterior draw $m$:
+
+1. Sample parameters $\Theta^{(m)}$
+2. For each subject observed:
+  + Use posterior draw of $u_i^{E,(m)}$ and $\beta_p^{E,(m)}$ and use observed covariate values $x_i^\prime$
+3. Compute $\mu_i^{(m)}(trt = a)$ (fix treatment)
+4. Average over subjects $\hat{\mu}_i^{(m)}(trt = \text{a}) = \frac{1}{N} \sum_{i=1}^N \mu_i^{(m)}(trt = a)$
+5. Form treatment contrasts $\Delta_a^{(m)} = \hat{\mu}_i^{(m)}(trt = \text{a}) - \hat{\mu}_i^{(m)}(trt = \text{soc})$
+
+TBD - I am thinking the above is for the finite trial population, for the superpopulation, I think it is necessary to redraw frailty rather than reuse $u_i^{E,(m)}$.
+
+# Decision quantities
+
+Non-inferiority and futility are considered at each interim analysis and are based on the current observed data and posterior distribution, i.e. we look at quantities in the form of posterior thresholds:
+
+$$
+\begin{aligned}
+P(\theta > \delta | \text{data})
+\end{aligned}
+$$
+
+rather than consider the predictive probabilities of success assuming that the trial runs to completion.
+For both rules, we use a non-inferiority margin $\gamma$ of `r l_spec_1$dec_delta_ni` day as a reference value.
+
+Non-inferiority is defined as:
+
+$$
+\begin{aligned}
+P(\Delta_a < 1) > `r l_spec_1$dec_thresh_ni`
+\end{aligned}
+$$
+
+Futility is defined as:
+
+$$
+\begin{aligned}
+P(\Delta_a > 1) > `r l_spec_1$dec_thresh_fut`
+\end{aligned}
+$$
+
+where $\Delta_a$ is the RMST contrast defined earlier.
+
+If either of the rules conditions are met then we stop enrolment into the relevant treatment group.
+The soc arm remains the reference arm throughout (avoids downward drift of treatment effect).
+
+# Results
+
+## Exacerbations
+
+Expected proportion of sample having 0, 1, 2, ... occurrences of exacerbation and health states.
+
+TBD - These have purposefully been kept conservative with relatively few exacerbations per patient. Further calibration required based on subject matter knowledge/available data.
+
+\footnotesize
+```{r, eval = F}
+#| label: exac-comp
+#| code-summary: Frequency of exacerbation
+#| echo: FALSE
+
+i <- 1
+d_evt <- data.table()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  
+  l_cfg <- copy(l[[i]]$l_spec)
+  
+  # extract the decision matrix - sim, analysis, quantity, domain level decision
+  d_tmp <- copy(l[[i]]$d_all)
+  d_tbl <- d_tmp[, .(n_evt = .N), by = .(sim, id, state)]
+  # all ids, irrespective of whether E state occurred
+  d_id <- d_tmp[, .SD[1], by = .(sim, id)]
+  
+  d_grid <- data.table(sim = d_id$sim, id = d_id$id, state = rep(c("H", "E"), each = nrow(d_id)))
+  setkey(d_grid, sim, id)
+  
+  d_tbl_full <- d_tbl[d_grid, on = .(sim, id, state)]
+  d_tbl_full[is.na(n_evt), n_evt := 0]
+  
+  # if a pt has one exacerbation but is censored (ie we never see the 
+  # recovery time because it exceeds fu) then the below summary will show
+  # a min of 1 for both E and H
+  
+  d_smry <- d_tbl_full[, .N, keyby = .(sim, state, n_evt)]
+  # d_smry[sim == 1, sum(N), by = state]
+  # d_smry[sim == 4, sum(N), by = state]
+  d_smry[, n_id := sum(N), keyby = .(sim, state)]
+  
+  d_tmp <- d_smry[, .(p = sum(N)/sum(n_id)), keyby = .(state, n_evt)]
+  
+  d_evt <- rbind(
+    d_evt,
+    cbind(scenario = i, desc = l_cfg$desc, d_tmp)
+  )
+}
+
+
+d_tbl <- dcast(d_evt, desc + state  ~ n_evt, value.var = "p", fill = 0)
+kableExtra::kbl(d_tbl, format = "simple", digits = 2)
+
+
+```
+\normalsize
+
+
+
+## Parameters 
+
+Expectation and uncertainty of posterior means for model parameter estimates.
+
+```{r, eval = T}
+#| label: tbl-par-comp
+#| tbl-cap: 'Posterior parameter summary'
+#| column: page
+#| out-width: 100%
+#| tbl-cap-location: bottom
+#| tbl-pos: H
+
+i <- 1
+d_par <- data.table()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  # extract the decision matrix - sim, analysis, quantity, domain level decision
+  d_tmp <- copy(l[[i]]$d_post_smry_1[
+    par %in% c(
+      "eh_shape", "eh_b_0", "eh_b_defer", "eh_b_discont", "eh_b_ppfev", "eh_u_a",
+       "he_shape", "he_b_0", "he_b_ppfev", "he_b_defer", "he_b_discont", "he_u_a"
+      )])
+  
+  # "he_shape", "he_b_0", "he_b_ppfev", "he_b_defer", "he_b_discont", "he_u_a", 
+  #     "he_rmst_soc", "he_rmst_defer", "he_rmst_discont",
+  #     "he_delta_1", "he_delta_2",
+  #     "eh_shape", "eh_b_0", "eh_b_ppfev", "eh_b_defer", "eh_b_discont", "eh_u_a",
+  #     "eh_rmst_soc", "eh_rmst_defer", "eh_rmst_discont",
+  #     "eh_delta_1", "eh_delta_2"
+  
+  l_cfg <- copy(l[[i]]$l_spec)
+  
+  # extrapolate the rmst forward to impute the effects in those sims that had
+  # early stopping
+  d_tmp[, mu := nafill(mu, type = "locf"), keyby = .(sim, par)]
+  
+  d_smry <- d_tmp[, .(
+    mu = mean(mu),
+    lo = quantile(mu, prob = 0.025),
+    hi = quantile(mu, prob = 0.975)
+    ), keyby = .(ic, par)]
+  
+  d_smry[, N := cumsum(l_cfg$N_pt)[ic]]
+    
+  d_par <- rbind(
+    d_par,
+    cbind(scenario = i, desc = l_cfg$desc, d_smry)
+  )
+}
+
+d_par[, stat := sprintf("%.2f (%.2f, %.2f)", mu, lo, hi)]
+
+d_tbl <- dcast(d_par, desc + par ~ N, value.var = "stat")
+
+d_tbl[, desc := factor(desc, levels = desc_labs)]
+d_tbl <- d_tbl[order(desc, par)]
+
+kableExtra::kbl(
+  d_tbl, 
+  escape = TRUE, booktabs = TRUE, align = c("llccc"),
+  linesep = "",
+  col.names=c("Scenario", "Parameter", cumsum(l_cfg$N_pt)), 
+  digits = 1)  |>
+  kableExtra::kable_styling(font_size = 6) |>
+  kableExtra::column_spec(1, width = "3.5cm")|>
+  kableExtra::column_spec(2, width = "2cm")|>
+  kableExtra::column_spec(3:5, width = "3.1cm") |>
+  kableExtra::row_spec(c(12,24), hline_after = TRUE)
+
+```
+
+## RMST
+
+Expectation and uncertainty of posterior means for RMST derived from model parameter estimates.
+
+\footnotesize
+```{r, echo = F, eval = T}
+#| label: tbl-rmst-comp-1
+#| tbl-cap: 'RMST comparison - exacerbation model (considers recovery)'
+#| column: page
+#| out-width: 100%
+#| tbl-cap-location: bottom
+#| tbl-pos: H
+
+
+i <- 1
+d_rmst <- data.table()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  # extract the decision matrix - sim, analysis, quantity, domain level decision
+  d_par <- copy(
+    l[[i]]$d_post_smry_1[par %in% c(
+      "eh_rmst_soc", "eh_rmst_defer", "eh_rmst_discont",
+      "he_rmst_soc", "he_rmst_defer", "he_rmst_discont"
+      )])
+  
+  l_cfg <- copy(l[[i]]$l_spec)
+  
+  # extrapolate the rmst forward to impute the effects in those sims that had
+  # early stopping
+  d_par[, mu := nafill(mu, type = "locf"), keyby = .(sim, par)]
+  
+  d_smry <- d_par[, .(
+    mu = mean(mu),
+    lo = quantile(mu, prob = 0.025),
+    hi = quantile(mu, prob = 0.975)
+    ), keyby = .(ic, par)]
+  
+  d_smry[, N := cumsum(l_cfg$N_pt)[ic]]
+    
+  d_rmst <- rbind(
+    d_rmst,
+    cbind(scenario = i, desc = l_cfg$desc, d_smry)
+  )
+}
+
+d_rmst[par %like% "eh_", state := "Recovery"]
+d_rmst[par %like% "he_", state := "Relapse"]
+d_rmst[state == "Recovery", stat := sprintf("%.1f (%.1f, %.1f)", mu, lo, hi)]
+d_rmst[state == "Relapse", stat := sprintf("%.0f (%.0f, %.0f)", mu, lo, hi)]
+d_rmst[par == "eh_rmst_defer", trt := "defer"]
+d_rmst[par == "eh_rmst_discont", trt := "discontinue"]
+d_rmst[par == "eh_rmst_soc", trt := "soc"]
+d_rmst[par == "he_rmst_defer", trt := "defer"]
+d_rmst[par == "he_rmst_discont", trt := "discontinue"]
+d_rmst[par == "he_rmst_soc", trt := "soc"]
+
+d_tbl <- dcast(d_rmst, desc + state + trt ~ N, value.var = "stat")
+
+kableExtra::kbl(
+  d_tbl[state == "Recovery", .SD, .SDcols = !c("state")], 
+  escape = TRUE, booktabs = TRUE, align = c("llccc"),
+  linesep = c("", "", "\\addlinespace"),
+  col.names=c("Scenario", "Treatment", cumsum(l_cfg$N_pt)), 
+  digits = 1)  |>
+  kableExtra::kable_styling(font_size = 9) |>
+  kableExtra::column_spec(1, width = "4.25cm")|>
+  kableExtra::column_spec(2, width = "1.2cm")|>
+  kableExtra::column_spec(3:5, width = "3cm")
+```
+\normalsize
+
+
+\footnotesize
+```{r, echo = F, eval = T}
+#| label: tbl-rmst-comp-2
+#| tbl-cap: 'RMST comparison - healthy model (considers relapse)'
+#| column: page
+#| out-width: 100%
+#| tbl-cap-location: bottom
+#| tbl-pos: H
+
+
+kableExtra::kbl(
+  d_tbl[state == "Relapse", .SD, .SDcols = !c("state")], 
+  escape = TRUE, booktabs = TRUE, align = c("llccc"),
+  linesep = c("", "", "\\addlinespace"),
+  col.names=c("Scenario", "Treatment", cumsum(l_cfg$N_pt)), 
+  digits = 1)  |>
+  kableExtra::kable_styling(font_size = 9) |>
+  kableExtra::column_spec(1, width = "4.25cm")|>
+  kableExtra::column_spec(2, width = "1.2cm")|>
+  kableExtra::column_spec(3:5, width = "3cm")
+```
+\normalsize
+
+
+
+## Difference in RMST across treatment arms
+
+Expectation and uncertainty of posterior means for pairwise difference in RMST derived from model parameter estimates.
+
+```{r, echo = F, eval = T}
+#| label: tbl-effect-comp-1
+#| tbl-cap: 'Treatment effects - exacerbation model (considers recovery)'
+#| column: page
+#| out-width: 100%
+#| tbl-cap-location: bottom
+#| tbl-pos: H
+
+i <- 1
+d_rmst <- data.table()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  # extract the decision matrix - sim, analysis, quantity, domain level decision
+  d_par <- copy(l[[i]]$d_post_smry_1[par %in% c(
+    "eh_delta_1", "eh_delta_2",
+    "he_delta_1", "he_delta_2"
+    )])
+  
+  l_cfg <- copy(l[[i]]$l_spec)
+  
+  # extrapolate the rmst forward to impute the effects in those sims that had
+  # early stopping
+  d_par[, mu := nafill(mu, type = "locf"), keyby = .(sim, par)]
+  
+  d_smry <- d_par[, .(
+    mu = mean(mu),
+    lo = quantile(mu, prob = 0.025),
+    hi = quantile(mu, prob = 0.975)
+    ), keyby = .(ic, par)]
+  
+  d_smry[, N := cumsum(l_cfg$N_pt)[ic]]
+    
+  d_rmst <- rbind(
+    d_rmst,
+    cbind(scenario = i, desc = l_cfg$desc, d_smry)
+  )
+}
+
+
+d_rmst[par %like% "eh_", state := "Recovery"]
+d_rmst[par %like% "he_", state := "Relapse"]
+
+
+d_rmst[state == "Recovery", stat := sprintf("%.2f (%.2f, %.2f)", mu, lo, hi)]
+d_rmst[state == "Relapse", stat := sprintf("%.1f (%.1f, %.1f)", mu, lo, hi)]
+
+d_rmst[par == "eh_delta_1", contrast := "defer - soc"]
+d_rmst[par == "eh_delta_2", contrast := "discont - soc"]
+d_rmst[par == "he_delta_1", contrast := "defer - soc"]
+d_rmst[par == "he_delta_2", contrast := "discont - soc"]
+
+d_tbl <- dcast(d_rmst, desc + state + contrast ~ N, value.var = "stat")
+
+kableExtra::kbl(
+  d_tbl[state == "Recovery", .SD, .SDcols = !c("state")], 
+  escape = TRUE, booktabs = TRUE, align = c("llccc"),,
+  linesep = c("", "\\addlinespace"),
+  col.names=c("Scenario", "Contrast", cumsum(l_cfg$N_pt)), 
+  digits = 1)  |>
+  kableExtra::kable_styling(font_size = 7) |>
+  kableExtra::column_spec(1, width = "4cm")|>
+  kableExtra::column_spec(2, width = "2.5cm")|>
+  kableExtra::column_spec(3:5, width = "2.5cm")
+
+
+```
+
+
+```{r}
+#| label: tbl-effect-comp-2
+#| tbl-cap: 'Treatment effects - healthy model (considers relapse)'
+#| column: page
+#| out-width: 100%
+#| tbl-cap-location: bottom
+#| tbl-pos: H
+
+kableExtra::kbl(
+  d_tbl[state == "Relapse", .SD, .SDcols = !c("state")], 
+  escape = TRUE, booktabs = TRUE, align = c("llccc"),
+  linesep = c("", "\\addlinespace"),
+  col.names=c("Scenario", "Contrast", cumsum(l_cfg$N_pt)), 
+  digits = 1)  |>
+  kableExtra::kable_styling(font_size = 7) |>
+  kableExtra::column_spec(1, width = "4cm")|>
+  kableExtra::column_spec(2, width = "2.5cm")|>
+  kableExtra::column_spec(3:5, width = "2.5cm")
+```
+
+{{< pagebreak >}}
+
+
+## Probability of triggering decisions
+
+Cumulative probability of non-inferiority (futility).
+
+\footnotesize
+```{r, echo = F, eval = T}
+#| label: tbl-prob-cum
+#| tbl-cap: 'Cumulative probability of each decision type'
+#| column: page
+#| out-width: 100%
+#| tbl-cap-location: bottom
+#| tbl-pos: H
+
+# Cumulative probability of decisions:
+
+# Traverse the list of simulation results and for each one summarise the 
+# cumulative probability of each decision type.
+
+i <- 1
+d_cprob_dec <- data.table()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  # extract the decision matrix - sim, analysis, quantity, domain level decision
+  d_dec_1 <- copy(l[[i]]$d_pr_dec[trt %in% c("defer", "discont")])
+  
+  # config for scenario
+  l_cfg <- copy(l[[i]]$l_spec)
+  
+  # number of enrolments at each interim (interim sample size sequence)
+  d_N <- data.table(ic = seq_along(l_cfg$N_pt), N = cumsum(l_cfg$N_pt))
+  
+  
+  # compute the cumulative instances of a decision being made by sim, each 
+  # decision type and by parameter
+  d_dec_1[, cdec := as.integer(cumsum(stop)>0), keyby = .(sim, rule, trt)]
+  d_dec_1[, cdec := nafill(cdec, type = "locf"), keyby = .(sim, rule, trt)]
+  d_dec_1[, cdec := as.logical(cdec)]
+  
+  d_dec_1 <- base::merge(d_dec_1, d_N, by = "ic")
+  
+  # cumulative proportion for which each decision quantity has been met by 
+  # analysis and domain
+  d_dec_1 <- d_dec_1[, .(pr_val = mean(cdec)), keyby = .(ic, N, rule, trt)]
+  
+  
+  d_cprob_dec <- rbind(
+    d_cprob_dec,
+    cbind(scenario = i, desc = l_cfg$desc, d_dec_1)
+  )
+
+}
+
+d_tbl <- dcast(
+  d_cprob_dec, desc + rule  + trt ~ N, value.var = "pr_val")
+
+d_tbl[, desc := factor(desc, levels = desc_labs)]
+d_tbl[, rule := factor(rule, levels = c("ni", "fut"), labels = c("NI", "Futility"))]
+d_tbl <- d_tbl[order(desc, rule)]
+
+
+kableExtra::kbl(
+  d_tbl, 
+  escape = TRUE, booktabs = TRUE, align = c("lllccc"),
+  linesep = c("", "", "", "\\addlinespace"),
+  col.names=c("Scenario", "Rule", "Treatment", cumsum(l_cfg$N_pt)), 
+  digits = 1)  |>
+  kableExtra::kable_styling(font_size = 7) |>
+  kableExtra::column_spec(1, width = "4cm")|>
+  kableExtra::column_spec(2:6, width = "1.5cm")
+
+
+
+```
+\normalsize
+
+
+
+
+
+{{< pagebreak >}}
+
+## Sample size (number of randomisations)
+
+Expected number of participant randomisations on each treatment arm under each scenario.
+
+\footnotesize
+```{r, echo = F, eval = F}
+#| label: sample-size-comp
+#| code-summary: Compute expected sample size
+
+
+i <- 1
+d_N_by_rand <- data.table()
+
+for(i in 1:length(l)){
+  
+  # config for scenario
+  l_cfg <- copy(l[[i]]$l_spec)
+  # l_cfg$desc
+  
+  N_analysis <- length(l_cfg$N_pt)
+  N_trt <- 3
+  # 
+  d_grid <- CJ(
+    sim = 1:l_cfg$nsim,
+    ic = 1:N_analysis,
+    trt = 1:N_trt
+  )
+  d_grid$trt <- l[[i]]$l_spec$trt_lab[d_grid$trt]
+    
+  d_all <- copy(l[[i]]$d_all[state == "E"])
+  
+  # time of last enrolment entering into interim analysis by sim
+  d_analy_set <- copy(l[[i]]$d_analys_sets)
+  d_analy_set <- d_analy_set[!is.na(t0_last), ]
+  d_analy_set[, ic := 1]
+  d_analy_set[, ic := cumsum(ic), by = sim]
+  
+  setkey(d_all, sim, t0)
+  setkey(d_analy_set,  sim, t0_last)
+
+  
+  # identify the analysis that each pt first enters
+  # Rolling join: find first cutoff_date >= enrol_date
+  d_all[
+    d_analy_set,
+    on = .(sim, t0 = t0_last),
+    roll = -Inf,
+    ic := i.ic
+  ]
+  # last one carried back
+  d_all[, ic := nafill(ic, type = "nocb"), by = sim]
+  
+  # how many randomisations per interim and trt arm (pt may have more than 
+  # one randomisation over their followup)
+  d_smry <- base::merge(
+    d_grid,
+    d_all[, .(.N), keyby = .(sim, ic, trt)],
+    by = c("sim", "ic", "trt"),
+    all.x = T
+  )
+  
+  # some arms may stop after interim 1 and so there would be no count for 
+  # subsequent interims
+  d_smry[is.na(N), N := 0]
+  d_smry[, N_cmtv := cumsum(N), keyby = .(sim, trt)]
+  
+  d_N_by_rand <- rbind(
+    d_N_by_rand,
+    cbind(
+      scenario = i, desc = l_cfg$desc, 
+      d_smry
+    )
+  )
+  
+}
+
+d_N_trt <- d_N_by_rand[, .SD[.N], keyby = .(scenario, desc, sim, trt)]
+d_N_tot <- d_N_trt[, .(N_cmtv = sum(N_cmtv)), keyby = .(scenario, desc, sim) ]
+
+# add in total sample size
+d_tbl <- rbind(
+  d_N_trt[, .(N_mu = mean(N_cmtv), N_sd = sd(N_cmtv)), keyby = .(scenario, desc, trt)],
+  d_N_tot[, .(trt = "all", N_mu = mean(N_cmtv), N_sd = sd(N_cmtv)), keyby = .(scenario, desc)]
+)
+setkey(d_tbl, scenario, desc)
+
+
+kableExtra::kbl(
+  d_tbl[, .SD, .SDcols = -c("scenario")], 
+  col.names = c("Desc", "TRT", "Mean", "SD"),
+  format = "simple", digits = 1)
+
+```
+\normalsize
+
+
+
+{{< pagebreak >}}
+## References
+
+<!-- Needs to have a citation for this to work otherwise you will get the old \end{CSLReferences} error  -->
+
