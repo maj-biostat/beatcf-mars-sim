@@ -1,12 +1,12 @@
 default:
   desc: "Treatments equivalent"
-  nsim: 20
+  nsim: 200 
   mc_cores: 40
   
   # example trials
   nex: 5
   # enrolment
-  N_pt: [500, 100, 100]
+  N_pt: [600, 100, 100]
   pt_per_day: 0.57
   ramp_up_days: 120
   
@@ -34,9 +34,11 @@ default:
   
   # linear predictor exacerbation
   
-  # alt indep gamma frailty
+  # alt indep gamma frailty - we use the same value for the shape and rate
+  # parameter because this implies that the mean will be 1.
+  # see ibrahim page 101
   g_a: 10
-  g_r: 10
+  # g_r: 10
   
   # exacerbation -> healthy
   # linear predictor for exacerbation state impacting duration of recovery

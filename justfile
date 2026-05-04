@@ -79,9 +79,9 @@ sim14 cfg:
   just cleantmp
 
 runsim14:
-  just sim14 ../etc/sim14/cfg-sim14-v01.yml
+  #just sim14 ../etc/sim14/cfg-sim14-v01.yml
   just sim14 ../etc/sim14/cfg-sim14-v02.yml
-  just sim14 ../etc/sim14/cfg-sim14-v03.yml
+  #just sim14 ../etc/sim14/cfg-sim14-v03.yml
   
 report rep:
   quarto render reports/{{rep}} --to pdf

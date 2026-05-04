@@ -14,7 +14,7 @@ args = commandArgs(trailingOnly=TRUE)
 if (length(args)<1) {
   log_info("Setting default run method (does nothing)")
   args[1] = "run_none_sim14"
-  args[2] = "./sim14/cfg-sim14-v01.yml"
+  args[2] = "./sim14/cfg-sim14-v02.yml"
 } else {
   log_info("Run method ", args[1])
   log_info("Scenario config ", args[2])
@@ -628,9 +628,16 @@ run_sim14 <- function(){
   
   fname <- paste0("data/sim14/sim14-", toks[5],  "-", format(Sys.time(), "%Y%m%d-%H%M%S"), ".qs")
   
+  message("fname is ", fname)
+  
   log_info("Saving results file ", fname)
   
+  message("saving... ", fname)
+  
   qs::qsave(l, file = fname)
+  
+  
+  message("saved")
 }
 
 run_none_sim14 <- function(){

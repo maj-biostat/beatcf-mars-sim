@@ -47,8 +47,12 @@ get_sim14_pt <- function(
   ppfev_baseline <- (ppfev_0(age, sd_ppfev = 3) - l_spec$ppfev_ref) / l_spec$ppfev_increment
   
   # indep gamma frailty but with same param values for each transition
-  u_he <- rgamma(1, shape = l_spec$g_a, rate = l_spec$g_r)
-  u_eh <- rgamma(1, shape = l_spec$g_a, rate = l_spec$g_r)
+  # note the use of the same parameter value in the shape and rate which
+  # leads to a mean of 1 and variance 1/g_a. 
+  # similarly the stan model will only ever estimate a single parameter 
+  # otherwise things become unidentifiable.
+  u_he <- rgamma(1, shape = l_spec$g_a, rate = l_spec$g_a)
+  u_eh <- rgamma(1, shape = l_spec$g_a, rate = l_spec$g_a)
   
   # entry time is zero, in a healthy state
   t <- 0

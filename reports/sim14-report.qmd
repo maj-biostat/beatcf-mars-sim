@@ -133,7 +133,9 @@ cannot be bothered to implement it in anything else at the moment).
 {{< pagebreak >}}
 
 
-# note
+# Summary
+
+
 
 so sorry... had a long Exec call. Assumption of back to 100% of baseline after 14 days is a big call
 
@@ -154,7 +156,13 @@ But clinically we are seeing many who don't.... baseline of none and when unwell
 Use CI?:
 https://discourse.datamethods.org/t/restricted-mean-survival-time-and-comparing-treatments-under-non-proportional-hazards/2686/5
 
+# Todo
 
++ Look at example data sets
++ Critique the parameterisation and representation of reality
++ Look at implications of prior on data generation 
++ Look at implied posterior predictive distributions
++ Summarise scenarios with reference to the underlying model parameters
 
 # Introduction
 
@@ -479,13 +487,14 @@ The soc arm remains the reference arm throughout (avoids downward drift of treat
 
 # Results
 
+
+
 ## Exacerbations
 
 Expected proportion of sample having 0, 1, 2, ... occurrences of exacerbation and health states.
 
 TBD - These have purposefully been kept conservative with relatively few exacerbations per patient. Further calibration required based on subject matter knowledge/available data.
 
-\footnotesize
 ```{r, eval = F}
 #| label: exac-comp
 #| code-summary: Frequency of exacerbation
@@ -535,7 +544,6 @@ kableExtra::kbl(d_tbl, format = "simple", digits = 2)
 
 
 ```
-\normalsize
 
 
 
@@ -616,7 +624,6 @@ kableExtra::kbl(
 
 Expectation and uncertainty of posterior means for RMST derived from model parameter estimates.
 
-\footnotesize
 ```{r, echo = F, eval = T}
 #| label: tbl-rmst-comp-1
 #| tbl-cap: 'RMST comparison - exacerbation model (considers recovery)'
@@ -672,6 +679,9 @@ d_rmst[par == "he_rmst_soc", trt := "soc"]
 
 d_tbl <- dcast(d_rmst, desc + state + trt ~ N, value.var = "stat")
 
+d_tbl[, desc := factor(desc, levels = desc_labs)]
+d_tbl <- d_tbl[order(desc)]
+
 kableExtra::kbl(
   d_tbl[state == "Recovery", .SD, .SDcols = !c("state")], 
   escape = TRUE, booktabs = TRUE, align = c("llccc"),
@@ -683,10 +693,8 @@ kableExtra::kbl(
   kableExtra::column_spec(2, width = "1.2cm")|>
   kableExtra::column_spec(3:5, width = "3cm")
 ```
-\normalsize
 
 
-\footnotesize
 ```{r, echo = F, eval = T}
 #| label: tbl-rmst-comp-2
 #| tbl-cap: 'RMST comparison - healthy model (considers relapse)'
@@ -707,7 +715,6 @@ kableExtra::kbl(
   kableExtra::column_spec(2, width = "1.2cm")|>
   kableExtra::column_spec(3:5, width = "3cm")
 ```
-\normalsize
 
 
 
@@ -770,6 +777,9 @@ d_rmst[par == "he_delta_2", contrast := "discont - soc"]
 
 d_tbl <- dcast(d_rmst, desc + state + contrast ~ N, value.var = "stat")
 
+d_tbl[, desc := factor(desc, levels = desc_labs)]
+d_tbl <- d_tbl[order(desc)]
+
 kableExtra::kbl(
   d_tbl[state == "Recovery", .SD, .SDcols = !c("state")], 
   escape = TRUE, booktabs = TRUE, align = c("llccc"),,
@@ -810,9 +820,8 @@ kableExtra::kbl(
 
 ## Probability of triggering decisions
 
-Cumulative probability of non-inferiority (futility).
+Cumulative probability of non-inferiority and futility.
 
-\footnotesize
 ```{r, echo = F, eval = T}
 #| label: tbl-prob-cum
 #| tbl-cap: 'Cumulative probability of each decision type'
@@ -875,7 +884,7 @@ kableExtra::kbl(
   escape = TRUE, booktabs = TRUE, align = c("lllccc"),
   linesep = c("", "", "", "\\addlinespace"),
   col.names=c("Scenario", "Rule", "Treatment", cumsum(l_cfg$N_pt)), 
-  digits = 1)  |>
+  digits = 2)  |>
   kableExtra::kable_styling(font_size = 7) |>
   kableExtra::column_spec(1, width = "4cm")|>
   kableExtra::column_spec(2:6, width = "1.5cm")
@@ -883,7 +892,6 @@ kableExtra::kbl(
 
 
 ```
-\normalsize
 
 
 
@@ -895,7 +903,6 @@ kableExtra::kbl(
 
 Expected number of participant randomisations on each treatment arm under each scenario.
 
-\footnotesize
 ```{r, echo = F, eval = F}
 #| label: sample-size-comp
 #| code-summary: Compute expected sample size
@@ -984,12 +991,147 @@ kableExtra::kbl(
   format = "simple", digits = 1)
 
 ```
-\normalsize
 
 
 
 {{< pagebreak >}}
-## References
+# References {.unnumbered}
 
 <!-- Needs to have a citation for this to work otherwise you will get the old \end{CSLReferences} error  -->
+
+::: {#refs}
+:::
+
+{{< pagebreak >}}
+
+# Appendix - Frailty Model {.unnumbered .appendix}
+
+To speed up the model fit for the frailty model the frailty is marginalised as discussed in [@Ibrahim2001, Section 4.1.1].
+
+Specifically, first assume participants $i$ with observations $j = 1, \dots, n_i$ and a frailty $u_i \sim \text{Gamma}(a, a)$ with mean 1 and variance $1/a$. The **conditional** likelihood for all observations from participant $i$ is:
+
+
+$$
+\begin{aligned}
+\mathcal{L}_i(u_i) = \prod_{j=1}^{n_i} f(y_{ij} | u_i)
+\end{aligned}
+$$
+
+with Weibull (PH) pdf $f$ and conditional hazard 
+
+$$
+\begin{aligned}
+h(y_i \mid u_i) = 
+\underbrace{u_i}_{\text{frailty}} \cdot 
+\underbrace{\gamma}_{\text{baseline scale}} \cdot 
+\underbrace{\alpha y_i^{\alpha-1}}_{\text{shape}} \cdot 
+\underbrace{\theta_{ij}}_{\text{covariate effects}}
+\end{aligned}
+$$
+
+with scale modifying covariate terms for ppfev at baseline and treatment effects entering in through $\theta_{ij} = \exp(x_{ij}^\prime \beta)$.
+Alternatively, just suck the baseline scale into the linear predictor:
+
+$$
+\begin{aligned}
+h(y_i \mid u_i) = 
+u_i \cdot 
+\alpha y_i^{\alpha-1}
+\underbrace{\mu_{ij}}_{\text{covariate effects incl. baseline scale}}
+\end{aligned}
+$$
+
+where $\mu = \exp(b_0 + x_{ij}^\prime \beta)$.
+
+Assuming we observe full event series for all participants, subject $i$ contributes:
+
+$$
+\begin{aligned}
+\mathcal{L}_i(u_i) = \prod_{j=1}^{n_i} \alpha \cdot  u_i \mu_{ij} \cdot y_{ij}^{\alpha - 1} \cdot  \exp(-u_i \mu_{ij} y_{ij}^\alpha)
+\end{aligned}
+$$
+
+collect up terms in $u_i$
+
+$$
+\begin{aligned}
+\mathcal{L}_i(u_i) = u_i^{n_i} \cdot C_i \cdot \exp(-u_i S_i)
+\end{aligned}
+$$
+
+where $C_i = \prod_{j=1}^{n_i} \alpha \mu_{ij} y_{ij}^{\alpha - 1}$ and $S_i = \sum_{j=1}^{n_i} \mu_{ij} y_{ij}^\alpha$.
+
+We want the marginal likelihood, i.e. 
+
+$$
+\begin{aligned}
+\mathcal{L}_i = \int_0^\infty \mathcal{L}_i(u_i) \cdot p(u_i) du_i
+\end{aligned}
+$$
+
+where $p(u) = \frac{a^a}{\Gamma(a)} u^{a-1} \exp(-a u)$ is the prior density for $u_i$, here a Gamma distribution (shape and rate parameterisation assuming equal shape and rate):
+
+$$
+\begin{aligned}
+\mathcal{L}_i = \int_0^\infty u_i^{n_i} \cdot C_i \cdot \exp(-u_i S_i) \cdot \frac{a^a}{\Gamma(a)} u_i^{a-1} \exp(-a u_i) du_i
+\end{aligned}
+$$
+
+
+Grouping all the $u_i$ terms together
+
+$$
+\begin{aligned}
+\mathcal{L}_i = C_i \cdot \frac{a^a}{\Gamma(a)} \int_0^\infty u_i^{(n_i + a)-1} \cdot \exp(-(S_i + a)u_i) du_i
+\end{aligned}
+$$
+
+Now we just do the old stats trick of recognising a stripped down $\text{Gamma}(c, r)$ pdf (missing the $\frac{c^r}{\Gamma{c}}$ terms) with the form $u^{c-1} \exp(-r u)$, so we know that the integrand of this must equal $\frac{\Gamma{c}}{c^r}$ in order for the density to integrate to one (see @Wackerly2007 for examples).
+
+If we substitute with $c = n_i + 1$ and $r = S_i + a$, we get:
+
+$$
+\begin{aligned}
+\mathcal{L}_i = C_i \cdot \frac{a^a}{\Gamma(a)} \frac{\Gamma(n_i + a)}{(S_i + a)^{(n_i + a)}}
+\end{aligned}
+$$
+
+Taking logs gives what we need to incorporate into the stan model:
+
+$$
+\begin{aligned}
+\log(\mathcal{L}_i) = \log(C_i) + a\log(a) - \log(\Gamma(a)) + log(\Gamma(n_i + a) - (n_i + a) \log(S_i + a)
+\end{aligned}
+$$
+
+where the $C_i = \sum_j \log(\alpha \mu_{ij} y_{ij}^{\alpha-1}) = \sum_j (\log(\alpha ) + \log(\mu_{ij}) + (\alpha-1) \log(y_{ij}))$
+
+What about if there are censored observations?
+In this case the conditional likelihood is 
+
+$$
+\begin{aligned}
+\mathcal{L}_i(u_i) = \prod_{j=1}^{n_i} f(y_{ij} | u_i) \cdot S(c_i | u_i)
+\end{aligned}
+$$
+
+where the density is for the observed records and the survival function for the final sojourn time of duration $c_i$.
+This works through as previously described and the marginal log-likelihood comes out as:
+
+$$
+\begin{aligned}
+\log(\mathcal{L}_i) &= \sum_{j=1}^{n_i} [\log(\alpha) + \log(\mu_{ij}) +  (\alpha-1) \log(y_{ij}) ] + \\ 
+ & \quad \log(\Gamma(n_i + a)) - \\ 
+ & \quad \log(\Gamma(a)) + a \log(a) - \\
+ & \quad (n_i + a)\log(S_i + a)
+\end{aligned}
+$$
+
+where $S_i = \sum_{j = 1}^{n_i} \mu_{ij} y_{ij}^\alpha + \mu_{i,last} c_i^\alpha$ and where $n_i$ is now counting only the completed transitions, not the censored final sojourn.
+
+In the above you can think of the first part as the log of thew weibull hazard at each time, what you would have if there was no frailty. 
+The last part gives the updated rate parameter after pooling the prior rate with the cumulative hazard.
+
+
+
 
