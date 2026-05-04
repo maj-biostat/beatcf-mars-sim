@@ -1,0 +1,228 @@
+// Weibull-PH with Gamma frailty — marginalised over frailty
+
+functions {
+  
+  real rmst_weibull_scale(real tau, real w_shape, real w_scale) {
+    real s = 1.0 / w_shape;
+    real z = pow(tau / w_scale, w_shape);
+
+    return (w_scale / w_shape) * tgamma(s) * gamma_p(s, z);
+  }
+  
+  real rmst_weibull_ph(real tau, real w_shape, real w_scale) {
+    real s = 1.0 / w_shape;
+    real z = w_scale * pow(tau, w_shape);
+
+    return (1.0 / w_shape) * pow(w_scale, -1.0 / w_shape) * tgamma(s) * gamma_p(s, z);
+  }
+
+}
+data {
+  int<lower=0> N_obs;       
+  int<lower=0> N_cens; 
+  int<lower=0> N_id;
+  
+  vector[N_obs]  y_obs;
+  vector[N_cens] y_cens;
+  
+  array[N_obs]  int<lower=1, upper=N_id> id_obs;
+  array[N_cens] int<lower=1, upper=N_id> id_cens;
+  
+  int<lower=1> P;
+  matrix[N_obs,  P] X_obs;
+  matrix[N_cens, P] X_cens;
+  
+  // state transition index, e.g. for someone with H->E->H will be 1, 2, 3
+  // pt always starts off in healthy state so we can use ix_state to exclude the 
+  // treatment effect part of the linear predictor for the initial healthy
+  // period. for the exacerbations, the min value for ix_state will be 2.
+  array[N_obs] int<lower=1> ix_state_obs;
+  array[N_cens] int<lower=1> ix_state_cens;
+    
+  int<lower=0> compute_rmst;
+  real<lower=0> tau_rmst;
+  
+  int trt_defer_col;
+  int trt_discont_col;
+
+  real<lower=0> pri_s_u;
+}
+transformed data{
+  
+  
+  
+}
+parameters {
+  real<lower=0> shape;       // Weibull shape (alpha)
+  real b_0;         // intercept
+  vector[P] b;           // covariate effects
+  real<lower=0> u_a;         // Gamma frailty shape (= rate, so mean = 1)
+}
+transformed parameters {
+  
+  // linear predictor per obs (no frailty here because we marginalise below)
+  vector[N_obs]  log_mu_obs;
+  vector[N_cens] log_mu_cens;
+  
+  for(i in 1:N_obs){
+    
+    if(ix_state_obs[i] == 1){
+      // excludes treatment effects
+      log_mu_obs[i] = b_0 + X_obs[i, 1]  * b[1];
+    } else {
+      log_mu_obs[i] = b_0 + X_obs[i, ]  * b;
+    }
+  }
+  
+  for(i in 1:N_cens){
+    
+    if(ix_state_cens[i] == 1){
+      // excludes treatment effects
+      log_mu_cens[i] = b_0 + X_cens[i, 1]  * b[1];
+    } else {
+      log_mu_cens[i] = b_0 + X_cens[i, ]  * b;
+    }
+  }
+  
+  
+  
+}
+model {
+
+  target += exponential_lpdf(shape | 1);
+  target += normal_lpdf(b_0 | 0, 3);
+  target += normal_lpdf(b | 0, 3);
+  target += exponential_lpdf(u_a | pri_s_u);
+
+  // Accumulate per-subject sufficient statistics
+  
+  // sum of log(alpha * mu_ij * y_ij^(alpha-1))
+  vector[N_id] sum_log_haz;  
+  // sum of mu_ij * y_ij^alpha  (cumulative hazard per subject)
+  vector[N_id] S;            
+  // **completed** sojourns per pt excludes the censored obs
+  array[N_id]  int n_i;          
+
+  sum_log_haz = rep_vector(0.0, N_id);
+  S = rep_vector(0.0, N_id);
+  for (k in 1:N_id) {
+    n_i[k] = 0;
+  }
+
+  // the following two loops build up the participant level contributions
+  // that are used to update the log-likelihood
+  for (i in 1:N_obs) {
+    int sid = id_obs[i];
+    real y_alpha = pow(y_obs[i], shape);
+    real mu_i = exp(log_mu_obs[i]);
+
+    sum_log_haz[sid] += log(shape) + log_mu_obs[i] + (shape - 1) * log(y_obs[i]);
+    S[sid] += mu_i * y_alpha;
+    // n_i is only updated for the observed data, we don't increment for the 
+    // final censored partial observation
+    n_i[sid] += 1;
+  }
+  
+  for (i in 1:N_cens) {
+    int sid = id_cens[i];
+    real y_alpha = pow(y_cens[i], shape);
+    real mu = exp(log_mu_cens[i]);
+
+    S[sid] += mu * y_alpha;
+  }
+
+
+  // Per-subject marginal contribution
+  for (k in 1:N_id) {
+    // number of fully observed states for each id
+    real nk = n_i[k];
+    
+    
+    target += sum_log_haz[k]
+              + lgamma(nk + u_a) - lgamma(u_a)
+              + u_a * log(u_a)
+              - (nk + u_a) * log(S[k] + u_a);
+  }
+}
+generated quantities {
+
+  // soc, defer, discont
+  vector[3] rmst = rep_vector(0.0, 3);
+  vector[2] delta = rep_vector(0.0, 2);
+  
+  if(compute_rmst){
+    
+    vector[N_obs] rmst_obs;
+    vector[N_cens] rmst_cens;
+    vector[N_obs]  log_mu_obs_pred;
+    vector[N_cens] log_mu_cens_pred;
+    matrix[N_obs,  P] X_obs_pred = X_obs;
+    matrix[N_cens, P] X_cens_pred = X_cens;
+    
+    vector[N_obs] u_obs;
+    vector[N_cens] u_cens;
+  
+    // soc
+    X_obs_pred[, trt_defer_col] = rep_vector(0.0, N_obs);
+    X_cens_pred[, trt_defer_col] = rep_vector(0.0, N_cens);
+    X_obs_pred[, trt_discont_col] = rep_vector(0.0, N_obs);
+    X_cens_pred[, trt_discont_col] = rep_vector(0.0, N_cens);
+  
+    log_mu_obs_pred  = b_0 + X_obs_pred  * b;
+    log_mu_cens_pred = b_0 + X_cens_pred * b;
+  
+    for(i in 1:N_obs){
+      u_obs[i] = gamma_rng(u_a, u_a) ;
+      
+      rmst_obs[i] = rmst_weibull_ph(tau_rmst, shape, u_obs[i] * exp(log_mu_obs_pred)[i]);
+    }
+    for(i in 1:N_cens){
+      u_cens[i] = gamma_rng(u_a, u_a) ;
+      rmst_cens[i] = rmst_weibull_ph(tau_rmst, shape, u_cens[i] * exp(log_mu_cens_pred)[i]);
+    }
+  
+    rmst[1] = mean(append_row(rmst_obs, rmst_cens));
+    
+    // defer
+    X_obs_pred[, trt_defer_col] = rep_vector(1.0, N_obs);
+    X_cens_pred[, trt_defer_col] = rep_vector(1.0, N_cens);
+    X_obs_pred[, trt_discont_col] = rep_vector(0.0, N_obs);
+    X_cens_pred[, trt_discont_col] = rep_vector(0.0, N_cens);
+  
+    log_mu_obs_pred  = b_0 + X_obs_pred  * b;
+    log_mu_cens_pred = b_0 + X_cens_pred * b;
+  
+    for(i in 1:N_obs){
+      rmst_obs[i] = rmst_weibull_ph(tau_rmst, shape, u_obs[i] * exp(log_mu_obs_pred)[i]);
+    }
+    for(i in 1:N_cens){
+      rmst_cens[i] = rmst_weibull_ph(tau_rmst, shape, u_cens[i] * exp(log_mu_cens_pred)[i]);
+    }
+  
+    rmst[2] = mean(append_row(rmst_obs, rmst_cens));
+    
+    
+    // discont
+    X_obs_pred[, trt_defer_col] = rep_vector(0.0, N_obs);
+    X_cens_pred[, trt_defer_col] = rep_vector(0.0, N_cens);
+    X_obs_pred[, trt_discont_col] = rep_vector(1.0, N_obs);
+    X_cens_pred[, trt_discont_col] = rep_vector(1.0, N_cens);
+  
+    log_mu_obs_pred  = b_0 + X_obs_pred  * b;
+    log_mu_cens_pred = b_0 + X_cens_pred * b;
+  
+    for(i in 1:N_obs){
+      rmst_obs[i] = rmst_weibull_ph(tau_rmst, shape, u_obs[i] * exp(log_mu_obs_pred)[i]);
+    }
+    for(i in 1:N_cens){
+      rmst_cens[i] = rmst_weibull_ph(tau_rmst, shape, u_cens[i] * exp(log_mu_cens_pred)[i]);
+    }
+  
+    rmst[3] = mean(append_row(rmst_obs, rmst_cens));
+    
+    delta[1] = rmst[2] - rmst[1];
+    delta[2] = rmst[3] - rmst[1];
+  }
+  
+  
+}
