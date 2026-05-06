@@ -169,30 +169,6 @@ get_sim15_stan_data <- function(dd, l_spec){
   dd_w <- sim15_long_to_wide(dd)
   X <- model.matrix(~-1 + ppfev_0 + defer + discont, data = dd_w)
   
-  
-  # ld <- list(
-  #   N   = nrow(d_cohort_w),
-  #   N_id = length(unique(d_cohort_w$id)),
-  #   id   = d_cohort_w$id,
-  #   y = d_cohort_w$evt,
-  #   # 1 is healthy, 2 is exacerbation
-  #   state = as.integer(d_cohort_w$state),
-  #   bin = d_cohort_w$bin,
-  #   N_he_bin = length(l_spec$mu_he_0),
-  #   N_eh_bin = length(l_spec$mu_eh_0),
-  #   
-  #   i_entry = d_cohort_w$i_entry,
-  #   len_seg = d_cohort_w$len_seg,
-  #   
-  #   P = ncol(X),
-  #   X = X,
-  #   trt_defer_col = 2,
-  #   trt_discont_col = 3,
-  #   
-  #   pri_sd_he = 4,
-  #   pri_sd_eh = 4
-  # )
-  
   ld <- list(
     N   = dd_w[, .N],
     N_id = dd_w[, .N, keyby = id][, .N],
@@ -254,12 +230,12 @@ sim15_long_to_wide <- function(dd){
 }
 
 # expected exacerbation days for a randomly selected participant from the trial population under a given treatment policy
-sim_policy <- function(a_he, b_he, u_he, 
+sim_policy_1 <- function(a_he, b_he, u_he, 
                        a_eh, b_eh, u_eh, 
                        # individual ppfev0 from our sample
                        ppfev_0,
                        # policy which we want to apply over the fu
-                       policy = "soc") {
+                       policy = 1, l_spec) {
   
   t <- 0
   state <- "H"
@@ -268,8 +244,8 @@ sim_policy <- function(a_he, b_he, u_he,
   total_days_in_H <- 0
   total_days_in_E <- 0
   
-  names(l_spec$b_trt_eh) <- l_spec$trt_lab
-  names(l_spec$b_trt_he) <- l_spec$trt_lab
+  lp_ppfev_he <- l_spec$b_ppfev_he * ppfev_0
+  lp_ppfev_eh <- l_spec$b_ppfev_eh * ppfev_0
   
   while (t < l_spec$followup) {
     # days in whatever state you happen to be in
@@ -279,21 +255,19 @@ sim_policy <- function(a_he, b_he, u_he,
       if (state == "H") {
         bin_ix <- l_spec$v_lu_he_bin[days_in_state + 1L]
         if(exac_count == 0){
-          lp <- l_spec$a_he[bin_ix] + u_he + 
-            l_spec$b_ppfev_he * ppfev_0
+          lp <- a_he[bin_ix] + u_he + 
+            lp_ppfev_he
         } else {
           # carryover trt is already set
-          lp <- l_spec$a_he[bin_ix] + u_he + 
-            l_spec$b_ppfev_he * ppfev_0 + 
-            l_spec$b_trt_he[policy]
+          lp <- a_he[bin_ix] + u_he + 
+            lp_ppfev_he + b_he[policy]
         }
         
       } else {
         bin_ix <- l_spec$v_lu_eh_bin[days_in_state + 1L] 
         exac_count <- exac_count + 1
-        lp <- l_spec$a_eh[bin_ix] + u_eh + 
-          l_spec$b_ppfev_eh * ppfev_0 + 
-          l_spec$b_trt_eh[policy]
+        lp <- a_eh[bin_ix] + u_eh + 
+          lp_ppfev_eh + b_eh[policy]
       }
       
       # end of interval marks the transition, for example if you had
@@ -312,7 +286,7 @@ sim_policy <- function(a_he, b_he, u_he,
         total_days_in_E <- total_days_in_E + 1
       }
       
-      y <- rbinom(1,1,plogis(lp))
+      y <- rbinom(1, 1, plogis(lp))
       
       # stop repeat if we had an event (transition to other state) or reached fu
       if (y==1 || (t+days_in_state)>=l_spec$followup) break
@@ -331,6 +305,123 @@ sim_policy <- function(a_he, b_he, u_he,
   
   # c(total_days_in_H, total_days_in_E, total_days_in_H + total_days_in_E)
     
+  total_days_in_E
+}
+
+sim_policy_2 <- function(a_he, b_he, u_he, 
+                            a_eh, b_eh, u_eh, 
+                            ppfev_0,
+                            policy = 1,
+                            l_spec) {
+  
+  t <- 0L
+  state <- 1L   # 1 = H, 2 = E
+  exac_count <- 0L
+  
+  total_days_in_E <- 0L
+  
+  # precompute
+  lp_ppfev_he <- l_spec$b_ppfev_he * ppfev_0
+  lp_ppfev_eh <- l_spec$b_ppfev_eh * ppfev_0
+  
+  followup <- l_spec$followup
+  
+  # bin lookup vectors
+  v_he <- l_spec$v_lu_he_bin
+  v_eh <- l_spec$v_lu_eh_bin
+  
+  max_bin_he <- length(v_he)
+  max_bin_eh <- length(v_eh)
+  
+  while (t < followup) {
+    
+    days_in_state <- 0L
+    
+    repeat {
+      
+      # current bin index
+      k <- days_in_state + 1L
+      
+      if (state == 1L) max_bin <- max_bin_he  
+      if (state == 2L) max_bin <- max_bin_eh  
+      
+      if (state == 1L && k > max_bin_he) k <- max_bin  # safety
+      if (state == 2L && k > max_bin_eh) k <- max_bin  # safety
+      
+      if (state == 1L) {
+        
+        bin_ix <- v_he[k]
+        
+        if (exac_count == 0L) {
+          lp <- a_he[bin_ix] + u_he + lp_ppfev_he
+        } else {
+          lp <- a_he[bin_ix] + u_he + lp_ppfev_he + b_he[policy]
+        }
+        
+      } else {
+        
+        bin_ix <- v_eh[k]
+        
+        lp <- a_eh[bin_ix] + u_eh + lp_ppfev_eh + b_eh[policy]
+      }
+      
+      # convert to probability
+      p <- 1 / (1 + exp(-lp))
+      
+      # draw geometric (number of days until event)
+      # rgeom gives failures before success → +1
+      wait <- rgeom(1, p) + 1L
+      
+      # how many days remain in this bin?
+      # (since bins are defined implicitly via lookup)
+      # we detect next bin change
+      next_k <- k
+      
+      while (next_k <= max_bin && 
+             ((state == 1L && v_he[next_k] == bin_ix) ||
+              (state == 2L && v_eh[next_k] == bin_ix))) {
+        next_k <- next_k + 1L
+      }
+      
+      bin_width <- next_k - k
+      
+      if (wait <= bin_width) {
+        # event occurs in this bin
+        days_in_state <- days_in_state + wait
+        
+        if (state == 2L) {
+          total_days_in_E <- total_days_in_E + 
+            min(wait, followup - t)
+        }
+        
+        break
+        
+      } else {
+        # no event in this bin => jump to next bin
+        days_in_state <- days_in_state + bin_width
+        
+        if (state == 2L) {
+          total_days_in_E <- total_days_in_E + 
+            min(bin_width, followup - t)
+        }
+      }
+      
+      if ((t + days_in_state) >= followup) break
+    }
+    
+    t <- t + days_in_state
+    
+    if (t >= followup) break
+    
+    # state transition
+    if (state == 1L) {
+      state <- 2L
+      exac_count <- exac_count + 1L
+    } else {
+      state <- 1L
+    }
+  }
+  
   total_days_in_E
 }
 
@@ -357,47 +448,64 @@ calc_trt_effect <- function(
   v_def <- numeric(B)
   v_dis <- numeric(B)
   
+  soc <- numeric(N_pt)
+  def <- numeric(N_pt)
+  dis <- numeric(N_pt)
+  
+  trt_ix <- setNames(seq_along(l_spec$trt_lab), l_spec$trt_lab)
+  
   i <- 1
   for(i in 1:B){
     
-    soc <- replicate(N_pt, sim_policy(
-      a_he = m_a_he[i, ],
-      b_he = m_b_he[i, ],
-      u_he = v_u_he[i],
-      
-      a_eh = m_a_eh[i, ],
-      b_eh = m_b_eh[i, ],
-      u_eh = v_u_eh[i],
-      
-      ppfev_0 = v_ppfev_0[i],
-      policy = l_spec$trt_lab[1]
-    ))
+    for(j in 1:N_pt){
+      soc[j] <- sim_policy_2(
+        a_he = m_a_he[i, ],
+        b_he = m_b_he[i, ],
+        u_he = v_u_he[i],
+        
+        a_eh = m_a_eh[i, ],
+        b_eh = m_b_eh[i, ],
+        u_eh = v_u_eh[i],
+        
+        ppfev_0 = v_ppfev_0[i],
+        policy = trt_ix[1], 
+        l_spec
+      )
+    }
     
-    def <- replicate(N_pt, sim_policy(
-      a_he = m_a_he[i, ],
-      b_he = m_b_he[i, ],
-      u_he = v_u_he[i],
-      
-      a_eh = m_a_eh[i, ],
-      b_eh = m_b_eh[i, ],
-      u_eh = v_u_eh[i],
-      
-      ppfev_0 = v_ppfev_0[i],
-      policy = l_spec$trt_lab[2]
-    ))
+    for(j in 1:N_pt){
+      def[j] <- sim_policy_2(
+        a_he = m_a_he[i, ],
+        b_he = m_b_he[i, ],
+        u_he = v_u_he[i],
+        
+        a_eh = m_a_eh[i, ],
+        b_eh = m_b_eh[i, ],
+        u_eh = v_u_eh[i],
+        
+        ppfev_0 = v_ppfev_0[i],
+        policy = trt_ix[2], 
+        l_spec
+      )
+    }
     
-    dis <- replicate(N_pt, sim_policy(
-      a_he = m_a_he[i, ],
-      b_he = m_b_he[i, ],
-      u_he = v_u_he[i],
-      
-      a_eh = m_a_eh[i, ],
-      b_eh = m_b_eh[i, ],
-      u_eh = v_u_eh[i],
-      
-      ppfev_0 = v_ppfev_0[i],
-      policy = l_spec$trt_lab[3]
-    ))
+    for(j in 1:N_pt){
+      dis[j] <- sim_policy_2(
+        a_he = m_a_he[i, ],
+        b_he = m_b_he[i, ],
+        u_he = v_u_he[i],
+        
+        a_eh = m_a_eh[i, ],
+        b_eh = m_b_eh[i, ],
+        u_eh = v_u_eh[i],
+        
+        ppfev_0 = v_ppfev_0[i],
+        policy = trt_ix[3], 
+        l_spec
+      )
+    }
+    
+    
     
     v_soc[i] = mean(soc)
     v_def[i] = mean(def)
@@ -410,14 +518,6 @@ calc_trt_effect <- function(
     delta_def = def - soc,
     delta_dis = dis - soc
   )]
-  
-  # probability worse than SOC
-  # mean(d_res$delta_defer > 0)
-  # mean(d_res$delta_discont > 0)
-  
-  # NI margin (e.g. +5 days)
-  # mean(d_res$delta_defer < 5)
-  # mean(d_res$delta_discont < 5)
   
   d_res
   

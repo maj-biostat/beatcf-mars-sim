@@ -82,7 +82,17 @@ run_trial <- function(
   d_post_smry_1[, lo := NA_real_]
   d_post_smry_1[, hi := NA_real_]
   
-   
+  # trt effects
+  d_trt_effects <- CJ(
+    ic = 1:N_analys,
+    par = c(
+      "soc", "def", "dis", "delta_def", "delta_dis"
+    ),
+    mu = NA_real_,
+    lwr = NA_real_,
+    upr = NA_real_
+  )
+  
   # decisions 
   d_pr_dec <- CJ(
     ic = 1:N_analys,
@@ -190,7 +200,21 @@ run_trial <- function(
       # unique ppfev0 from sample
       ppfev_0 = unique(d_all$ppfev_0), l_spec)
     
-    # evaluate decision rule, namely does the rmst indicate a longer duration of 
+    # update treatment effects 
+    d_trt_effects[
+      data.table(
+        ic = l_spec$ic, 
+        par = names(d_res),
+        mu = colMeans(d_res),
+        lwr = apply(d_res, 2, function(z){quantile(z, prob = 0.025)}),
+        upr = apply(d_res, 2, function(z){quantile(z, prob = 0.975)})
+      ),
+      on = .(ic, par), `:=`(
+        mu = i.mu, lwr = i.lwr, upr = i.upr
+      )
+    ]
+    
+    # evaluate decision rules, namely does the rmst indicate a longer duration of 
     # recovery in the intervention group relative to the soc group that is 
     # above the level that we are willing to tolerate
     
@@ -331,6 +355,9 @@ run_sim15 <- function(){
   l_spec$b_trt_he <- unlist(l_spec$b_trt_he)
   l_spec$n_trt_he <- length(l_spec$b_trt_he)
   
+  names(l_spec$b_trt_eh) <- l_spec$trt_lab
+  names(l_spec$b_trt_he) <- l_spec$trt_lab
+  
   l_spec$par_names_pre <- c("a_he", "b_he", "u_sd_he", "a_eh", "b_eh", "u_sd_eh")
   l_spec$par_names <- c(
     paste0("a_he_", seq_along(l_spec$a_he)),
@@ -344,6 +371,7 @@ run_sim15 <- function(){
   # initially all trt arms are active
   l_spec$trt_lab <- unlist(l_spec$trt_lab)
   
+  
   # *** Has to be converted to logical otherwise you are just going to be 
   # indexing trt 1
   l_spec$trt_active <- as.logical(l_spec$trt_active)
@@ -351,25 +379,27 @@ run_sim15 <- function(){
   
   
   # bin lookup - avoid findInterval
-  l_spec$d_lu_he_bin <- data.table(day = l_spec$he_bins,
-                                   ix_bin = seq_along(l_spec$he_bins))
+  l_spec$d_lu_he_bin <- data.table(
+    day = l_spec$he_bins, ix_bin = seq_along(l_spec$he_bins))
   d_grid <- data.table(day = 0:max(l_spec$he_bins))
   l_spec$d_lu_he_bin <- l_spec$d_lu_he_bin[d_grid, on = "day", roll = T]
   # essential to set key otherwise this will be painfully slow
   setkey(l_spec$d_lu_he_bin, day)
   
   l_spec$v_lu_he_bin <- l_spec$d_lu_he_bin$ix_bin
+  l_spec$rle_he <- rle(l_spec$v_lu_he_bin)
+  l_spec$he_starts <- cumsum(c(1L, head(l_spec$rle_he$lengths, -1)))
   
-  l_spec$d_lu_eh_bin <- data.table(day = l_spec$eh_bins,
-                                   ix_bin = seq_along(l_spec$eh_bins))
+  l_spec$d_lu_eh_bin <- data.table(
+    day = l_spec$eh_bins, ix_bin = seq_along(l_spec$eh_bins))
   d_grid <- data.table(day = 0:max(l_spec$eh_bins))
   l_spec$d_lu_eh_bin <- l_spec$d_lu_eh_bin[d_grid, on = "day", roll = T]
   # essential to set key otherwise this will be painfully slow
   setkey(l_spec$d_lu_eh_bin, day)
   
   l_spec$v_lu_eh_bin <- l_spec$d_lu_eh_bin$ix_bin
-  
-  
+  l_spec$rle_eh <- rle(l_spec$v_lu_eh_bin)
+  l_spec$eh_starts <- cumsum(c(1L, head(l_spec$rle_eh$lengths, -1)))
   
   if(l_spec$nex > 0){
     log_info("Creating ", l_spec$nex, " example trials with full posterior")
