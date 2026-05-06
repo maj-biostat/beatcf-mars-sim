@@ -163,7 +163,7 @@ run_trial <- function(
       l_mod, 
       iter_warmup = l_spec$mcmc_warmup, iter_sampling = l_spec$mcmc_iter,
       parallel_chains = l_spec$mcmc_chain, chains = l_spec$mcmc_chain, 
-      refresh = 100, show_exceptions = T,
+      refresh = 0, show_exceptions = T,
       max_treedepth = 11
     )
     # f_1$summary(variables = l_spec$par_names_pre)
@@ -449,103 +449,52 @@ run_sim15 <- function(){
         stop(paste0("Stopping with error ", e))
       })
       
-      # d_tbl <- ll$d_all[, .N, by = .(id, state)]
-      # all_ids <- unique(ll$d_all$id)
-      # all_states <- c("H", "E")
-      # 
-      # d_grid <- CJ(id = all_ids, state = all_states)
-      # d_tbl_full <- d_tbl[d_grid, on = .(id, state)]
-      # d_tbl_full[is.na(N), N := 0]
-      # # if a pt has one exacerbation but is censored (ie we never see the 
-      # # recovery time because it exceeds fu) then the below summary will show
-      # # a min of 1 for both E and H
-      # table(d_tbl_full$state, d_tbl_full$N)
-      # # naive average duration of E
-      # ll$d_all[state == "E", .(.N, dur_mu = mean(dur)), keyby = trt]
-      # # units entering into each analysis (enrolment defer)
-      # ll$d_all[t0 %in% ll$l_spec$t0_last, .SD[1], keyby = id]
-      # # posterior
-      # ll$d_post_smry_1[ic == ll$stop_at, .(par, mu = round(mu, 3), lo = round(lo, 3), hi = round(hi, 3))]
-      # # rmst
-      # ll$d_post_smry_2[ic == ll$stop_at, .(trt, rmst_mu = round(rmst_mu, 2), lo = round(rmst_lo, 2), hi = round(rmst_hi, 2))]
-      # # trt effect, decision
-      # ll$d_pr_dec[ic <= ll$stop_at]
-      #
-      
-      
       ll
     })
   
   
-  log_info("Length of result set ", length(r))
-  log_info("Sleep for 5 before processing")
-  Sys.sleep(5)
+  Sys.sleep(10)
   
-  for(i in 1:length(r)){
-    log_info("Element at index ",i, " is class ", class(r[[i]]))
-    if(any(class(r[[i]]) %like% "try-error")){
-      log_info("Element at index ",i, " has content ", r[[i]])  
-    }
-    log_info("Element at index ",i, " has names ", 
-             paste0(names(r[[i]]), collapse = ", "))
-  }
-  
-  
-  d_pr_dec <- data.table()
-  for(i in 1:length(r)){
-    
-    log_info("Appending d_pr_dec for result ", i)
-    
-    if(is.recursive(r[[i]])){
-      d_pr_dec <- rbind(
-        d_pr_dec,
-        cbind(
-          sim = i, r[[i]]$d_pr_dec
-        ) 
-      )  
-    } else {
-      log_info("Value for r at this index is not recursive ", i)
-      message("r[[i]] ", r[[i]])
-      message(traceback())
-      stop(paste0("Stopping due to non-recursive element "))
-    }
-    
-  }
-  
-  d_post_smry_1 <- rbindlist(lapply(1:length(r), function(i){ 
-    r[[i]]$d_post_smry_1
-  } ), idcol = "sim")
-  
-  # d_post_smry_2 <- rbindlist(lapply(1:length(r), function(i){ 
-  #   r[[i]]$d_post_smry_2
-  # } ), idcol = "sim")
+  # l_ret <- list(
+  #   d_all = d_all,
+  #   d_post_smry_1 = d_post_smry_1,
+  #   # d_post_smry_2 = d_post_smry_2,
+  #   # d_post_smry_3 = d_post_smry_3,
+  #   d_trt_effects = d_trt_effects, 
+  #   d_pr_dec = d_pr_dec,
+  #   stop_at = stop_at,
+  #   l_spec = l_spec
+  # )
   # 
-  # d_post_smry_3 <- rbindlist(lapply(1:length(r), function(i){ 
-  #   r[[i]]$d_post_smry_3
-  # } ), idcol = "sim")
-  
   
   # data from each simulated trial
   d_all <- rbindlist(lapply(1:length(r), function(i){ 
     r[[i]]$d_all
   } ), idcol = "sim")
   
-  d_analys_sets <- rbindlist(lapply(1:length(r), function(i){ 
-    data.table(t0_last = r[[i]]$l_spec$t0_last)
+  d_post_smry_1 <- rbindlist(lapply(1:length(r), function(i){ 
+    r[[i]]$d_post_smry_1
+  } ), idcol = "sim")
+  
+  d_trt_effects <- rbindlist(lapply(1:length(r), function(i){ 
+    r[[i]]$d_trt_effects
+  } ), idcol = "sim")
+  
+  d_pr_dec <- rbindlist(lapply(1:length(r), function(i){ 
+    r[[i]]$d_pr_dec
   } ), idcol = "sim")
   
   
   l <- list(
     l_spec = l_spec,
-    d_pr_dec = d_pr_dec, 
+    d_all = d_all,
     d_post_smry_1 = d_post_smry_1,
+    d_trt_effects = d_trt_effects,
+    d_pr_dec = d_pr_dec
     # d_post_smry_2 = d_post_smry_2,
     # d_post_smry_3 = d_post_smry_3,
-    d_all = d_all,
-    d_analys_sets = d_analys_sets
+    # d_analys_sets = d_analys_sets
   )
-  
-  log_info("Command line arguments ", paste(args[2], collapse = ", "))
   
   toks <- unlist(tstrsplit(args[2], "[-.]"))
   log_info("Tokens ", paste(toks, collapse = ", "))
@@ -553,11 +502,6 @@ run_sim15 <- function(){
   fname <- paste0("data/sim15/sim15-", toks[5],  "-", format(Sys.time(), "%Y%m%d-%H%M%S"), ".qs")
   
   message("fname is ", fname)
-  
-  log_info("Saving results file ", fname)
-  
-  message("saving... ", fname)
-  
   qs::qsave(l, file = fname)
   
   
