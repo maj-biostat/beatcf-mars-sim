@@ -244,8 +244,8 @@ sim_policy_1 <- function(a_he, b_he, u_he,
   total_days_in_H <- 0
   total_days_in_E <- 0
   
-  lp_ppfev_he <- l_spec$b_ppfev_he * ppfev_0
-  lp_ppfev_eh <- l_spec$b_ppfev_eh * ppfev_0
+  lp_ppfev_he <- b_he[1, ] * ppfev_0
+  lp_ppfev_eh <- b_eh[1, ] * ppfev_0
   
   while (t < l_spec$followup) {
     # days in whatever state you happen to be in
@@ -308,11 +308,10 @@ sim_policy_1 <- function(a_he, b_he, u_he,
   total_days_in_E
 }
 
-sim_policy_2 <- function(a_he, b_he, u_he, 
-                            a_eh, b_eh, u_eh, 
-                            ppfev_0,
-                            policy = 1,
-                            l_spec) {
+sim_policy_2 <- function(
+    a_he, b_he_ppfev, b_he_trt, u_he, 
+    a_eh, b_eh_ppfev, b_eh_trt, u_eh, 
+    ppfev_0, policy = 1, l_spec) {
   
   t <- 0L
   state <- 1L   # 1 = H, 2 = E
@@ -321,8 +320,8 @@ sim_policy_2 <- function(a_he, b_he, u_he,
   total_days_in_E <- 0L
   
   # precompute
-  lp_ppfev_he <- l_spec$b_ppfev_he * ppfev_0
-  lp_ppfev_eh <- l_spec$b_ppfev_eh * ppfev_0
+  lp_ppfev_he <- b_he_ppfev * ppfev_0
+  lp_ppfev_eh <- b_eh_ppfev * ppfev_0
   
   followup <- l_spec$followup
   
@@ -347,7 +346,7 @@ sim_policy_2 <- function(a_he, b_he, u_he,
         if (exac_count == 0L) {
           lp <- a_he[bin_ix] + u_he + lp_ppfev_he
         } else {
-          lp <- a_he[bin_ix] + u_he + lp_ppfev_he + b_he[policy]
+          lp <- a_he[bin_ix] + u_he + lp_ppfev_he + b_he_trt[policy]
         }
         
       } else {
@@ -355,7 +354,7 @@ sim_policy_2 <- function(a_he, b_he, u_he,
         bin_ix <- rle_eh$values[bin_pos]
         bin_width <- rle_eh$lengths[bin_pos] - offset_in_bin
         
-        lp <- a_eh[bin_ix] + u_eh + lp_ppfev_eh + b_eh[policy]
+        lp <- a_eh[bin_ix] + u_eh + lp_ppfev_eh + b_eh_trt[policy]
       }
       
       # convert to probability
@@ -420,10 +419,12 @@ calc_trt_effect <- function(
   B <- min(B_max, nrow(d_post))
   
   m_a_he <- as.matrix(d_post[, .SD, .SDcols = patterns("a_he")])
-  m_b_he <- as.matrix(d_post[, .SD, .SDcols = patterns("b_he")])
+  v_b_he_ppfev <- d_post$b_he_1
+  m_b_he_trt <- cbind(0, d_post$b_he_2, d_post$b_he_3)
   v_u_he <- rnorm(B, 0, d_post$u_sd_he)
   m_a_eh <- as.matrix(d_post[, .SD, .SDcols = patterns("a_eh")])
-  m_b_eh <- as.matrix(d_post[, .SD, .SDcols = patterns("a_eh")])
+  v_b_eh_ppfev <- d_post$b_eh_1
+  m_b_eh_trt <- cbind(0, d_post$b_eh_2, d_post$b_eh_3)
   v_u_eh <- rnorm(B, 0, d_post$u_sd_eh)
   
   v_ppfev_0 <- sample(ppfev_0, size = B, replace = T)
@@ -444,11 +445,13 @@ calc_trt_effect <- function(
     for(j in 1:N_pt){
       soc[j] <- sim_policy_2(
         a_he = m_a_he[i, ],
-        b_he = m_b_he[i, ],
+        b_he_ppfev = v_b_he_ppfev[i],
+        b_he_trt = m_b_he_trt[i, ],
         u_he = v_u_he[i],
         
         a_eh = m_a_eh[i, ],
-        b_eh = m_b_eh[i, ],
+        b_eh_ppfev = v_b_eh_ppfev[i],
+        b_eh_trt = m_b_eh_trt[i, ],
         u_eh = v_u_eh[i],
         
         ppfev_0 = v_ppfev_0[i],
@@ -460,11 +463,13 @@ calc_trt_effect <- function(
     for(j in 1:N_pt){
       def[j] <- sim_policy_2(
         a_he = m_a_he[i, ],
-        b_he = m_b_he[i, ],
+        b_he_ppfev = v_b_he_ppfev[i],
+        b_he_trt = m_b_he_trt[i, ],
         u_he = v_u_he[i],
         
         a_eh = m_a_eh[i, ],
-        b_eh = m_b_eh[i, ],
+        b_eh_ppfev = v_b_eh_ppfev[i],
+        b_eh_trt = m_b_eh_trt[i, ],
         u_eh = v_u_eh[i],
         
         ppfev_0 = v_ppfev_0[i],
@@ -476,11 +481,13 @@ calc_trt_effect <- function(
     for(j in 1:N_pt){
       dis[j] <- sim_policy_2(
         a_he = m_a_he[i, ],
-        b_he = m_b_he[i, ],
+        b_he_ppfev = v_b_he_ppfev[i],
+        b_he_trt = m_b_he_trt[i, ],
         u_he = v_u_he[i],
         
         a_eh = m_a_eh[i, ],
-        b_eh = m_b_eh[i, ],
+        b_eh_ppfev = v_b_eh_ppfev[i],
+        b_eh_trt = m_b_eh_trt[i, ],
         u_eh = v_u_eh[i],
         
         ppfev_0 = v_ppfev_0[i],
@@ -489,7 +496,9 @@ calc_trt_effect <- function(
       )
     }
     
-    
+    # d_fig <- data.table(soc, def, dis)
+    # d_fig <- melt(d_fig, measure.vars = names(d_fig))
+    # ggplot(d_fig, aes(x = value, group = variable, col = variable)) + geom_density()
     
     v_soc[i] = mean(soc)
     v_def[i] = mean(def)

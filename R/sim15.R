@@ -195,10 +195,21 @@ run_trial <- function(
       )
     ]
     
+    # B_max = 300
+    # N_pt = l_mod$N_id
+    # ppfev_0 = unique(d_all$ppfev_0)
     d_res <- calc_trt_effect(
-      d_post, B_max = 100, N_pt = l_mod$N_id, 
+      d_post, B_max = 200, N_pt = l_mod$N_id, 
       # unique ppfev0 from sample
       ppfev_0 = unique(d_all$ppfev_0), l_spec)
+    
+    # d_fig <- melt(d_res, measure.vars = names(d_res))
+    # 
+    # ggplot(
+    #   d_fig[variable %in% l_spec$trt_lab], 
+    #        aes(x = value, group = variable)) +
+    #   geom_density() + 
+    #   facet_wrap(~variable, ncol = 1)
     
     # update treatment effects 
     d_trt_effects[
@@ -298,6 +309,9 @@ run_trial <- function(
     
     # next interim
     l_spec$ic <- l_spec$ic + 1
+    d_all[, `:=`(
+      bin = NULL, rlgrp = NULL
+    )]
     
     if(l_spec$ic > N_analys){
       stop_enrol <- T  
@@ -313,6 +327,7 @@ run_trial <- function(
     d_post_smry_1 = d_post_smry_1,
     # d_post_smry_2 = d_post_smry_2,
     # d_post_smry_3 = d_post_smry_3,
+    d_trt_effects = d_trt_effects, 
     d_pr_dec = d_pr_dec,
     stop_at = stop_at,
     l_spec = l_spec
