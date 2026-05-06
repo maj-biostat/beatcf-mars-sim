@@ -44,8 +44,8 @@ parameters {
   vector[N_id] z_he;
   vector[N_id] z_eh;
   
-  real<lower=0> sd_he;
-  real<lower=0> sd_eh;
+  real<lower=0> u_sd_he;
+  real<lower=0> u_sd_eh;
 }
 
 model {
@@ -59,8 +59,8 @@ model {
   target += normal_lpdf(z_he | 0, 1);
   target += normal_lpdf(z_eh | 0, 1);
   
-  target += exponential_lpdf(sd_he | 1/pri_sd_he);
-  target += exponential_lpdf(sd_eh | 1/pri_sd_he);
+  target += exponential_lpdf(u_sd_he | 1/pri_sd_he);
+  target += exponential_lpdf(u_sd_eh | 1/pri_sd_he);
   
   for (i in 1:N) {
     real eta;
@@ -69,25 +69,28 @@ model {
       
       if(i_entry[i] == 1){
         // exclude carry over effects
-        eta = a_he[bin[i]] + X[i, 1]  * b_he[1] + z_he[id[i]] * sd_he;
+        eta = a_he[bin[i]] + X[i, 1]  * b_he[1] + z_he[id[i]] * u_sd_he;
       } else {
-        eta = a_he[bin[i]] + X[i, ]  * b_he + z_he[id[i]] * sd_he;
+        eta = a_he[bin[i]] + X[i, ]  * b_he + z_he[id[i]] * u_sd_he;
       }
       
     } else{
-      eta = a_eh[bin[i]] + X[i,]  * b_eh + z_eh[id[i]] * sd_eh;
+      eta = a_eh[bin[i]] + X[i,]  * b_eh + z_eh[id[i]] * u_sd_eh;
     }
     
     real p = inv_logit(eta);
     
     if(y[i] == 1){
-      // here we have several daily interval contributions where no event 
-      // occurred, followed by an event in the final interval, e.g.
-      // (0, 1], (1, 2], (2, 3] no event
-      // (3, 4] event (assumed to occur at end of interval)
+      // here we have several daily interval contributions where no transition 
+      // occurred, followed by a transition in the final interval, e.g.
+      // (0, 1], (1, 2], (2, 3] no transition
+      // (3, 4] transition (assumed to occur at end of interval)
+      // So we get (1-p)^{L-1} \times p
+      // Alternatively, this can be implemented via a poisson lik with exposure.
+      // evt ~ Pois(\lambda * exposure) where \lambda is the lp
       target += (len_seg[i] - 1) * log1m(p) + log(p);
     } else {
-      // here we just have several daily intervals of no events.
+      // here we just have several daily intervals with no transition
       target += len_seg[i] * log1m(p);
     }
     

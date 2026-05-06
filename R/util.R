@@ -188,7 +188,7 @@ sim_weibullPH_rmst <- function(){
 #' f(x) = fev_max * exp(-k (age - age_ref)^p) + \epsilon
 #' \epsilon \sim N(0, sd_fev)
 #' 
-ppfev_0 <- function(age, age_min = 10, ppfev0_max = 100, k = 0.1, p = 0.5, sd_ppfev = 0) {
+f_ppfev_0 <- function(age, age_min = 10, ppfev0_max = 100, k = 0.1, p = 0.5, sd_ppfev = 0) {
   ppfev0_max * exp(-k * (age-age_min)^p) + rnorm(length(age), 0, sd_ppfev)
 }
 
