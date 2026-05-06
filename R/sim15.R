@@ -166,7 +166,7 @@ run_trial <- function(
       refresh = 100, show_exceptions = T,
       max_treedepth = 11
     )
-    f_1$summary(variables = l_spec$par_names_pre)
+    # f_1$summary(variables = l_spec$par_names_pre)
     
     d_post <- data.table(
       f_1$draws(

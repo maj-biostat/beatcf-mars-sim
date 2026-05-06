@@ -326,31 +326,23 @@ sim_policy_2 <- function(a_he, b_he, u_he,
   
   followup <- l_spec$followup
   
-  # bin lookup vectors
-  v_he <- l_spec$v_lu_he_bin
-  v_eh <- l_spec$v_lu_eh_bin
-  
-  max_bin_he <- length(v_he)
-  max_bin_eh <- length(v_eh)
+  rle_he <- l_spec$rle_he
+  rle_eh <- l_spec$rle_eh
   
   while (t < followup) {
     
     days_in_state <- 0L
     
+    # track position in RLE
+    bin_pos <- 1L
+    offset_in_bin <- 0L
+    
     repeat {
-      
-      # current bin index
-      k <- days_in_state + 1L
-      
-      if (state == 1L) max_bin <- max_bin_he  
-      if (state == 2L) max_bin <- max_bin_eh  
-      
-      if (state == 1L && k > max_bin_he) k <- max_bin  # safety
-      if (state == 2L && k > max_bin_eh) k <- max_bin  # safety
       
       if (state == 1L) {
         
-        bin_ix <- v_he[k]
+        bin_ix <- rle_he$values[bin_pos]
+        bin_width <- rle_he$lengths[bin_pos] - offset_in_bin
         
         if (exac_count == 0L) {
           lp <- a_he[bin_ix] + u_he + lp_ppfev_he
@@ -360,7 +352,8 @@ sim_policy_2 <- function(a_he, b_he, u_he,
         
       } else {
         
-        bin_ix <- v_eh[k]
+        bin_ix <- rle_eh$values[bin_pos]
+        bin_width <- rle_eh$lengths[bin_pos] - offset_in_bin
         
         lp <- a_eh[bin_ix] + u_eh + lp_ppfev_eh + b_eh[policy]
       }
@@ -368,25 +361,13 @@ sim_policy_2 <- function(a_he, b_he, u_he,
       # convert to probability
       p <- 1 / (1 + exp(-lp))
       
+      # constant hazard within piecewise bins
       # draw geometric (number of days until event)
-      # rgeom gives failures before success → +1
+      # rgeom gives failures before success => +1
       wait <- rgeom(1, p) + 1L
-      
-      # how many days remain in this bin?
-      # (since bins are defined implicitly via lookup)
-      # we detect next bin change
-      next_k <- k
-      
-      while (next_k <= max_bin && 
-             ((state == 1L && v_he[next_k] == bin_ix) ||
-              (state == 2L && v_eh[next_k] == bin_ix))) {
-        next_k <- next_k + 1L
-      }
-      
-      bin_width <- next_k - k
-      
+
       if (wait <= bin_width) {
-        # event occurs in this bin
+        # event happens in this bin
         days_in_state <- days_in_state + wait
         
         if (state == 2L) {
@@ -397,13 +378,16 @@ sim_policy_2 <- function(a_he, b_he, u_he,
         break
         
       } else {
-        # no event in this bin => jump to next bin
+        # consume full bin and move to next
         days_in_state <- days_in_state + bin_width
         
         if (state == 2L) {
           total_days_in_E <- total_days_in_E + 
             min(bin_width, followup - t)
         }
+        
+        bin_pos <- bin_pos + 1L
+        offset_in_bin <- 0L
       }
       
       if ((t + days_in_state) >= followup) break

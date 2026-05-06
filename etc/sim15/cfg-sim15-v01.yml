@@ -15,10 +15,6 @@ default:
   
   followup: 365
   
-  # rmst is a summary of interest
-  rmst_eh_horizon: 25
-  rmst_he_horizon: 365
-  
   # probability of missingness
   pr_ymis: 0.1
   
@@ -40,9 +36,9 @@ default:
   u_sd_he: 0.25
   
   # recovery bins
-  eh_bins: [0, 5, 10, 15, 100]
+  eh_bins: [0, 5, 10, 15, 365]
   # relapse bins
-  he_bins: [0, 100, 200, 500]
+  he_bins: [0, 100, 200, 700]
   
   
   # exacerbation -> healthy
