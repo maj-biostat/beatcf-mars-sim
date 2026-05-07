@@ -83,11 +83,15 @@ run_trial <- function(
   d_post_smry_1[, hi := NA_real_]
   
   # trt effects
+  l_spec$par_names_trt <- c(
+    "mu_soc_H", "mu_def_H", "mu_dis_H", 
+    "mu_soc_E", "mu_def_E", "mu_dis_E",
+    "del_def_H", "del_dis_H",
+    "del_def_E", "del_dis_E"
+  )
   d_trt_effects <- CJ(
     ic = 1:N_analys,
-    par = c(
-      "soc", "def", "dis", "delta_def", "delta_dis"
-    ),
+    par = l_spec$par_names_trt,
     mu = NA_real_,
     lwr = NA_real_,
     upr = NA_real_
@@ -209,23 +213,27 @@ run_trial <- function(
     # N_pt = l_mod$N_id
     # ppfev_0 = unique(d_all$ppfev_0)
     d_res <- calc_trt_effect(
-      d_post, B_max = 1000, N_pt = l_mod$N_id, 
+      d_post, B_max = l_spec$mcmc_B, N_pt = l_mod$N_id, 
       # unique ppfev0 from sample
       ppfev_0 = unique(d_all$ppfev_0), l_spec)
     
     # mean(d_res$delta_def < 4)
     # d_fig <- melt(d_res, measure.vars = names(d_res))
+    # d_fig[variable %like% "mu.*_H", `:=`(quantity = "mean", state = "H")]
+    # d_fig[variable %like% "mu.*_E", `:=`(quantity = "mean", state = "E")]
+    # d_fig[variable %like% "del.*_H", `:=`(quantity = "diff", state = "H")]
+    # d_fig[variable %like% "del.*_E", `:=`(quantity = "diff", state = "E")]
     # p_1 <- ggplot(
-    #   d_fig[variable %in% l_spec$trt_lab],
+    #   d_fig[quantity == "mean"],
     #        aes(x = value, group = variable)) +
     #   geom_density() +
-    #   facet_wrap(~variable, ncol = 1)
+    #   facet_wrap(state~variable, scales = "free", nrow = 2)
     # 
     # p_2 <- ggplot(
-    #   d_fig[!(variable %in% l_spec$trt_lab)],
+    #   d_fig[quantity == "diff"],
     #   aes(x = value, group = variable)) +
     #   geom_density() +
-    #   facet_wrap(~variable, ncol = 1)
+    #   facet_wrap(state~variable, scales = "free")
     # 
     # p_1 / p_2
     
@@ -243,15 +251,14 @@ run_trial <- function(
       )
     ]
     
-    # evaluate decision rules, namely does the rmst indicate a longer duration of 
-    # recovery in the intervention group relative to the soc group that is 
-    # above the level that we are willing to tolerate
+    # evaluate decision rules, making decisions on the basis of expected 
+    # period in exacerbation state 
     
     # NI
     d_res_def <- data.table(
       ic = l_spec$ic,  rule = "ni", trt = "def", 
       # hoping that any increase in recovery time is below the NI margin
-      p = mean(d_res$delta_def < l_spec$dec_eh_delta_ni) 
+      p = mean(d_res$del_def_E < l_spec$dec_eh_delta_ni) 
     )
     # for NI decision, probability must exceed our evidential threshold
     d_res_def[, dec := as.integer(p > l_spec$dec_thresh_ni)]
@@ -259,7 +266,7 @@ run_trial <- function(
     # same but for early discontinue
     d_res_dis <- data.table(
       ic = l_spec$ic,  rule = "ni", trt = "dis", 
-      p = mean(d_res$delta_dis < l_spec$dec_eh_delta_ni)
+      p = mean(d_res$del_dis_E < l_spec$dec_eh_delta_ni)
     )
     d_res_dis[, dec := as.integer(p > l_spec$dec_thresh_ni)]
     
@@ -280,7 +287,7 @@ run_trial <- function(
       trt = "def", 
       # unfortunately the revised schedule might be substantially greater than NI
       # in the case of exacerbation
-      p = mean(d_res$delta_def > l_spec$dec_eh_delta_ni)
+      p = mean(d_res$del_def_E > l_spec$dec_eh_delta_ni)
     )
     # for futility decision, probability must exceed our evidential thresholds
     d_res_def[, dec := as.integer(p > l_spec$dec_thresh_fut)]
@@ -288,7 +295,7 @@ run_trial <- function(
     d_res_dis <- data.table(
       ic = l_spec$ic,  rule = "fut", 
       trt = "dis", 
-      p = mean(d_res$delta_dis > l_spec$dec_eh_delta_ni) 
+      p = mean(d_res$del_dis_E > l_spec$dec_eh_delta_ni) 
     )
     d_res_dis[, dec := as.integer(p > l_spec$dec_thresh_fut)]
     
@@ -340,8 +347,17 @@ run_trial <- function(
   stop_at <- l_spec$ic - 1
   
   
+  d_all[state == "H", bin := l_spec$v_lu_he_bin[day_in_state + 1L] ]
+  d_all[state == "E", bin := l_spec$v_lu_eh_bin[day_in_state + 1L] ]
+  d_all[, rlgrp := rleid(id, state, trt, bin)]
+  d_w <- sim15_long_to_wide(dd = d_all)
+  d_w[, `:=`(defer = NULL, discont = NULL, len_seg = NULL, rlgrp = NULL)]
+  
+  # lobstr::obj_size(d_w)
+  # lobstr::obj_size(d_all)
+  
   l_ret <- list(
-    d_all = d_all,
+    d_w = d_w,
     d_post_smry_1 = d_post_smry_1,
     # d_post_smry_2 = d_post_smry_2,
     # d_post_smry_3 = d_post_smry_3,
@@ -486,8 +502,8 @@ run_sim15 <- function(){
   # 
   
   # data from each simulated trial
-  d_all <- rbindlist(lapply(1:length(r), function(i){ 
-    r[[i]]$d_all
+  d_w <- rbindlist(lapply(1:length(r), function(i){ 
+    r[[i]]$d_w
   } ), idcol = "sim")
   
   d_post_smry_1 <- rbindlist(lapply(1:length(r), function(i){ 
@@ -505,7 +521,7 @@ run_sim15 <- function(){
   
   l <- list(
     l_spec = l_spec,
-    d_all = d_all,
+    d_w = d_w,
     d_post_smry_1 = d_post_smry_1,
     d_trt_effects = d_trt_effects,
     d_pr_dec = d_pr_dec

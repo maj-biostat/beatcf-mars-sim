@@ -5,6 +5,8 @@ default:
   mcmc_warmup: 1000
   mcmc_iter: 1000
   mcmc_chain: 1
+  # redraws for effect calculation
+  mcmc_B: 1000
   
   # example trials
   nex: 5

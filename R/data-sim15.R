@@ -325,6 +325,7 @@ sim_policy_1 <- function(a_he, b_he, u_he,
   total_days_in_E
 }
 
+# expected time in exacerbation state
 sim_policy_2 <- function(
     a_he, b_he_ppfev, b_he_trt, u_he, 
     a_eh, b_eh_ppfev, b_eh_trt, u_eh, 
@@ -449,9 +450,9 @@ calc_trt_effect <- function(
   
   v_ppfev_0 <- sample(ppfev_0, size = B, replace = T)
 
-  v_soc <- numeric(B)
-  v_def <- numeric(B)
-  v_dis <- numeric(B)
+  m_soc <- matrix(NA, nrow = B, ncol = 2)
+  m_def <- matrix(NA, nrow = B, ncol = 2)
+  m_dis <- matrix(NA, nrow = B, ncol = 2)
   
   soc <- numeric(N_pt)
   def <- numeric(N_pt)
@@ -520,16 +521,26 @@ calc_trt_effect <- function(
     # d_fig <- melt(d_fig, measure.vars = names(d_fig))
     # ggplot(d_fig, aes(x = value, group = variable, col = variable)) + geom_density()
     
-    v_soc[i] = mean(soc)
-    v_def[i] = mean(def)
-    v_dis[i] = mean(dis)
+    # health state given by decision fu less the exacerbation time
+    m_soc[i, ] = colMeans(cbind(soc, l_spec$decision_fu - soc))
+    m_def[i, ] = colMeans(cbind(def, l_spec$decision_fu - def))
+    m_dis[i, ] = colMeans(cbind(dis, l_spec$decision_fu - dis))
     
   }
   
-  d_res <- data.table(soc = v_soc, def = v_def, dis = v_dis)
+  d_res <- data.table(
+    mu_soc_H = m_soc[, 2], 
+    mu_def_H = m_def[, 2], 
+    mu_dis_H = m_dis[, 2], 
+    mu_soc_E = m_soc[, 1], 
+    mu_def_E = m_def[, 1], 
+    mu_dis_E = m_dis[, 1])
+  
   d_res[, `:=`(
-    delta_def = def - soc,
-    delta_dis = dis - soc
+    del_def_H = mu_def_H - mu_soc_H,
+    del_dis_H = mu_dis_H - mu_soc_H,
+    del_def_E = mu_def_E - mu_soc_E,
+    del_dis_E = mu_dis_E - mu_soc_E
   )]
   
   d_res
