@@ -1,5 +1,5 @@
 default:
-  desc: "Treatments equivalent"
+  desc: "Defer worse on recovery"
   nsim: 200 
   mc_cores: 40
   mcmc_warmup: 1000
