@@ -331,8 +331,11 @@ sim_policy_2 <- function(
     ppfev_0, policy = 1, l_spec) {
   
   t <- 0L
-  state <- 1L   # 1 = H, 2 = E
-  exac_count <- 0L
+  # start in the exacerbation state
+  state <- 2L   # 1 = H, 2 = E
+  # we start in an exacerbation state so 
+  # this starts at 1 not zero.
+  exac_count <- 1L
   
   total_days_in_E <- 0L
   

@@ -89,6 +89,7 @@ sim15 cfg:
 
 runsim15:
   just sim15 ../etc/sim15/cfg-sim15-v01.yml
+  just sim15 ../etc/sim15/cfg-sim15-v02.yml
   
 report rep:
   quarto render reports/{{rep}} --to pdf
