@@ -352,6 +352,7 @@ run_trial <- function(
   d_all[, rlgrp := rleid(id, state, trt, bin)]
   d_w <- sim15_long_to_wide(dd = d_all)
   d_w[, `:=`(defer = NULL, discont = NULL, len_seg = NULL, rlgrp = NULL)]
+  d_w[, rlgrp := rleid(id, state, trt)]
   
   # lobstr::obj_size(d_w)
   # lobstr::obj_size(d_all)
