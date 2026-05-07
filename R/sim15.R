@@ -14,7 +14,7 @@ args = commandArgs(trailingOnly=TRUE)
 if (length(args)<1) {
   log_info("Setting default run method (does nothing)")
   args[1] = "run_none_sim15"
-  args[2] = "./sim15/cfg-sim15-v01.yml"
+  args[2] = "./sim15/cfg-sim15-v02.yml"
 } else {
   log_info("Run method ", args[1])
   log_info("Scenario config ", args[2])
@@ -159,6 +159,14 @@ run_trial <- function(
       
     }
     
+    # d_tmp <- copy(d_all[id %in% incl_ids])
+    # d_tmp[state == "H", bin := l_spec$v_lu_he_bin[day_in_state + 1L] ]
+    # d_tmp[state == "E", bin := l_spec$v_lu_eh_bin[day_in_state + 1L] ]
+    # d_tmp[, rlgrp := rleid(state), keyby = id]
+    # 
+    # d_smry <- d_tmp[, .(days = .N), keyby = .(id, rlgrp, state, trt)]
+    # d_smry[, .(mu_days = mean(days), .N), keyby = .(state, trt)]
+    
     f_1 <- m1$sample(
       l_mod, 
       iter_warmup = l_spec$mcmc_warmup, iter_sampling = l_spec$mcmc_iter,
@@ -195,21 +203,31 @@ run_trial <- function(
       )
     ]
     
-    # B_max = 300
+    # kableExtra::kable(d_post_smry_1[ic == l_spec$ic], format = "simple", digits = 2)
+    
+    # B_max = 200
     # N_pt = l_mod$N_id
     # ppfev_0 = unique(d_all$ppfev_0)
     d_res <- calc_trt_effect(
-      d_post, B_max = 200, N_pt = l_mod$N_id, 
+      d_post, B_max = 1000, N_pt = l_mod$N_id, 
       # unique ppfev0 from sample
       ppfev_0 = unique(d_all$ppfev_0), l_spec)
     
+    # mean(d_res$delta_def < 4)
     # d_fig <- melt(d_res, measure.vars = names(d_res))
-    # 
-    # ggplot(
-    #   d_fig[variable %in% l_spec$trt_lab], 
+    # p_1 <- ggplot(
+    #   d_fig[variable %in% l_spec$trt_lab],
     #        aes(x = value, group = variable)) +
-    #   geom_density() + 
+    #   geom_density() +
     #   facet_wrap(~variable, ncol = 1)
+    # 
+    # p_2 <- ggplot(
+    #   d_fig[!(variable %in% l_spec$trt_lab)],
+    #   aes(x = value, group = variable)) +
+    #   geom_density() +
+    #   facet_wrap(~variable, ncol = 1)
+    # 
+    # p_1 / p_2
     
     # update treatment effects 
     d_trt_effects[
