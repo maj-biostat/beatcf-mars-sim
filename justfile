@@ -88,7 +88,7 @@ sim15 cfg:
   just cleantmp
 
 runsim15:
-  just sim15 ../etc/sim14/cfg-sim15-v01.yml
+  just sim15 ../etc/sim15/cfg-sim15-v01.yml
   
 report rep:
   quarto render reports/{{rep}} --to pdf
