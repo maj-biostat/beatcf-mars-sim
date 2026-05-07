@@ -1,0 +1,93 @@
+default:
+  desc: "Defer worse on relapse"
+  nsim: 200 
+  mc_cores: 40
+  mcmc_warmup: 1000
+  mcmc_iter: 1000
+  mcmc_chain: 1
+  # redraws for effect calculation
+  mcmc_B: 1000
+  
+  # example trials
+  nex: 5
+  # enrolment
+  N_pt: [400, 100, 100]
+  pt_per_day: 0.57
+  ramp_up_days: 120
+  
+  followup: 365
+  decision_fu: 90
+  
+  # probability of missingness
+  pr_ymis: 0.1
+  
+  # take log of mean before use in rlnorm
+  age_mean: 35
+  # use as is:
+  age_sd: 0.4
+  age_min: 10
+  age_max: 60
+  
+  # used to scale ppfev at baseline so that parameters are 
+  # per 10% increment
+  ppfev_increment: 10
+
+  ppfev_ref: 77.5
+  
+  # repeat measure random effects - just using indep random intercept 
+  u_sd_eh: 0.2
+  u_sd_he: 0.2
+  
+  # recovery bins
+  eh_bins: [0, 5, 10, 15, 365]
+  # relapse bins
+  he_bins: [0, 100, 200, 700]
+  
+  
+  # exacerbation -> healthy
+  #########################
+  # bin specific chance of recovery. from 0 to 3 is -3, etc
+  a_eh: [-3, -3, -1, -0.5, 0]
+  
+  # remainder on log-odds scale
+  # trt is c("soc","defer","discont")
+  # effects less than zero result in reducing the intensity of transition
+  # from exacerbation to health (people get better slower)
+  b_trt_eh: [0, 0, 0]
+  # higher baseline ppfev results in increasing the intensity of transition
+  # from exac to health (healthier people get better quicker)
+  b_ppfev_eh: 0.1
+  
+  # healthy -> exacerbation
+  #########################
+  # linear predictor for healthy state impacting period to relapse occurs
+  a_he: [-6, -6, -4, -1]
+  
+  # remainder on log-odds scale
+  # positive effects result in increasing the intensity of transition
+  # from health to exacerbation (people relapse sooner)
+  b_trt_he: [0, 1, 0]
+  # higher baseline ppfev results in reducing the intensity of transition
+  # from health to exac (healthier people stay well for longer)
+  b_ppfev_he: -0.2
+  
+  
+  # controls which trt can be allocated
+  trt_active: [1, 1, 1]
+  trt_lab: ["soc", "def", "dis"]
+  
+  # decision reference values - think of these as the non-inferiority margins
+  
+  # will not tolerate expected total time in exacerbation to be more than 
+  # dec_eh_delta_ni days longer over the follow up
+  dec_eh_delta_ni: 4
+  
+  # could equivalently say that we will not tolerate the same amount of days
+  # less of health.
+  
+  # decision probability thresholds - 
+  
+  # level of certainty we require to make claims
+  dec_thresh_ni: 0.95
+  dec_thresh_fut: 0.60
+    
