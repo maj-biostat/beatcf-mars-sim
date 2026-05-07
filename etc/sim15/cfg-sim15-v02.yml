@@ -51,7 +51,7 @@ default:
   # trt is c("soc","defer","discont")
   # effects less than zero result in reducing the intensity of transition
   # from exacerbation to health (people get better slower)
-  b_trt_eh: [0, 0, 0]
+  b_trt_eh: [0, -2, 0]
   # higher baseline ppfev results in increasing the intensity of transition
   # from exac to health (healthier people get better quicker)
   b_ppfev_eh: 0.1
