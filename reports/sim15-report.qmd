@@ -491,7 +491,9 @@ The soc arm remains the reference arm throughout (avoids downward drift of treat
 
 ## Trial Population
 
+What is the distribution of exacerbations over the 12 month period in the trial data?
 
+What is the distribution of exacerbation duration?
 
 ```{r, eval = F}
 #| label: exac-comp
@@ -499,38 +501,69 @@ The soc arm remains the reference arm throughout (avoids downward drift of treat
 #| echo: FALSE
 
 i <- 1
-d_all <- data.table()
+d_w <- data.table()
+
+g_scen_names <- c()
 
 # For each scenario that was simulated
 for(i in 1:length(l)){
   
-  
   l_cfg <- copy(l[[i]]$l_spec)
   
-  # extract the decision matrix - sim, analysis, quantity, domain level decision
-  d_tmp <- copy(l[[i]]$d_all)
+  # add desc...
+  d_tmp <- copy(l[[i]]$d_w)
+  d_tmp[, desc := l_cfg$desc]
   
-  # segment by state by adding run ids
-  d_tmp[state == "H", bin := l[[i]]$l_spec$v_lu_he_bin[day_in_state + 1L] ]
-  d_tmp[state == "E", bin := l[[i]]$l_spec$v_lu_eh_bin[day_in_state + 1L] ]
-  d_tmp[, rlgrp := rleid(id, state), keyby = sim]
+  g_scen_names <- c(g_scen_names, l_cfg$desc)
   
-  d_all <- rbind(d_all, d_tmp)
+  d_tmp[, ix_desc := i]
+  
+  d_w <- rbind(d_w, d_tmp)
+  
   
 }
 
-d_all[sim == 1 & id == 1 & state == "E"]
+d_w[, desc := factor(desc, levels = g_scen_names)]
 
-# number of exacerbations per pt in sim
-ix_sim <- sort(sample(1:l_spec_1$nsim, size = 20))
-d_smry_1 <- d_all[, .N, keyby = .(sim, id, state, rlgrp)][state == "E", .N, keyby = .(sim, id)]
-d_smry_1[, sim := factor(sim)]
-
-ggplot(d_smry_1[sim %in% ix_sim], aes(x = N, group = sim)) +
-  geom_histogram() +
-  facet_wrap(~sim)
+```
 
 
+
+```{r}
+#| label: fig-dist-n-exac
+#| fig-cap: 'Distribution of occurrence of exacerbation in sample for random selection of simulations within scenarios'
+#| fig-height: 4
+#| fig-width: 5
+#| out-height: 4in
+#| out-width: 5in
+#| fig-dpi: 240
+#| fig-align: "center"
+#| fig-pos: H
+
+# Pick out trial data from one simulation for each scenario
+ix_smpl <- sort(sample(1:max(d_w$sim), 5))
+
+d_smry <- d_w[sim %in% ix_smpl, ]
+
+# Identify distinct periods in each state within each patient
+# Creates running episode index w/in pt
+d_smry[, period_id := cumsum(
+  # identify shift in state between this and the next rec
+  state != data.table::shift(
+    state, fill = data.table::first(state))) + 1L, 
+  keyby = .(desc, sim, id)
+]
+
+d_fig <- d_smry[, .(
+  n_E = uniqueN(period_id[state == "E"])
+  ), keyby = .(desc, sim, id)
+]
+
+ggplot(d_fig, aes(x = n_E)) +
+  geom_bar() +
+  scale_x_continuous("Exacerbations") +
+  scale_y_continuous("Number of Pts") +
+  facet_wrap(desc ~ sim, ncol = length(ix_smpl))
 
 ```
 
