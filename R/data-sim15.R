@@ -157,6 +157,15 @@ get_sim15_cohort <- function(l_spec){
   }
   
   d_cohort <- rbindlist(pt_list)
+  
+  # d_tmp <- copy(d_cohort)
+  # d_tmp[state == "H", bin := l_spec$v_lu_he_bin[day_in_state + 1L] ]
+  # d_tmp[state == "E", bin := l_spec$v_lu_eh_bin[day_in_state + 1L] ]
+  # d_tmp[, rlgrp := rleid(state), keyby = id]
+  # 
+  # d_smry <- d_tmp[, .(days = .N), keyby = .(id, rlgrp, state, trt)]
+  # d_smry[, .(mu_days = mean(days), .N), keyby = .(state, trt)]
+  
   d_cohort[]
 }
 
@@ -167,6 +176,14 @@ get_sim15_cohort <- function(l_spec){
 get_sim15_stan_data <- function(dd, l_spec){
   
   dd_w <- sim15_long_to_wide(dd)
+  
+  # d_tmp <- copy(dd_w)
+  # d_tmp[, dur := tstop - tstart]
+  # d_tmp[, rlgrp := rleid(state), keyby = id]
+  # d_smry <- d_tmp[, .(mu_dur = mean(dur)), keyby = .(id, rlgrp, state, trt)]
+  # d_smry[, .(E_mu_dur = mean(mu_dur)), keyby = .(state, trt)]
+  # d_smry[, .(.N), keyby = .(id, state, trt)][, .(mu_N = mean(N)), keyby = .(state, trt)]
+  
   X <- model.matrix(~-1 + ppfev_0 + defer + discont, data = dd_w)
   
   ld <- list(
@@ -216,10 +233,10 @@ sim15_long_to_wide <- function(dd){
   
   dd_w[, state := factor(state, levels = c("H", "E"))]
   
-  dd_w[trt == "defer", defer := 1]
-  dd_w[trt != "defer", defer := 0]
-  dd_w[trt == "discont", discont := 1]
-  dd_w[trt != "discont", discont := 0]
+  dd_w[trt == "def", defer := 1]
+  dd_w[trt != "def", defer := 0]
+  dd_w[trt == "dis", discont := 1]
+  dd_w[trt != "dis", discont := 0]
   
   dd_w[tstart == 0, i_entry := 1]
   dd_w[tstart != 0, i_entry := 0]
@@ -323,12 +340,12 @@ sim_policy_2 <- function(
   lp_ppfev_he <- b_he_ppfev * ppfev_0
   lp_ppfev_eh <- b_eh_ppfev * ppfev_0
   
-  followup <- l_spec$followup
+  decision_fu <- l_spec$decision_fu
   
   rle_he <- l_spec$rle_he
   rle_eh <- l_spec$rle_eh
   
-  while (t < followup) {
+  while (t < decision_fu) {
     
     days_in_state <- 0L
     
@@ -371,7 +388,7 @@ sim_policy_2 <- function(
         
         if (state == 2L) {
           total_days_in_E <- total_days_in_E + 
-            min(wait, followup - t)
+            min(wait, decision_fu - t)
         }
         
         break
@@ -382,19 +399,19 @@ sim_policy_2 <- function(
         
         if (state == 2L) {
           total_days_in_E <- total_days_in_E + 
-            min(bin_width, followup - t)
+            min(bin_width, decision_fu - t)
         }
         
         bin_pos <- bin_pos + 1L
         offset_in_bin <- 0L
       }
       
-      if ((t + days_in_state) >= followup) break
+      if ((t + days_in_state) >= decision_fu) break
     }
     
     t <- t + days_in_state
     
-    if (t >= followup) break
+    if (t >= decision_fu) break
     
     # state transition
     if (state == 1L) {
@@ -526,7 +543,7 @@ example_sim15_v02 <- function(){
   
   pt_list <- list()
   
-  id_cohort <- 1:600
+  id_cohort <- 1:1000
   i <- 1
   for(i in seq_along(id_cohort)){
     pt_list[[i]] <- cbind(id = id_cohort[i],  t0 = NA, get_sim15_pt(l_spec))
