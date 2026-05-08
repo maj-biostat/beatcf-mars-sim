@@ -550,31 +550,140 @@ calc_trt_effect <- function(
 
 
 
+cfg_update <- function(l_spec){
+  
+  # recovery bins (up to 25 days)
+  l_spec$eh_bins <- unlist(l_spec$eh_bins) 
+  l_spec$he_bins <- unlist(l_spec$he_bins) 
+  
+  l_spec$a_he <- unlist(l_spec$a_he) 
+  l_spec$a_eh <- unlist(l_spec$a_eh) 
+  
+  # trt alloc - balanced over number of trts
+  
+  # exacerbation -> healthy - linpred for exacerbation state impacting duration of recovery
+  l_spec$b_trt_eh <- unlist(l_spec$b_trt_eh)
+  l_spec$n_trt_eh <- length(l_spec$b_trt_eh)
+  
+  # healthy -> exacerbation - linpred for healthy state impacting period to relapse occurs
+  l_spec$b_trt_he <- unlist(l_spec$b_trt_he)
+  l_spec$n_trt_he <- length(l_spec$b_trt_he)
+  
+  names(l_spec$b_trt_eh) <- l_spec$trt_lab
+  names(l_spec$b_trt_he) <- l_spec$trt_lab
+  
+  l_spec$par_names_pre <- c("a_he", "b_he", "u_sd_he", "a_eh", "b_eh", "u_sd_eh")
+  l_spec$par_names <- c(
+    paste0("a_he_", seq_along(l_spec$a_he)),
+    paste0("b_he_", seq_along(c(l_spec$b_ppfev_he, l_spec$b_trt_he[-1]))),
+    "u_sd_he",
+    paste0("a_eh_", seq_along(l_spec$a_eh)),
+    paste0("b_eh_", seq_along(c(l_spec$b_ppfev_eh, l_spec$b_trt_eh[-1]))),
+    "u_sd_eh"
+  )
+  
+  # initially all trt arms are active
+  l_spec$trt_lab <- unlist(l_spec$trt_lab)
+  
+  
+  # *** Has to be converted to logical otherwise you are just going to be 
+  # indexing trt 1
+  l_spec$trt_active <- as.logical(l_spec$trt_active)
+  names(l_spec$trt_active) <- l_spec$trt_lab
+  
+  
+  # bin lookup - avoid findInterval
+  l_spec$d_lu_he_bin <- data.table(
+    day = l_spec$he_bins, ix_bin = seq_along(l_spec$he_bins))
+  d_grid <- data.table(day = 0:max(l_spec$he_bins))
+  l_spec$d_lu_he_bin <- l_spec$d_lu_he_bin[d_grid, on = "day", roll = T]
+  # essential to set key otherwise this will be painfully slow
+  setkey(l_spec$d_lu_he_bin, day)
+  
+  l_spec$v_lu_he_bin <- l_spec$d_lu_he_bin$ix_bin
+  l_spec$rle_he <- rle(l_spec$v_lu_he_bin)
+  l_spec$he_starts <- cumsum(c(1L, head(l_spec$rle_he$lengths, -1)))
+  
+  l_spec$d_lu_eh_bin <- data.table(
+    day = l_spec$eh_bins, ix_bin = seq_along(l_spec$eh_bins))
+  d_grid <- data.table(day = 0:max(l_spec$eh_bins))
+  l_spec$d_lu_eh_bin <- l_spec$d_lu_eh_bin[d_grid, on = "day", roll = T]
+  # essential to set key otherwise this will be painfully slow
+  setkey(l_spec$d_lu_eh_bin, day)
+  
+  l_spec$v_lu_eh_bin <- l_spec$d_lu_eh_bin$ix_bin
+  l_spec$rle_eh <- rle(l_spec$v_lu_eh_bin)
+  l_spec$eh_starts <- cumsum(c(1L, head(l_spec$rle_eh$lengths, -1)))
+  
+  if(l_spec$nex > 0){
+    l_spec$ex_trial_ix <- sort(sample(1:l_spec$nsim, size = l_spec$nex, replace = F))
+  }
+  l_spec
+}
+
 
 
 example_sim15_v02 <- function(){
   
+  source("R/libs.R")
+  source("R/init.R")
+  source("R/util.R")
+  source("R/data-sim15.R")
+  
+  f_cfgsc <- file.path("./etc/sim15/cfg-sim15-v01.yml")
+  l_spec <- config::get(file = f_cfgsc)
+  
+  l_spec <- cfg_update(l_spec)
   
   pt_list <- list()
   
-  id_cohort <- 1:1000
+  id_cohort <- 1:4000
   i <- 1
   for(i in seq_along(id_cohort)){
     pt_list[[i]] <- cbind(id = id_cohort[i],  t0 = NA, get_sim15_pt(l_spec))
     i <- i + 1
   }
-  
   d_cohort <- rbindlist(pt_list)
-  
   d_cohort[, .N, keyby = trt]
+
+  ###########
+  # Distribution of exacerbations
+  
+  d_cohort[state == "H", bin := l_spec$v_lu_he_bin[day_in_state + 1L]]
+  d_cohort[state == "E", bin := l_spec$v_lu_eh_bin[day_in_state + 1L]]
+  d_cohort[, rlgrp := rleid(id, state, trt, bin)]
+  d_w <- sim15_long_to_wide(d_cohort)
+  
+  # Identify distinct periods in each state within each patient
+  # Creates running episode index w/in pt
+  d_w[, period_id := cumsum(
+    # identify shift in state between this and the next rec
+    state != data.table::shift(
+      state, fill = data.table::first(state))) + 1L, 
+    keyby = .(id)
+  ]
+  
+  d_fig <- d_w[, .(
+    n_E = uniqueN(period_id[state == "E"])
+  ), keyby = .(id)
+  ]
+  
+  d_fig[, .N, keyby = .(n_E)]
+  
+  # https://github.com/tidyverse/ggplot2/issues/2051
+  ggplot(d_fig, aes(x = n_E)) +
+    geom_bar(aes(y = after_stat(prop), group = 1)) +
+    scale_x_continuous("Exacerbations", breaks = 0:10) +
+    scale_y_continuous("Proportion of Pts", 
+                       breaks = seq(0, 1, by = 0.1)) 
   
   
-  d_cohort[state == "H", bin := findInterval(d, l_spec$he_bins)]
-  d_cohort[state == "E", bin := findInterval(d, l_spec$eh_bins)]
-  # constant intervals (start stop) defined by
-  d_cohort[, grp := rleid(id, state, trt, bin)]
+  ############
   
-  View(d_cohort)
+  
+  
+  
+  
   
   # days_E <- d_cohort[state == "E", .N, keyby = .(id, bin)][, N]
   # hist(days_E)

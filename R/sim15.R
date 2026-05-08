@@ -387,74 +387,8 @@ run_sim15 <- function(){
     l_spec$mc_cores <- 3
   }
   
+  l_spec <- cfg_update(l_spec)
   
-  # recovery bins (up to 25 days)
-  l_spec$eh_bins <- unlist(l_spec$eh_bins) 
-  l_spec$he_bins <- unlist(l_spec$he_bins) 
-  
-  l_spec$a_he <- unlist(l_spec$a_he) 
-  l_spec$a_eh <- unlist(l_spec$a_eh) 
-  
-  # trt alloc - balanced over number of trts
-  
-  # exacerbation -> healthy - linpred for exacerbation state impacting duration of recovery
-  l_spec$b_trt_eh <- unlist(l_spec$b_trt_eh)
-  l_spec$n_trt_eh <- length(l_spec$b_trt_eh)
-  
-  # healthy -> exacerbation - linpred for healthy state impacting period to relapse occurs
-  l_spec$b_trt_he <- unlist(l_spec$b_trt_he)
-  l_spec$n_trt_he <- length(l_spec$b_trt_he)
-  
-  names(l_spec$b_trt_eh) <- l_spec$trt_lab
-  names(l_spec$b_trt_he) <- l_spec$trt_lab
-  
-  l_spec$par_names_pre <- c("a_he", "b_he", "u_sd_he", "a_eh", "b_eh", "u_sd_eh")
-  l_spec$par_names <- c(
-    paste0("a_he_", seq_along(l_spec$a_he)),
-    paste0("b_he_", seq_along(c(l_spec$b_ppfev_he, l_spec$b_trt_he[-1]))),
-    "u_sd_he",
-    paste0("a_eh_", seq_along(l_spec$a_eh)),
-    paste0("b_eh_", seq_along(c(l_spec$b_ppfev_eh, l_spec$b_trt_eh[-1]))),
-    "u_sd_eh"
-  )
-  
-  # initially all trt arms are active
-  l_spec$trt_lab <- unlist(l_spec$trt_lab)
-  
-  
-  # *** Has to be converted to logical otherwise you are just going to be 
-  # indexing trt 1
-  l_spec$trt_active <- as.logical(l_spec$trt_active)
-  names(l_spec$trt_active) <- l_spec$trt_lab
-  
-  
-  # bin lookup - avoid findInterval
-  l_spec$d_lu_he_bin <- data.table(
-    day = l_spec$he_bins, ix_bin = seq_along(l_spec$he_bins))
-  d_grid <- data.table(day = 0:max(l_spec$he_bins))
-  l_spec$d_lu_he_bin <- l_spec$d_lu_he_bin[d_grid, on = "day", roll = T]
-  # essential to set key otherwise this will be painfully slow
-  setkey(l_spec$d_lu_he_bin, day)
-  
-  l_spec$v_lu_he_bin <- l_spec$d_lu_he_bin$ix_bin
-  l_spec$rle_he <- rle(l_spec$v_lu_he_bin)
-  l_spec$he_starts <- cumsum(c(1L, head(l_spec$rle_he$lengths, -1)))
-  
-  l_spec$d_lu_eh_bin <- data.table(
-    day = l_spec$eh_bins, ix_bin = seq_along(l_spec$eh_bins))
-  d_grid <- data.table(day = 0:max(l_spec$eh_bins))
-  l_spec$d_lu_eh_bin <- l_spec$d_lu_eh_bin[d_grid, on = "day", roll = T]
-  # essential to set key otherwise this will be painfully slow
-  setkey(l_spec$d_lu_eh_bin, day)
-  
-  l_spec$v_lu_eh_bin <- l_spec$d_lu_eh_bin$ix_bin
-  l_spec$rle_eh <- rle(l_spec$v_lu_eh_bin)
-  l_spec$eh_starts <- cumsum(c(1L, head(l_spec$rle_eh$lengths, -1)))
-  
-  if(l_spec$nex > 0){
-    log_info("Creating ", l_spec$nex, " example trials with full posterior")
-    l_spec$ex_trial_ix <- sort(sample(1:l_spec$nsim, size = l_spec$nex, replace = F))
-  }
   return_posterior <- F
   str(l_spec)
   e = NULL

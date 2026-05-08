@@ -61,7 +61,7 @@ default:
   # healthy -> exacerbation
   #########################
   # linear predictor for healthy state impacting period to relapse occurs
-  a_he: [-6, -6, -4, -1]
+  a_he: [-6, -5.8, -5.5, -5.5]
   
   # remainder on log-odds scale
   # positive effects result in increasing the intensity of transition
