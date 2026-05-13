@@ -137,14 +137,197 @@ cannot be bothered to implement it in anything else at the moment).
 
 ## Example Trial
 
-Raw data 
+```{r}
+#| label: fig-ex-1
+#| fig-cap: 'Distribution of exacerbations'
+#| fig-height: 6
+#| fig-width: 6
+#| out-height: 6in
+#| out-width: 6in
+#| fig-dpi: 240
+#| fig-align: "center"
+#| fig-pos: H
 
-- number of enrolments by treatment allocation
-- number of exacerbation
-- duration of exacerbation
-- analysis prior and posterior
-- sojourn times
-- decision
+# Distribution of exacerbations in this sample.
+
+l_cfg <- copy(l[[1]]$l_spec)
+d_w <- copy(l[[1]]$d_w[sim == l_cfg$ex_trial_ix[1]])
+
+# number of unique elements in vec
+d_fig <- d_w[, .(
+  n_E = uniqueN(per_id[state == "E"])
+  ), keyby = .(sim, id)
+]
+
+# d_fig[, .N, keyby = .(desc, sim, n_E)]
+
+# https://github.com/tidyverse/ggplot2/issues/2051
+ggplot(d_fig, aes(x = n_E)) +
+  geom_bar(aes(y = after_stat(prop), group = 1)) +
+  scale_x_continuous("Exacerbations", breaks = 0:10) +
+  scale_y_continuous("Proportion of Pts", 
+                     breaks = seq(0, 1, by = 0.1))
+```
+
+
+
+```{r}
+#| label: fig-ex-2
+#| fig-cap: 'Prior and posterior for model parameters'
+#| fig-height: 6
+#| fig-width: 6
+#| out-height: 6in
+#| out-width: 6in
+#| fig-dpi: 240
+#| fig-align: "center"
+#| fig-pos: H
+
+l_cfg <- copy(l[[1]]$l_spec)
+
+
+d_pri_par <- copy(l[[1]]$d_pri_par[sim == l_cfg$ex_trial_ix[1]])
+d_post_par <- copy(l[[1]]$d_post_par[sim == l_cfg$ex_trial_ix[1]])
+
+d_pri_par[, desc := "prior"]
+d_post_par[, desc := "posterior"]
+
+d_par <- rbind(d_pri_par, d_post_par)
+
+d_fig <- melt(d_par, id.vars = c("desc", "sim", "ic"))
+d_fig[, desc := factor(desc, levels = c("posterior", "prior"))]
+
+p_1 <- ggplot(d_fig[variable %like% "a_"], 
+              aes(x = value, group = desc, colour = desc, lty = desc)) +
+  geom_density() +
+  scale_colour_discrete("") +
+  scale_linetype_discrete("") +
+  facet_wrap(~variable, scales = "free", ncol = 4)
+
+p_2 <- ggplot(d_fig[!(variable %like% "a_")], 
+              aes(x = value, group = desc, colour = desc, lty = desc)) +
+  geom_density() +
+  scale_colour_discrete("") +
+  scale_linetype_discrete("") +
+  facet_wrap(~variable, scales = "free", ncol = 4)
+
+p_1 / p_2 +
+  plot_layout(heights = c(1, 1), guides = "collect")
+
+```
+
+
+```{r}
+#| label: fig-ex-3
+#| fig-cap: 'Prior and posterior for sojourn times'
+#| fig-height: 6
+#| fig-width: 6
+#| out-height: 6in
+#| out-width: 6in
+#| fig-dpi: 240
+#| fig-align: "center"
+#| fig-pos: H
+
+l_cfg <- copy(l[[1]]$l_spec)
+
+d_pri_res <- copy(l[[1]]$d_pri_res[sim == l_cfg$ex_trial_ix[1]])
+d_post_res <- copy(l[[1]]$d_post_res[sim == l_cfg$ex_trial_ix[1]])
+
+d_pri_res[, desc := "prior"]
+d_post_res[, desc := "posterior"]
+
+d_par <- rbind(d_pri_res, d_post_res)
+
+d_fig <- melt(d_par, id.vars = c("desc", "sim", "ic"))
+d_fig[, desc := factor(desc, levels = c("posterior", "prior"))]
+
+p_1 <- ggplot(d_fig[variable %like% "mu_"], 
+              aes(x = value, group = desc, colour = desc, lty = desc)) +
+  geom_density() +
+  scale_colour_discrete("") +
+  scale_linetype_discrete("") +
+  facet_wrap(~variable, scales = "free", ncol = 3)
+
+p_2 <- ggplot(d_fig[!(variable %like% "mu_")], 
+              aes(x = value, group = desc, colour = desc, lty = desc)) +
+  geom_density() +
+  scale_colour_discrete("") +
+  scale_linetype_discrete("") +
+  facet_wrap(~variable, scales = "free", ncol = 2)
+
+p_1 / p_2 +
+  plot_layout(heights = c(1, 1), guides = "collect")
+```
+
+
+```{r, echo = F}
+
+l_cfg <- copy(l[[1]]$l_spec)
+d_trt <- copy(l[[1]]$d_trt_effects[sim == l_cfg$ex_trial_ix[1]])
+d_pr_dec <- copy(l[[1]]$d_pr_dec[sim == l_cfg$ex_trial_ix[1]])
+
+d_pr_dec <- dcast(d_pr_dec, sim + ic + trt ~ rule, value.var = c("p"))
+setnames(d_pr_dec, "fut", "pr_fut")
+setnames(d_pr_dec, "ni", "pr_ni")
+
+d_trt[, N := cumsum(l_cfg$N_pt)[ic]]
+d_trt[, desc := l_cfg$desc]
+
+d_trt[par %like% "_E", state := "Exacerbation"]
+d_trt[par %like% "_H", state := "Healthy"]
+d_trt[par %like% "_def_", trt := "def"]
+d_trt[par %like% "_dis_", trt := "dis"]
+d_trt[par %like% "_soc_", trt := "soc"]
+
+d_trt[par %like% "del_",  stat := "diff"]
+d_trt[par %like% "mu_",  stat := "mean"]
+
+d_trt[state == "Exacerbation", out := sprintf("%.1f (%.1f, %.1f)", mu, lwr, upr)]
+d_trt[state == "Healthy", out := sprintf("%.1f (%.1f, %.1f)", mu, lwr, upr)]
+
+
+d_trt <- base::merge(d_trt, d_pr_dec, by = c("sim", "ic", "trt"), all.x = T)
+
+```
+
+```{r, echo = F, eval = T}
+#| label: tbl-ex-01
+#| tbl-cap: 'Posterior mean and 95% CrI sojourn times'
+#| column: page
+#| out-width: 100%
+#| tbl-cap-location: bottom
+#| tbl-pos: H
+
+d_tbl <- dcast(d_trt[stat == "mean"], desc + state + trt ~ N, value.var = "out")
+
+kableExtra::kbl(
+  d_tbl, 
+  escape = TRUE, booktabs = TRUE, align = c("lllccc"),
+  linesep = c("", "", "\\addlinespace"),
+  col.names=c("Scenario", "State", "Treatment", cumsum(l_cfg$N_pt)), 
+  digits = 2)  |>
+  kableExtra::kable_styling(font_size = 9) 
+```
+
+
+```{r, echo = F, eval = T}
+#| label: tbl-ex-02
+#| tbl-cap: 'Posterior difference in sojourn times'
+#| column: page
+#| out-width: 100%
+#| tbl-cap-location: bottom
+#| tbl-pos: H
+
+d_tbl <- d_trt[stat == "diff"]
+d_tbl <- d_tbl[order(trt, N)]
+
+kableExtra::kbl(
+  d_tbl[state == "Exacerbation", .(desc, N, trt, out, pr_fut, pr_ni)], 
+  escape = TRUE, booktabs = TRUE, align = c("lllccc"),
+  linesep = c("", "", "\\addlinespace"),
+  col.names=c("Scenario", "N", "Treatment", "Differnce", "Pr(fut)", "Pr(NI)"), 
+  digits = 2)  |>
+  kableExtra::kable_styling(font_size = 9) 
+```
 
 
 ## Trial Population

@@ -29,8 +29,19 @@ data {
   int trt_defer_col;
   int trt_discont_col;
   
-  real pri_sd_he;
-  real pri_sd_eh;
+  // priors
+  real pri_a_he_mu;
+  real pri_a_he_s;
+  
+  real pri_a_eh_mu;
+  real pri_a_eh_s;
+  
+  real pri_b_s;
+  
+  real pri_u_he_r;
+  real pri_u_eh_r;
+  
+  int prior_only;
 }
 
 parameters {
@@ -50,17 +61,17 @@ parameters {
 
 model {
   
-  target += normal_lpdf(a_he | 0, 2);
-  target += normal_lpdf(a_eh | 0, 2);
+  target += normal_lpdf(a_he | pri_a_he_mu, pri_a_he_s);
+  target += normal_lpdf(a_eh | pri_a_eh_mu, pri_a_eh_s);
   
-  target += normal_lpdf(b_he | 0, 1);
-  target += normal_lpdf(b_eh | 0, 1);
+  target += normal_lpdf(b_he | 0, pri_b_s);
+  target += normal_lpdf(b_eh | 0, pri_b_s);
   
   target += normal_lpdf(z_he | 0, 1);
   target += normal_lpdf(z_eh | 0, 1);
   
-  target += exponential_lpdf(u_sd_he | pri_sd_he);
-  target += exponential_lpdf(u_sd_eh | pri_sd_he);
+  target += exponential_lpdf(u_sd_he | pri_u_he_r);
+  target += exponential_lpdf(u_sd_eh | pri_u_eh_r);
   
   for (i in 1:N) {
     real eta;
@@ -80,20 +91,21 @@ model {
     
     real p = inv_logit(eta);
     
-    if(y[i] == 1){
-      // here we have several daily interval contributions where no transition 
-      // occurred, followed by a transition in the final interval, e.g.
-      // (0, 1], (1, 2], (2, 3] no transition
-      // (3, 4] transition (assumed to occur at end of interval)
-      // So we get (1-p)^{L-1} \times p
-      // Alternatively, this can be implemented via a poisson lik with exposure.
-      // evt ~ Pois(\lambda * exposure) where \lambda is the lp
-      target += (len_seg[i] - 1) * log1m(p) + log(p);
-    } else {
-      // here we just have several daily intervals with no transition
-      target += len_seg[i] * log1m(p);
+    if(!prior_only){
+      if(y[i] == 1){
+        // here we have several daily interval contributions where no transition 
+        // occurred, followed by a transition in the final interval, e.g.
+        // (0, 1], (1, 2], (2, 3] no transition
+        // (3, 4] transition (assumed to occur at end of interval)
+        // So we get (1-p)^{L-1} \times p
+        // Alternatively, this can be implemented via a poisson lik with exposure.
+        // evt ~ Pois(\lambda * exposure) where \lambda is the lp
+        target += (len_seg[i] - 1) * log1m(p) + log(p);
+      } else {
+        // here we just have several daily intervals with no transition
+        target += len_seg[i] * log1m(p);
+      }
     }
-    
     
   }
 }

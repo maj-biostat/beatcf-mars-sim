@@ -205,8 +205,19 @@ get_sim15_stan_data <- function(dd, l_spec){
     trt_defer_col = 2,
     trt_discont_col = 3,
     
-    pri_sd_he = 7,
-    pri_sd_eh = 7
+    # zero centred effects with sd
+    pri_a_he_mu = l_spec$pri_a_he_mu,
+    pri_a_he_s = l_spec$pri_a_he_s,
+    
+    pri_a_eh_mu = l_spec$pri_a_eh_mu,
+    pri_a_eh_s = l_spec$pri_a_eh_s,
+    
+    pri_b_s = l_spec$pri_b_s,
+    
+    pri_u_he_r = l_spec$pri_u_he_r,
+    pri_u_eh_r = l_spec$pri_u_eh_r,
+    
+    prior_only = 0
   )
   
   stopifnot(all(ld$bin <= max(c(ld$N_he_bin, ld$N_eh_bin))))
@@ -381,13 +392,28 @@ sim_policy_2 <- function(
       }
       
       # convert to probability
-      p <- 1 / (1 + exp(-lp))
+      p <- plogis(lp)
+      
+      # if(is.na(p)){
+      #   message("p is na, bin is ", bin_ix)
+      # }
+      # if(p < 0 | p > 1){
+      #   message("p out of bounds, p is ", p, " bin is ", bin_ix)
+      # }
       
       # constant hazard within piecewise bins
       # draw geometric (number of days until event)
       # rgeom gives failures before success => +1
       wait <- rgeom(1, p) + 1L
-
+      
+      # if(is.na(wait)){
+      #   message("wait is na, bin is ", bin_ix)
+      # }
+      # 
+      # if(wait < 0){
+      #   message("wait out of bounds, wait is ", wait, " bin is ", bin_ix)
+      # }
+      
       if (wait <= bin_width) {
         # event happens in this bin
         days_in_state <- days_in_state + wait
@@ -621,8 +647,11 @@ cfg_update <- function(l_spec){
   l_spec$eh_starts <- cumsum(c(1L, head(l_spec$rle_eh$lengths, -1)))
   
   if(l_spec$nex > 0){
+    l_spec$nex <- pmin(l_spec$nex, l_spec$nsim)
     l_spec$ex_trial_ix <- sort(sample(1:l_spec$nsim, size = l_spec$nex, replace = F))
+    l_spec$ex_trial_ix[1] <- 1
   }
+  
   l_spec
 }
 
@@ -800,10 +829,3 @@ example_sim15_v02 <- function(){
 }
 
 
-# test_nbinom <- function(x_max = 20, mu = 8){
-#   x <- 0:x_max
-#   y <- pnbinom(x, 1, mu = mu)
-#   plot(x, y, ylim = c(0, 1), type = "l")
-#   abline(h = 1)
-# }
-# test_nbinom(x_max = 365, mu = 50)

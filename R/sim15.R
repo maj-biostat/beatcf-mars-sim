@@ -109,6 +109,11 @@ run_trial <- function(
   # store all simulated trial pt data
   d_all <- data.table()
   
+  d_pri_par <- data.table()
+  d_pri_res <- data.table()
+  d_post_par <- data.table()
+  d_post_res <- data.table()
+  
   ## LOOP -------
   while(!stop_enrol){
     
@@ -217,6 +222,55 @@ run_trial <- function(
       # unique ppfev0 from sample
       ppfev_0 = unique(d_all$ppfev_0), l_spec)
     
+    
+    if(return_posterior){
+      
+      # compute priors
+      l_mod$prior_only <- 1
+      f_1_pri <- m1$sample(
+        l_mod, 
+        iter_warmup = l_spec$mcmc_warmup, iter_sampling = l_spec$mcmc_iter,
+        parallel_chains = l_spec$mcmc_chain, chains = l_spec$mcmc_chain, 
+        refresh = 0, show_exceptions = T,
+        max_treedepth = 11
+      )
+      d_pri <- data.table(
+        f_1_pri$draws(
+          format = "matrix",
+          variables = l_spec$par_names_pre
+        )
+      )
+      names(d_pri) <- l_spec$par_names
+      
+      d_pri_par <- rbind(
+        d_pri_par,
+        cbind(ic = l_spec$ic, d_pri)
+      )
+      
+      # induced priors on sojourn time
+      d_res_tmp <- calc_trt_effect(
+        d_pri, B_max = l_spec$mcmc_B, N_pt = l_mod$N_id, 
+        # unique ppfev0 from sample
+        ppfev_0 = unique(d_all$ppfev_0), l_spec)
+      
+      d_pri_res <- rbind(
+        d_pri_res,
+        cbind(ic = l_spec$ic, d_res_tmp)
+      )
+      
+      # posterior
+      d_post_par <- rbind(
+        d_post_par,
+        cbind(ic = l_spec$ic, d_post)
+      )
+      # may have different number of draws so keep separate
+      d_post_res <- rbind(
+        d_post_res,
+        cbind(ic = l_spec$ic, d_res)
+      )
+    }
+    
+    
     # mean(d_res$delta_def < 4)
     # d_fig <- melt(d_res, measure.vars = names(d_res))
     # d_fig[variable %like% "mu.*_H", `:=`(quantity = "mean", state = "H")]
@@ -279,7 +333,6 @@ run_trial <- function(
         p = i.p, dec = i.dec
       )
     ]
-    
     
     # futility
     d_res_def <- data.table(
@@ -370,6 +423,10 @@ run_trial <- function(
     # d_post_smry_3 = d_post_smry_3,
     d_trt_effects = d_trt_effects, 
     d_pr_dec = d_pr_dec,
+    d_pri_par = d_pri_par,
+    d_pri_res = d_pri_res,
+    d_post_par = d_post_par,
+    d_post_res = d_post_res,
     stop_at = stop_at,
     l_spec = l_spec
   )
@@ -459,16 +516,32 @@ run_sim15 <- function(){
     r[[i]]$d_pr_dec
   } ), idcol = "sim")
   
+  d_pri_par <- rbindlist(lapply(1:length(r), function(i){ 
+    r[[i]]$d_pri_par
+  } ), idcol = "sim")
+  
+  d_pri_res <- rbindlist(lapply(1:length(r), function(i){ 
+    r[[i]]$d_pri_res
+  } ), idcol = "sim")
+  
+  d_post_par <- rbindlist(lapply(1:length(r), function(i){ 
+    r[[i]]$d_post_par
+  } ), idcol = "sim")
+  
+  d_post_res <- rbindlist(lapply(1:length(r), function(i){ 
+    r[[i]]$d_post_res
+  } ), idcol = "sim")
   
   l <- list(
     l_spec = l_spec,
     d_w = d_w,
     d_post_smry_1 = d_post_smry_1,
     d_trt_effects = d_trt_effects,
-    d_pr_dec = d_pr_dec
-    # d_post_smry_2 = d_post_smry_2,
-    # d_post_smry_3 = d_post_smry_3,
-    # d_analys_sets = d_analys_sets
+    d_pr_dec = d_pr_dec,
+    d_pri_par = d_pri_par,
+    d_pri_res = d_pri_res,
+    d_post_par = d_post_par,
+    d_post_res = d_post_res
   )
   
   toks <- unlist(tstrsplit(args[2], "[-.]"))

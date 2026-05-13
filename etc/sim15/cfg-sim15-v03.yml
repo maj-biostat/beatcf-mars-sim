@@ -34,9 +34,22 @@ default:
 
   ppfev_ref: 77.5
   
+  # priors
+  # zero centred effects with sd
+  pri_a_he_mu: -3
+  pri_a_he_s: 3
+  
+  pri_a_eh_mu: 0
+  pri_a_eh_s: 3
+  
+  pri_b_s: 1
+  # rates for random effects
+  pri_u_he_r: 5
+  pri_u_eh_r: 5
+  
   # repeat measure random effects - just using indep random intercept 
-  u_sd_eh: 0.2
-  u_sd_he: 0.2
+  u_sd_eh: 0.1
+  u_sd_he: 0.1
   
   # recovery bins
   eh_bins: [0, 5, 10, 15, 365]
