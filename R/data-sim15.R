@@ -205,8 +205,8 @@ get_sim15_stan_data <- function(dd, l_spec){
     trt_defer_col = 2,
     trt_discont_col = 3,
     
-    pri_sd_he = 4,
-    pri_sd_eh = 4
+    pri_sd_he = 7,
+    pri_sd_eh = 7
   )
   
   stopifnot(all(ld$bin <= max(c(ld$N_he_bin, ld$N_eh_bin))))
@@ -661,7 +661,7 @@ example_sim15_v02 <- function(){
   
   # Identify distinct periods in each state within each patient
   # Creates running episode index w/in pt
-  d_w[, period_id := cumsum(
+  d_w[, per_id := cumsum(
     # identify shift in state between this and the next rec
     state != data.table::shift(
       state, fill = data.table::first(state))) + 1L, 
@@ -669,7 +669,7 @@ example_sim15_v02 <- function(){
   ]
   
   d_fig <- d_w[, .(
-    n_E = uniqueN(period_id[state == "E"])
+    n_E = uniqueN(per_id[state == "E"])
   ), keyby = .(id)
   ]
   
@@ -684,7 +684,7 @@ example_sim15_v02 <- function(){
                        breaks = seq(0, 1, by = 0.1)) 
   
   
-  d_fig <- d_w[state == "H" & period_id == 1]
+  d_fig <- d_w[state == "H" & per_id == 1]
   d_fig <- d_fig[, .(dur_H_1 = sum(len_seg)), keyby = id]
   
   # Duration of first healthy period
@@ -693,6 +693,17 @@ example_sim15_v02 <- function(){
   ggplot(d_fig, aes(x = dur_H_1)) +
     geom_histogram(bins = 30) +
     scale_x_continuous("Duration of first H episode") 
+  
+  
+  
+  d_fig <- d_w[
+    state == "E", .(dur_eh = sum(len_seg)), keyby = .(id, per_id)]
+  
+  summary(d_fig$dur_eh)
+  
+  ggplot(d_fig, aes(x = dur_eh)) +
+    geom_histogram(bins = 20) +
+    scale_x_continuous("Duration (days)") 
   
   ############
   

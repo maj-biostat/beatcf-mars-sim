@@ -59,8 +59,8 @@ model {
   target += normal_lpdf(z_he | 0, 1);
   target += normal_lpdf(z_eh | 0, 1);
   
-  target += exponential_lpdf(u_sd_he | 1/pri_sd_he);
-  target += exponential_lpdf(u_sd_eh | 1/pri_sd_he);
+  target += exponential_lpdf(u_sd_he | pri_sd_he);
+  target += exponential_lpdf(u_sd_eh | pri_sd_he);
   
   for (i in 1:N) {
     real eta;

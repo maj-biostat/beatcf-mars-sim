@@ -80,7 +80,7 @@ default:
   
   # will not tolerate expected total time in exacerbation to be more than 
   # dec_eh_delta_ni days longer over the follow up
-  dec_eh_delta_ni: 4
+  dec_eh_delta_ni: 2
   
   # could equivalently say that we will not tolerate the same amount of days
   # less of health.
