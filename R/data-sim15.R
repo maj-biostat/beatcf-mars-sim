@@ -670,6 +670,7 @@ example_sim15_v02 <- function(){
   
   d_fig[, .N, keyby = .(n_E)]
   
+  # Number of exacerbations
   # https://github.com/tidyverse/ggplot2/issues/2051
   ggplot(d_fig, aes(x = n_E)) +
     geom_bar(aes(y = after_stat(prop), group = 1)) +
@@ -677,6 +678,16 @@ example_sim15_v02 <- function(){
     scale_y_continuous("Proportion of Pts", 
                        breaks = seq(0, 1, by = 0.1)) 
   
+  
+  d_fig <- d_w[state == "H" & period_id == 1]
+  d_fig <- d_fig[, .(dur_H_1 = sum(len_seg)), keyby = id]
+  
+  # Duration of first healthy period
+  mean(d_fig$dur_H_1 == 365) # 20% are healthy throughout
+  summary(d_fig$dur_H_1)  
+  ggplot(d_fig, aes(x = dur_H_1)) +
+    geom_histogram(bins = 30) +
+    scale_x_continuous("Duration of first H episode") 
   
   ############
   
