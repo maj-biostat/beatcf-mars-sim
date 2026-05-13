@@ -14,7 +14,7 @@ args = commandArgs(trailingOnly=TRUE)
 if (length(args)<1) {
   log_info("Setting default run method (does nothing)")
   args[1] = "run_none_sim15"
-  args[2] = "./sim15/cfg-sim15-v02.yml"
+  args[2] = "./sim15/cfg-sim15-v01.yml"
 } else {
   log_info("Run method ", args[1])
   log_info("Scenario config ", args[2])

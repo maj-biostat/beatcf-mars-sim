@@ -208,6 +208,8 @@ get_sim15_stan_data <- function(dd, l_spec){
     pri_sd_he = 4,
     pri_sd_eh = 4
   )
+  
+  stopifnot(all(ld$bin <= max(c(ld$N_he_bin, ld$N_eh_bin))))
   # str(ld)
   
   ld
@@ -600,7 +602,10 @@ cfg_update <- function(l_spec){
   # essential to set key otherwise this will be painfully slow
   setkey(l_spec$d_lu_he_bin, day)
   
+  # optimisation 
+  # vector based lookup
   l_spec$v_lu_he_bin <- l_spec$d_lu_he_bin$ix_bin
+  # could just get to this as the bin boundary + 1...
   l_spec$rle_he <- rle(l_spec$v_lu_he_bin)
   l_spec$he_starts <- cumsum(c(1L, head(l_spec$rle_he$lengths, -1)))
   
