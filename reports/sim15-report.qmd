@@ -63,7 +63,7 @@ source(paste0(prefix_r, "/data-sim15.R"))
 # Load all the files into a single list.
 
 # files of interest
-sim_lab <- "sim15-01"
+sim_lab <- "sim15-02"
 
 flist <- list.files(paste0(prefix_data, "/", sim_lab), pattern = "sim15")
 toks <- list()
@@ -491,11 +491,7 @@ The soc arm remains the reference arm throughout (avoids downward drift of treat
 
 ## Trial Population
 
-What is the distribution of exacerbations over the 12 month period in the trial data?
-
-What is the distribution of exacerbation duration?
-
-```{r, eval = F}
+```{r, eval = T}
 #| label: exac-comp
 #| code-summary: Frequency of exacerbation
 #| echo: FALSE
@@ -524,14 +520,25 @@ for(i in 1:length(l)){
 }
 
 d_w[, desc := factor(desc, levels = g_scen_names)]
+d_w[, len_seg := tstop - tstart]
+
+
+# Pick out trial data from one simulation for each scenario
+ix_smpl <- 1:5 # sort(sample(1:max(d_w$sim), 5))
+
+d_w_smpl <- d_w[sim %in% ix_smpl, ]
+
 
 ```
 
+@fig-dist-n-eh shows the distribution of number of exacerbations for a random selection of simulations and @fig-dist-dur-eh shows the distribution of exacerbation days over all exacerbations that occurred.
 
+@fig-dist-dur_he shows the distribution of health days for the first healthy period (all participants are assumed to enter in a healthy state and may progress to one or more exacerbations).
+@fig-dist-n-trt shows the distribution of treatment allocations over the entire follow up period.
 
 ```{r}
 #| label: fig-dist-n-exac
-#| fig-cap: 'Distribution of occurrence of exacerbation in sample for random selection of simulations within scenarios'
+#| fig-cap: 'Number of exacerbations in trial population for random subset of simulations'
 #| fig-height: 4
 #| fig-width: 5
 #| out-height: 4in
@@ -540,34 +547,93 @@ d_w[, desc := factor(desc, levels = g_scen_names)]
 #| fig-align: "center"
 #| fig-pos: H
 
-# Pick out trial data from one simulation for each scenario
-ix_smpl <- sort(sample(1:max(d_w$sim), 5))
-
-d_smry <- d_w[sim %in% ix_smpl, ]
-
-# Identify distinct periods in each state within each patient
-# Creates running episode index w/in pt
-d_smry[, period_id := cumsum(
-  # identify shift in state between this and the next rec
-  state != data.table::shift(
-    state, fill = data.table::first(state))) + 1L, 
-  keyby = .(desc, sim, id)
-]
-
-d_fig <- d_smry[, .(
-  n_E = uniqueN(period_id[state == "E"])
+d_fig <- d_w_smpl[, .(
+  n_E = uniqueN(per_id[state == "E"])
   ), keyby = .(desc, sim, id)
 ]
 
+# d_fig[, .N, keyby = .(desc, sim, n_E)]
+
+# https://github.com/tidyverse/ggplot2/issues/2051
 ggplot(d_fig, aes(x = n_E)) +
-  geom_bar() +
-  scale_x_continuous("Exacerbations") +
-  scale_y_continuous("Number of Pts") +
+  geom_bar(aes(y = after_stat(prop), group = 1)) +
+  scale_x_continuous("Exacerbations", breaks = 0:10) +
+  scale_y_continuous("Proportion of Pts", 
+                     breaks = seq(0, 1, by = 0.1)) +
   facet_wrap(desc ~ sim, ncol = length(ix_smpl))
 
 ```
 
 
+```{r}
+#| label: fig-dist-dur-eh
+#| fig-cap: 'Duration of exacerbations in trial population for random subset of simulations'
+#| fig-height: 4
+#| fig-width: 5
+#| out-height: 4in
+#| out-width: 5in
+#| fig-dpi: 240
+#| fig-align: "center"
+#| fig-pos: H
+
+d_fig <- d_w_smpl[
+  state == "E", .(dur_eh = sum(len_seg)), keyby = .(desc, sim, id, per_id)]
+
+ggplot(d_fig, aes(x = dur_eh)) +
+  geom_histogram(bins = 20) +
+  scale_x_continuous("Duration") +
+  facet_wrap(desc ~ sim, ncol = length(ix_smpl))
+
+```
+
+
+```{r}
+#| label: fig-dist-dur_he
+#| fig-cap: 'Duration of first healthy period in trial population for random subset of simulations'
+#| fig-height: 4
+#| fig-width: 5
+#| out-height: 4in
+#| out-width: 5in
+#| fig-dpi: 240
+#| fig-align: "center"
+#| fig-pos: H
+
+d_fig <- d_w_smpl[
+  state == "H" & per_id == 1, .(dur_he_1 = sum(len_seg)), keyby = .(desc, sim, id)]
+
+ggplot(d_fig, aes(x = dur_he_1)) +
+  geom_histogram(bins = 20) +
+  scale_x_continuous("Duration") +
+  facet_wrap(desc ~ sim, ncol = length(ix_smpl))
+
+```
+
+
+```{r}
+#| label: fig-dist-n-trt
+#| fig-cap: 'Distribution of treatment allocation'
+#| fig-height: 4
+#| fig-width: 5
+#| out-height: 4in
+#| out-width: 5in
+#| fig-dpi: 240
+#| fig-align: "center"
+#| fig-pos: H
+
+d_fig <- d_w_smpl[
+  state == "E", .N, keyby = .(desc, sim, id, per_id, trt)]
+d_fig[, `:=`(N = NULL)]
+d_fig <- d_fig[, .N, keyby = .(desc, sim, trt)]
+
+# d_fig[, sum(N), by = sim]
+
+ggplot(d_fig, aes(x = trt, y = N)) +
+  geom_bar(stat = "identity") +
+  scale_x_discrete("") +
+  scale_y_continuous("N") +
+  facet_wrap(desc ~ sim, ncol = length(ix_smpl))
+
+```
 
 ## Parameters 
 
