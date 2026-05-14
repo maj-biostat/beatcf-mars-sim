@@ -199,7 +199,7 @@ get_sim15_stan_data <- function(dd, l_spec){
   stopifnot(all(ld$bin <= max(c(ld$N_he_bin, ld$N_eh_bin))))
   # str(ld)
   
-  ld = ld
+  ld
 }
 
 #' Convert the day wise data into segments 

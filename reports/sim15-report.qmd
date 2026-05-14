@@ -151,6 +151,57 @@ What data we need
 
 Reference the config
 
+# Scenarios
+
+@tbl-scen-01 provides a summary of the key parameters used to configure the scenarios.
+
+```{r, echo = F, eval = T}
+#| label: tbl-scen-01
+#| tbl-cap: 'Scenarios - key simulation parameters'
+#| column: page
+#| out-width: 100%
+#| tbl-cap-location: bottom
+#| tbl-pos: H
+
+i <- 1
+d_scen <- data.table()
+g_scen_names <- c()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  l_cfg <- copy(l[[i]]$l_spec)
+  
+  d_tmp <- data.table(
+    desc = l_cfg$desc,
+    b_trt_eh = sprintf("%.2f, %.2f", l_cfg$b_trt_eh[2], l_cfg$b_trt_eh[3]),
+    b_trt_he = sprintf("%.2f, %.2f", l_cfg$b_trt_he[2], l_cfg$b_trt_he[3]),
+    
+    ni_margin = l_cfg$dec_eh_delta_ni,
+    dec_thresh_ni = l_cfg$dec_thresh_ni,
+    dec_thresh_fut = l_cfg$dec_thresh_fut,
+    decision_fu = l_cfg$decision_fu
+    )
+  
+  d_scen <- rbind(d_scen, d_tmp)
+}
+
+
+
+kableExtra::kbl(
+  d_scen, 
+  escape = TRUE, booktabs = TRUE, align = c("lcccccc"),
+  linesep = "",
+  col.names=c("Scenario", "Treatment effects (E)", "Treatment effects (H)", 
+              "NI Margin", "NI Threshold", "Fut Threshold", "Dec FU Days"), 
+  digits = 2)  |>
+  kableExtra::kable_styling(font_size = 9)  |>
+  kableExtra::column_spec(1, width = "3.5cm")|>
+  kableExtra::column_spec(2:3, width = "2cm")|>
+  kableExtra::column_spec(4:7, width = "1.5cm")
+```
+
+
 # Results
 
 ## Example Trial
@@ -775,8 +826,8 @@ for(i in 1:length(l)){
 
 d_soj[par %like% "_E", state := "Exacerbation"]
 d_soj[par %like% "_H", state := "Healthy"]
-d_soj[state == "Exacerbation", stat := sprintf("%.2f (%.2f, %.2f)", mu, lo, hi)]
-d_soj[state == "Healthy", stat := sprintf("%.2f (%.2f, %.2f)", mu, lo, hi)]
+d_soj[state == "Exacerbation", stat := sprintf("%.1f (%.1f, %.1f)", mu, lo, hi)]
+d_soj[state == "Healthy", stat := sprintf("%.1f (%.1f, %.1f)", mu, lo, hi)]
 
 d_soj[par %like% "_def_", trt := "def"]
 d_soj[par %like% "_dis_", trt := "dis"]
