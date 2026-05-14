@@ -412,6 +412,7 @@ run_trial <- function(
     keyby = .(id)
   ]
   d_w[, rlgrp := rleid(id, state, trt)]
+  d_w[, t0 := loc_t0[id]]
   
   # lobstr::obj_size(d_w)
   # lobstr::obj_size(d_all)
