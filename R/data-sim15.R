@@ -160,13 +160,6 @@ get_sim15_stan_data <- function(dd, l_spec){
   
   dd_w <- sim15_long_to_wide(dd)
   
-  # d_tmp <- copy(dd_w)
-  # d_tmp[, dur := tstop - tstart]
-  # d_tmp[, rlgrp := rleid(state), keyby = id]
-  # d_smry <- d_tmp[, .(mu_dur = mean(dur)), keyby = .(id, rlgrp, state, trt)]
-  # d_smry[, .(E_mu_dur = mean(mu_dur)), keyby = .(state, trt)]
-  # d_smry[, .(.N), keyby = .(id, state, trt)][, .(mu_N = mean(N)), keyby = .(state, trt)]
-  
   X <- model.matrix(~-1 + ppfev_0 + defer + discont, data = dd_w)
   
   ld <- list(
@@ -206,7 +199,7 @@ get_sim15_stan_data <- function(dd, l_spec){
   stopifnot(all(ld$bin <= max(c(ld$N_he_bin, ld$N_eh_bin))))
   # str(ld)
   
-  ld
+  ld = ld
 }
 
 #' Convert the day wise data into segments 

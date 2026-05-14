@@ -106,6 +106,9 @@ run_trial <- function(
     dec = NA_integer_
   )
   
+  # enrolment 
+  d_enrol <- data.table()
+  
   # store all simulated trial pt data
   d_all <- data.table()
   
@@ -156,6 +159,12 @@ run_trial <- function(
       t_now <- d_all[, max(t0 + l_spec$followup)]
       l_mod <- get_sim15_stan_data(d_all, l_spec)
       
+      d_enrol <- rbind(
+        d_enrol,
+        d_all[, .SD[.N], keyby = id][
+          , .(ic = l_spec$ic, t_now, id, day_of_fu)]
+      )
+      
     } else {
       # t0 is the entry time (note that this is repeated for each id if they 
       # have more than one event over the 12 months)
@@ -165,8 +174,17 @@ run_trial <- function(
       # all data
       incl_ids <- d_all[t0 + day_of_fu < t_now, unique(id)]
       l_mod <- get_sim15_stan_data(dd = copy(d_all[id %in% incl_ids]), l_spec)
+    
+      d_enrol <- rbind(
+        d_enrol,
+        d_all[t0 + day_of_fu < t_now, .SD[.N], keyby = id][
+          , .(ic = l_spec$ic, t_now, id, day_of_fu)]
+      )
+      
       
     }
+    
+    
     
     # d_tmp <- copy(d_all[id %in% incl_ids])
     # d_tmp[state == "H", bin := l_spec$v_lu_he_bin[day_in_state + 1L] ]
@@ -269,7 +287,6 @@ run_trial <- function(
         cbind(ic = l_spec$ic, d_res)
       )
     }
-    
     
     # mean(d_res$delta_def < 4)
     # d_fig <- melt(d_res, measure.vars = names(d_res))
@@ -374,10 +391,18 @@ run_trial <- function(
       
       if(d_stop[trt == "def", resolved]) {
         l_spec$trt_active["def"] <- FALSE
+        
+        log_info("Trial ", ix, 
+                 " def stopped no further enrolment into this arm, analy id ", 
+                 l_spec$ic)
       }
       
       if(d_stop[trt == "dis", resolved]) {
         l_spec$trt_active["dis"] <- FALSE
+        
+        log_info("Trial ", ix, 
+                 " dis stopped no further enrolment into this arm, analy id ", 
+                 l_spec$ic)
       }
     }
     
@@ -428,6 +453,7 @@ run_trial <- function(
     d_pri_res = d_pri_res,
     d_post_par = d_post_par,
     d_post_res = d_post_res,
+    d_enrol = d_enrol,
     stop_at = stop_at,
     l_spec = l_spec
   )
@@ -533,6 +559,10 @@ run_sim15 <- function(){
     r[[i]]$d_post_res
   } ), idcol = "sim")
   
+  d_enrol <- rbindlist(lapply(1:length(r), function(i){ 
+    r[[i]]$d_enrol
+  } ), idcol = "sim")
+  
   l <- list(
     l_spec = l_spec,
     d_w = d_w,
@@ -542,7 +572,8 @@ run_sim15 <- function(){
     d_pri_par = d_pri_par,
     d_pri_res = d_pri_res,
     d_post_par = d_post_par,
-    d_post_res = d_post_res
+    d_post_res = d_post_res,
+    d_enrol = d_enrol
   )
   
   toks <- unlist(tstrsplit(args[2], "[-.]"))
