@@ -231,16 +231,22 @@ ggplot(d_fig, aes(x = n_E)) +
 l_cfg <- copy(l[[1]]$l_spec)
 d_w <- copy(l[[1]]$d_w[sim == l_cfg$ex_trial_ix[1]])
 
-d_fig <- d_w[, .SD[1], keyby = .(id, per_id)]
+d_fig <- d_w[state == "E", .SD[1], keyby = .(id, per_id)]
+# d_fig[, .N, by = trt]
 d_fig[, ttrt := round(t0 + tstart)]
 d_fig <- d_fig[, .N, keyby = .(ttrt, trt)]
 d_fig[, cN := cumsum(N), keyby = trt]
 d_fig <- base::merge(
-  d_fig, CJ(ttrt = 0:max(d_fig$ttrt), trt = c("none", l_spec_1$trt_lab)),
+  d_fig, CJ(ttrt = 0:max(d_fig$ttrt), trt = l_spec_1$trt_lab),
   by = c("ttrt", "trt"), all.y = T)
 d_fig[, cN := nafill(cN, type = "locf"), keyby = trt]
 d_fig[is.na(cN), cN := 0]
-d_fig[, trt := factor(trt, levels = c(l_spec_1$trt_lab, "none") )]
+d_fig[, trt := factor(trt, levels = l_spec_1$trt_lab)]
+
+# ix_id_smpl <- sample(unique(d_w$id), size = 10)
+# ggplot(d_fig[id %in% ix_id_smpl], 
+#        aes(x = ttrt, y = trt, group = id)) +
+#   geom_line()
 
 ggplot(d_fig, aes(x = ttrt, y = cN, group = trt, col = trt)) +
   geom_step() +
@@ -595,15 +601,11 @@ ggplot(d_fig, aes(x = N, y = freq)) +
 
 ## Parameters 
 
-Expectation and uncertainty of posterior means for model parameter estimates.
+@tbl-par-comp summarises the model parameter estimates, by scenario and analysis, averged over the simulations.
 
 ```{r, eval = T}
 #| label: tbl-par-comp
 #| tbl-cap: 'Posterior parameter summary'
-#| column: page
-#| out-width: 100%
-#| tbl-cap-location: bottom
-#| tbl-pos: H
 
 i <- 1
 d_par <- data.table()
@@ -644,16 +646,21 @@ d_tbl <- d_tbl[order(desc, par)]
 
 kableExtra::kbl(
   d_tbl, 
-  escape = TRUE, booktabs = TRUE, align = c("llccc"),
-  linesep = "",
-  col.names=c("Scenario", "Parameter", cumsum(l_cfg$N_pt)), 
-  digits = 1)  |>
-  kableExtra::kable_styling(font_size = 8) |>
+  booktabs = TRUE, align = c("llccc"), longtable = TRUE,
+  col.names=c("Scenario", "Parameter", cumsum(l_cfg$N_pt)), digits = 1)  |>
+  kableExtra::kable_styling(
+    font_size = 8,
+    latex_options = c("scale_down", "repeat_header")) |>
   kableExtra::column_spec(1, width = "3.5cm")|>
   kableExtra::column_spec(2, width = "2cm")|>
   kableExtra::column_spec(3:5, width = "3.1cm") 
 
 ```
+
+
+
+
+{{< pagebreak >}}
 
 ## Sojourn Time
 
@@ -728,7 +735,8 @@ kableExtra::kbl(
   linesep = c("", "", "", "",  "", "\\addlinespace"),
   col.names=c("Scenario", "State", "Treatment", cumsum(l_cfg$N_pt)), 
   digits = 1)  |>
-  kableExtra::kable_styling(font_size = 9) 
+  kableExtra::kable_styling(font_size = 9)  |>
+  kableExtra::column_spec(1, width = "3.5cm")
 ```
 
 ```{r, echo = F, eval = T}
@@ -797,7 +805,8 @@ kableExtra::kbl(
   linesep = c("", "", "", "\\addlinespace"),
   col.names=c("Scenario", "State", "Treatment", cumsum(l_cfg$N_pt)), 
   digits = 1)  |>
-  kableExtra::kable_styling(font_size = 9) 
+  kableExtra::kable_styling(font_size = 9)   |>
+  kableExtra::column_spec(1, width = "3.5cm")
 ```
 
 
@@ -866,8 +875,8 @@ kableExtra::kbl(
   linesep = c("", "", "", "\\addlinespace"),
   col.names=c("Scenario", "Rule", "Treatment", cumsum(l_cfg$N_pt)), 
   digits = 2)  |>
-  kableExtra::kable_styling(font_size = 11) |>
-  kableExtra::column_spec(1, width = "4cm")|>
+  kableExtra::kable_styling(font_size = 8) |>
+  kableExtra::column_spec(1, width = "5cm")|>
   kableExtra::column_spec(2:6, width = "1.5cm")
 
 
