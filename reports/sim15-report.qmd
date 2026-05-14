@@ -137,13 +137,39 @@ cannot be bothered to implement it in anything else at the moment).
 
 ## Example Trial
 
+The example is from the first scenario and takes the first simulation.
+All the figures in this section relate to a single trial.
+
+@fig-ex-1 shows the distribution of the number of exacerbations each participant has.
+@fig-ex-2 shows the prior and posterior distribution on the parameters from the model.
+These include the intercept terms for the piecewise baseline hazard, the covariate effects of baseline ppfev1, treatment effects and variance components used to account for repeat measures.
+
+@fig-ex-3 shows the prior and posterior on the sojourn and difference in sojourn times in each state (**H**ealthy and **E**xacerbation).
+To derive these, we use the model joint posterior to simulate the trajectory for a set of participants. 
+Key points include:
+
+1. We simulate a trial population using the same number as presently observed in the analysis for each draw from the model parameters joint posterior
+2. Everyone starts in an exacerbation state and their state is updated by day
+3. The decision horizon is set to `r l_spec_1$decision_fu` days
+4. We assume a fixed treatment policy over the decision horizon and the baseline covariates are resampled from the actual trial population
+5. For each participant in the population, we compute the total days in an exacerbation state
+6. For each simulated population we compute the mean days in exacerbation state
+
+Point (4) makes the strong assumption that while carry over effects of a policy may exist, their is no cumulative impact beyond that.
+Point (6) gives us a distribution of mean days in exacerbation state with the uncertainty propagated from the posterior.
+
+The equivalent process can be run to obtain a view on the prior for these parameters.
+
+@tbl-ex-01 summarises the distribution of mean days in exacerbation and health state under each treatment arm for this specific example.
+@tbl-ex-02 summarises the difference between each treatment arm and soc.
+
 ```{r}
 #| label: fig-ex-1
 #| fig-cap: 'Distribution of exacerbations'
-#| fig-height: 6
-#| fig-width: 6
-#| out-height: 6in
-#| out-width: 6in
+#| fig-height: 4
+#| fig-width: 4
+#| out-height: 4in
+#| out-width: 4in
 #| fig-dpi: 240
 #| fig-align: "center"
 #| fig-pos: H
