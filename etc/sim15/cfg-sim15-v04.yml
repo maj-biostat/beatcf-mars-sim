@@ -1,5 +1,5 @@
 default:
-  desc: "Defer approx NI boundary on recovery"
+  desc: "Defer NI boundary for recovery"
   nsim: 100 
   mc_cores: 40
   mcmc_warmup: 1000

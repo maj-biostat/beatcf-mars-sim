@@ -1,5 +1,5 @@
 default:
-  desc: "Defer worse on recovery"
+  desc: "Defer worse for recovery"
   nsim: 100 
   mc_cores: 40
   mcmc_warmup: 1000
@@ -66,7 +66,7 @@ default:
   # trt is c("soc","defer","discont")
   # effects less than zero result in reducing the intensity of transition
   # from exacerbation to health (people get better slower)
-  b_trt_eh: [0, -1, 0]
+  b_trt_eh: [0, -0.7, 0]
   # higher baseline ppfev results in increasing the intensity of transition
   # from exac to health (healthier people get better quicker)
   b_ppfev_eh: 0.1
