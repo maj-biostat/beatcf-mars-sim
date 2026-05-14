@@ -96,14 +96,6 @@ get_sim15_pt <- function(
       
       y <- rbinom(1,1,plogis(lp))
       
-      # states_list[[length(states_list)+1]] <- data.table(
-      #   day_of_fu= day_of_fu + days_in_state,
-      #   state=state,
-      #   y=y,
-      #   day_in_state=days_in_state,
-      #   trt=trt
-      # )
-      
       v_day_of_fu[ix_state] <- day_of_fu + days_in_state
       v_state[ix_state] <- state
       v_y[ix_state] <- y
@@ -153,18 +145,9 @@ get_sim15_cohort <- function(l_spec){
   i <- 1
   for(i in seq_along(id_cohort)){
     pt_list[[i]] <- cbind(id = id_cohort[i],  t0 = l_spec$t0[i], get_sim15_pt(l_spec))
-    i <- i + 1
   }
   
   d_cohort <- rbindlist(pt_list)
-  
-  # d_tmp <- copy(d_cohort)
-  # d_tmp[state == "H", bin := l_spec$v_lu_he_bin[day_in_state + 1L] ]
-  # d_tmp[state == "E", bin := l_spec$v_lu_eh_bin[day_in_state + 1L] ]
-  # d_tmp[, rlgrp := rleid(state), keyby = id]
-  # 
-  # d_smry <- d_tmp[, .(days = .N), keyby = .(id, rlgrp, state, trt)]
-  # d_smry[, .(mu_days = mean(days), .N), keyby = .(state, trt)]
   
   d_cohort[]
 }
@@ -259,87 +242,8 @@ sim15_long_to_wide <- function(dd){
   dd_w
 }
 
-# expected exacerbation days for a randomly selected participant from the trial population under a given treatment policy
-sim_policy_1 <- function(a_he, b_he, u_he, 
-                       a_eh, b_eh, u_eh, 
-                       # individual ppfev0 from our sample
-                       ppfev_0,
-                       # policy which we want to apply over the fu
-                       policy = 1, l_spec) {
-  
-  t <- 0
-  state <- "H"
-  exac_count <- 0
-  
-  total_days_in_H <- 0
-  total_days_in_E <- 0
-  
-  lp_ppfev_he <- b_he[1, ] * ppfev_0
-  lp_ppfev_eh <- b_eh[1, ] * ppfev_0
-  
-  while (t < l_spec$followup) {
-    # days in whatever state you happen to be in
-    days_in_state <- 0
-    repeat{
-      
-      if (state == "H") {
-        bin_ix <- l_spec$v_lu_he_bin[days_in_state + 1L]
-        if(exac_count == 0){
-          lp <- a_he[bin_ix] + u_he + 
-            lp_ppfev_he
-        } else {
-          # carryover trt is already set
-          lp <- a_he[bin_ix] + u_he + 
-            lp_ppfev_he + b_he[policy]
-        }
-        
-      } else {
-        bin_ix <- l_spec$v_lu_eh_bin[days_in_state + 1L] 
-        exac_count <- exac_count + 1
-        lp <- a_eh[bin_ix] + u_eh + 
-          lp_ppfev_eh + b_eh[policy]
-      }
-      
-      # end of interval marks the transition, for example if you had
-      # (0, 1], (1, 2], (2, 3] in a health state H and then had a transition in
-      # (3, 4] to E, you would have had a total of 3 days in the healthy state
-      # because the transition is assumed to occur on the last interval
-      
-      days_in_state <- days_in_state + 1
-      
-      # cat(paste(days_in_state, " days in state ", state, "\n"))
-      
-      if (state=="H" && (t+days_in_state) <= l_spec$followup) {
-        total_days_in_H <- total_days_in_H + 1
-      }
-      if (state=="E" && (t+days_in_state) <= l_spec$followup) {
-        total_days_in_E <- total_days_in_E + 1
-      }
-      
-      y <- rbinom(1, 1, plogis(lp))
-      
-      # stop repeat if we had an event (transition to other state) or reached fu
-      if (y==1 || (t+days_in_state)>=l_spec$followup) break
-      
-    }
-    
-    t <- t + days_in_state
-    
-    if (state=="H" && y==1) {
-      state <- "E"
-    } else if (state=="E" && y==1) {
-      state <- "H"
-    }
-    
-  }
-  
-  # c(total_days_in_H, total_days_in_E, total_days_in_H + total_days_in_E)
-    
-  total_days_in_E
-}
-
 # expected time in exacerbation state
-sim_policy_2 <- function(
+sim_policy <- function(
     a_he, b_he_ppfev, b_he_trt, u_he, 
     a_eh, b_eh_ppfev, b_eh_trt, u_eh, 
     ppfev_0, policy = 1, l_spec) {
@@ -394,25 +298,10 @@ sim_policy_2 <- function(
       # convert to probability
       p <- plogis(lp)
       
-      # if(is.na(p)){
-      #   message("p is na, bin is ", bin_ix)
-      # }
-      # if(p < 0 | p > 1){
-      #   message("p out of bounds, p is ", p, " bin is ", bin_ix)
-      # }
-      
       # constant hazard within piecewise bins
       # draw geometric (number of days until event)
       # rgeom gives failures before success => +1
       wait <- rgeom(1, p) + 1L
-      
-      # if(is.na(wait)){
-      #   message("wait is na, bin is ", bin_ix)
-      # }
-      # 
-      # if(wait < 0){
-      #   message("wait out of bounds, wait is ", wait, " bin is ", bin_ix)
-      # }
       
       if (wait <= bin_width) {
         # event happens in this bin
@@ -492,7 +381,7 @@ calc_trt_effect <- function(
   for(i in 1:B){
     
     for(j in 1:N_pt){
-      soc[j] <- sim_policy_2(
+      soc[j] <- sim_policy(
         a_he = m_a_he[i, ],
         b_he_ppfev = v_b_he_ppfev[i],
         b_he_trt = m_b_he_trt[i, ],
@@ -510,7 +399,7 @@ calc_trt_effect <- function(
     }
     
     for(j in 1:N_pt){
-      def[j] <- sim_policy_2(
+      def[j] <- sim_policy(
         a_he = m_a_he[i, ],
         b_he_ppfev = v_b_he_ppfev[i],
         b_he_trt = m_b_he_trt[i, ],
@@ -528,7 +417,7 @@ calc_trt_effect <- function(
     }
     
     for(j in 1:N_pt){
-      dis[j] <- sim_policy_2(
+      dis[j] <- sim_policy(
         a_he = m_a_he[i, ],
         b_he_ppfev = v_b_he_ppfev[i],
         b_he_trt = m_b_he_trt[i, ],
@@ -659,23 +548,25 @@ cfg_update <- function(l_spec){
 
 example_sim15_v02 <- function(){
   
+  ##########
+  # Create dataset of arbitrary size
+  
   source("R/libs.R")
   source("R/init.R")
   source("R/util.R")
   source("R/data-sim15.R")
   
-  f_cfgsc <- file.path("./etc/sim15/cfg-sim15-v01.yml")
+  f_cfgsc <- file.path("./etc/sim15/cfg-sim15-v04.yml")
   l_spec <- config::get(file = f_cfgsc)
   
   l_spec <- cfg_update(l_spec)
   
   pt_list <- list()
   
-  id_cohort <- 1:4000
+  id_cohort <- 1:10000
   i <- 1
   for(i in seq_along(id_cohort)){
     pt_list[[i]] <- cbind(id = id_cohort[i],  t0 = NA, get_sim15_pt(l_spec))
-    i <- i + 1
   }
   d_cohort <- rbindlist(pt_list)
   d_cohort[, .N, keyby = trt]
@@ -713,6 +604,9 @@ example_sim15_v02 <- function(){
                        breaks = seq(0, 1, by = 0.1)) 
   
   
+  ###########
+  # Duration of first healthy period
+  
   d_fig <- d_w[state == "H" & per_id == 1]
   d_fig <- d_fig[, .(dur_H_1 = sum(len_seg)), keyby = id]
   
@@ -724,108 +618,61 @@ example_sim15_v02 <- function(){
     scale_x_continuous("Duration of first H episode") 
   
   
+  ###########
+  # Days spent in the exacerbation state
   
   d_fig <- d_w[
-    state == "E", .(dur_eh = sum(len_seg)), keyby = .(id, per_id)]
+    state == "E", .(dur_eh = sum(len_seg)), keyby = .(id, per_id, trt)]
   
-  summary(d_fig$dur_eh)
+  d_trt <- d_fig[, .(mu = mean(dur_eh)), keyby = trt]
+  d_trt[trt == "def", mu] - d_trt[trt == "soc", mu]
+  l_spec$dec_eh_delta_ni
   
   ggplot(d_fig, aes(x = dur_eh)) +
     geom_histogram(bins = 20) +
-    scale_x_continuous("Duration (days)") 
+    scale_x_continuous("Duration (days)")  +
+    facet_wrap(~trt)
   
   ############
+  # Repeat sim - Days spent in the exacerbation state 
   
+  f_cfgsc <- file.path("./etc/sim15/cfg-sim15-v04.yml")
+  l_spec <- config::get(file = f_cfgsc)
+  l_spec <- cfg_update(l_spec)
+  n_sim <- 400
+  delta_eh_def <- as.vector(n_sim)
+  id_cohort <- 1:500
+  i <- j <- 1
   
-  
-  
-  
-  
-  # days_E <- d_cohort[state == "E", .N, keyby = .(id, bin)][, N]
-  # hist(days_E)
-  
-  # min(t) - 1 to get intervals respecting (start, stop] 
-  d_cohort_w <- d_cohort[, .(
-    tstart = min(t)-1,
-    tstop = max(t),
-    evt = max(y),
-    state = state[1],
-    trt = trt[1],
-    bin = bin[1],
-    ppfev0 = ppfev_baseline[1]
-  ), keyby = .(id, grp)]
-  
-  View(d_cohort_w)
-  
-  d_cohort_w[, .N, keyby = .(id, state)][, .(mu = mean(N)), keyby = state]
-  
-  d_cohort_w[, state := factor(state, levels = c("H", "E"))]
-  
-  d_cohort_w[trt == "defer", defer := 1]
-  d_cohort_w[trt != "defer", defer := 0]
-  
-  d_cohort_w[trt == "discont", discont := 1]
-  d_cohort_w[trt != "discont", discont := 0]
-  
-  d_cohort_w[tstart == 0, i_entry := 1]
-  d_cohort_w[tstart != 0, i_entry := 0]
-  
-  d_cohort_w[, len_seg := tstop - tstart]
-  
-  View(d_cohort_w)
-  
-  X <- model.matrix(~-1 + ppfev0 + defer + discont, data = d_cohort_w)
-  
-  
-  ld <- list(
-    N   = nrow(d_cohort_w),
-    N_id = length(unique(d_cohort_w$id)),
-    id   = d_cohort_w$id,
-    y = d_cohort_w$evt,
-    # 1 is healthy, 2 is exacerbation
-    state = as.integer(d_cohort_w$state),
-    bin = d_cohort_w$bin,
-    N_he_bin = length(l_spec$mu_he_0),
-    N_eh_bin = length(l_spec$mu_eh_0),
+  for(j in 1:n_sim){
     
-    i_entry = d_cohort_w$i_entry,
-    len_seg = d_cohort_w$len_seg,
+    pt_list <- list()
+    for(i in seq_along(id_cohort)){
+      pt_list[[i]] <- cbind(id = id_cohort[i],  t0 = NA, get_sim15_pt(l_spec))
+    }
+    d_cohort <- rbindlist(pt_list)
     
-    P = ncol(X),
-    X = X,
-    trt_defer_col = 2,
-    trt_discont_col = 3,
+    d_cohort[state == "H", bin := l_spec$v_lu_he_bin[day_in_state + 1L]]
+    d_cohort[state == "E", bin := l_spec$v_lu_eh_bin[day_in_state + 1L]]
+    d_cohort[, rlgrp := rleid(id, state, trt, bin)]
+    d_w <- sim15_long_to_wide(d_cohort)
     
-    pri_sd_he = 4,
-    pri_sd_eh = 4
-  )
+    d_w[, per_id := cumsum(
+      # identify shift in state between this and the next rec
+      state != data.table::shift(
+        state, fill = data.table::first(state))) + 1L, 
+      keyby = .(id)
+    ]
+    
+    d_res <- d_w[
+      state == "E", .(dur_eh = sum(len_seg)), keyby = .(id, per_id, trt)]
+    d_res <- d_res[, .(mu = mean(dur_eh)), keyby = trt]
+    delta_eh_def[j] <- d_res[trt == "def", mu] - d_res[trt == "soc", mu]
+  }
+  hist(delta_eh_def, main = sprintf("Delta mu = %.2f b_trt_eh[2] = %.2f", mean(delta_eh_def), l_spec$b_trt_eh[2]))
+  abline(v = mean(delta_eh_def), col = 2)
   
   
-  m1 <- cmdstanr::cmdstan_model("stan/sim15-v02.stan")
-  
-  f_1 <- m1$sample(
-    ld, iter_warmup = 1000, iter_sampling = 1000,
-    parallel_chains = 1, chains = 1, refresh = 100, show_exceptions = F,
-    max_treedepth = 11
-  )
-  f_1$summary(variables = c(
-    "a_he", "a_eh", "b_he", "b_eh", "sd_he", "sd_eh"
-  ))
-  
-  d_post <- data.table(
-    f_1$draws(
-      format = "matrix",
-      variables = c("a_he", "b_he", "sd_he",
-                    "a_eh", "b_eh", "sd_eh"))
-  )
-  
-  
-  f_2_optim <- m1$optimize(data = ld, jacobian = TRUE, refresh = 0)
-  f_2 <- m1$laplace(data = ld, mode = f_2_optim, draws = 2000, refresh = 0)
-  
-  f_2$summary(variables = c(
-    "a_he", "a_eh", "b_he", "b_eh", "sd_he", "sd_eh"
-  ))
 }
 
 

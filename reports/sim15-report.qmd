@@ -133,6 +133,24 @@ cannot be bothered to implement it in anything else at the moment).
 {{< pagebreak >}}
 
 
+# Design
+
+State transition 
+Joint model
+
+# Model
+
+Narrative overview
+
+# Data Structure
+
+What data we need
+
+
+# Decision Processes
+
+Reference the config
+
 # Results
 
 ## Example Trial
