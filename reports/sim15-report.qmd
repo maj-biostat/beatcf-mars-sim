@@ -160,6 +160,8 @@ All the figures in this section relate to a single trial.
 
 @fig-disc-eh-ex-1 shows the distribution of the number of exacerbations each participant has over the `r l_spec_1$followup` day followup.
 
+@fig-enrol-ex-1 shows the progression of participants entering into the trial and then to each of the treatment arms.
+
 @fig-post-par-ex-1 shows the prior and posterior distribution on the parameters from the model at the time of the last analysis.
 These include the intercept terms for the piecewise baseline hazard, the covariate effects of baseline ppfev1, treatment effects and variance components used to account for repeat measures.
 
@@ -217,7 +219,7 @@ ggplot(d_fig, aes(x = n_E)) +
 
 ```{r}
 #| label: fig-enrol-ex-1
-#| fig-cap: 'Allocation to each treatment arm'
+#| fig-cap: 'Allocation to each treatment over enrolment period'
 #| fig-height: 4
 #| fig-width: 4
 #| out-height: 4in
@@ -226,27 +228,27 @@ ggplot(d_fig, aes(x = n_E)) +
 #| fig-align: "center"
 #| fig-pos: H
 
-# Distribution of exacerbations in this sample.
-
 l_cfg <- copy(l[[1]]$l_spec)
 d_w <- copy(l[[1]]$d_w[sim == l_cfg$ex_trial_ix[1]])
 
-d_w[, .N, keyby = .(tstart, trt)]
+d_fig <- d_w[, .SD[1], keyby = .(id, per_id)]
+d_fig[, ttrt := round(t0 + tstart)]
+d_fig <- d_fig[, .N, keyby = .(ttrt, trt)]
+d_fig[, cN := cumsum(N), keyby = trt]
+d_fig <- base::merge(
+  d_fig, CJ(ttrt = 0:max(d_fig$ttrt), trt = c("none", l_spec_1$trt_lab)),
+  by = c("ttrt", "trt"), all.y = T)
+d_fig[, cN := nafill(cN, type = "locf"), keyby = trt]
+d_fig[is.na(cN), cN := 0]
+d_fig[, trt := factor(trt, levels = c(l_spec_1$trt_lab, "none") )]
 
-# number of unique elements in vec
-d_fig <- d_w[, .(
-  n_E = uniqueN(per_id[state == "E"])
-  ), keyby = .(sim, id)
-]
-
-# d_fig[, .N, keyby = .(desc, sim, n_E)]
-
-# https://github.com/tidyverse/ggplot2/issues/2051
-ggplot(d_fig, aes(x = n_E)) +
-  geom_bar(aes(y = after_stat(prop), group = 1)) +
-  scale_x_continuous("Exacerbations", breaks = 0:10) +
-  scale_y_continuous("Proportion of Pts", 
-                     breaks = seq(0, 1, by = 0.1))
+ggplot(d_fig, aes(x = ttrt, y = cN, group = trt, col = trt)) +
+  geom_step() +
+  scale_color_manual("", values = c(
+    "#A85F18", "#CC8922", "#CC6B22", "#228DCC"
+  )) +
+  scale_x_continuous("Day", breaks = seq(0, max(d_fig$ttrt), by = 200)) +
+  scale_y_continuous("N", breaks = seq(0, max(d_fig$cN), by = 100))
 ```
 
 ```{r}
