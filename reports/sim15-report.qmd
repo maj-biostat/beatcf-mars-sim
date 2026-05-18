@@ -124,32 +124,70 @@ cannot be bothered to implement it in anything else at the moment).
 
 # Version history {.unlisted .unnumbered}
 
-| Version    |   Date     | Change    |   Reason     |
-|:----|:------------|:----|:------------|
-| 0.1 | 2026-03-04 | First version revised design | N/A |
-| 0.2 | 2026-03-04 | Incorporate carry-over effects into the healthy state | N/A |
 
+\tiny
+| Version    |   Date     | Change    |   Reason     |
+|:----|:----|:--------|:--------|
+| 0.1 | 2026-03-04 | First version revised design | - |
+| 0.2 | 2026-03-04 | Incorporate carry-over effects into the healthy state | Feedback from CI |
+| 0.2 | 2026-05-18 | Discrete time process | Better representation of state |
+\normalsize
 
 {{< pagebreak >}}
 
-
 # Design
 
-State transition 
-Joint model
+Beat CF Mars is a three arm, sequential trial with adaptive stopping rules based on non-inferiority and futility.
+The primary endpoint is the expected exacerbation days within a 90 day window.
+
+Participants are enrolled in a well state and followed up over 365 days.
+On exerperiencing the first exacerbation in the follow up period, participants are randomised to:
+
++ standard of care antibiotics (soc)
++ deferred antibiotics (def)
++ early discontinue antibiotics (dis)
+
+and tracked for resolution of symptoms.
+In subsequent exacerbations, participants are re-randomised to the active treatment options.
 
 # Model
 
-Narrative overview
+The approach assumes a two-state transition model with participants moving between a healthy state and exacerbation state and where we can represent and capture the day each state begins.
 
-# Data Structure
+The analysis adopts a discrete-time survival model the so-called *proportional continuation ratio model* which has the form of a logistic regression:
 
-What data we need
+$$
+\begin{aligned}
+\log\left( \frac{\lambda(t|x)}{1-\lambda(t|x)} \right) &= \theta_{0t} + x' \beta
+\end{aligned}
+$$
 
+where we take it that $x$ contains unit level covariates for baseline ppfev1, treatment assignment and subject level intercept to account for repeat measures, @Tutz2016.
+The intercepts, $\theta_{0t}$, which vary over time, can be interpreted as the baseline hazard and the effect of the (time-constant) frailty is to provide an individual-level shift this baseline hazard.
+The same model is adopted for both processes (each having their own set of parameters with the random effects being treated as independent) and are implemented and fit within a single stan model.
+
+We assume that treatment effects enter into the linear predictor in both the exacerbation and healthy state; the treatment is randomised at the start of the exacerbation period and we retain this allocation to characterise carry over effects in the following healthy state.
+At the next exacerbation, a new treatment is randomised.
+Given that participants enrol into the study in a healthy state, no covariate is included in the model for this first period.
+
+# Treatment Effects
+
+After fitting the model to the available data, we use the posterior draws to repeatedly simulate the health state trajectory of individuals from trial cohorts over a `r l_spec_1$decision_fu` days under a given treatment policy.
+For each participant, we calculate the number of days in the exacerbation state and then compute the average in the cohort.
+The posterior view on the mean number of exacerbation days under each treatment policy is then contrasted to give the expected difference in mean exacerbation days.
+
+The implication of the modelling approach is that an effect of treatment can arise from impacts to either state in the transition process.
+That is, any of an increased recovery time during exacerbations or increased rate of relapse in healthy state, or both, will induce treatment effects.
 
 # Decision Processes
 
-Reference the config
+At each analysis we use the difference in mean exacerbation days to compute the probability of non-inferiority.
+
+We adopt a **non-inferiority** margin of `r l_spec_1$dec_eh_delta_ni` days and require a `r l_spec_1$dec_thresh_ni` probability that the treatments arms (def and dis) are lower than the margin to stop the trial for non-inferiority.
+
+Additionally, if the the treatments arms (def and dis) are greater than the NI margin with probability `r l_spec_1$dec_thresh_fut` then we stop future enrolment into the arm for **futility**.
+
+The soc remains the reference arm throughout the study.
 
 # Scenarios
 
@@ -206,34 +244,19 @@ kableExtra::kbl(
 
 ## Example Trial
 
+```{r, echo = F}
+l_cfg <- copy(l[[1]]$l_spec)
+d_w <- copy(l[[1]]$d_w[sim == l_cfg$ex_trial_ix[1]])
+```
+
+
 The example is from the first scenario and takes the first simulation.
 All the figures in this section relate to a single trial.
 
-@fig-disc-eh-ex-1 shows the distribution of the number of exacerbations each participant has over the `r l_spec_1$followup` day followup.
+@fig-disc-eh-ex-1 shows the distribution of the number of exacerbations in the trial sample (which may be less than the maximum sample size due to early stopping and for this trial was `r sprintf("N = %.0f", d_w[, uniqueN(id)])`) over the `r l_spec_1$followup` day followup.
 
-@fig-enrol-ex-1 shows the progression of participants entering into the trial and then to each of the treatment arms.
+@fig-enrol-ex-1 shows the progression of participants entering the trial and @fig-enrol-ex-2 shows how each of the treatment arms grow as exacerbations occur.
 
-@fig-post-par-ex-1 shows the prior and posterior distribution on the parameters from the model at the time of the last analysis.
-These include the intercept terms for the piecewise baseline hazard, the covariate effects of baseline ppfev1, treatment effects and variance components used to account for repeat measures.
-
-@fig-post-soj-ex-1 shows the prior and posterior on the sojourn and difference in sojourn times in each state (**H**ealthy and **E**xacerbation).
-To derive these, we use the model joint posterior to simulate the trajectory for a set of participants. 
-Key points include:
-
-1. We simulate a trial population using the same number as presently observed in the analysis for each draw from the model parameters joint posterior
-2. Everyone starts in an exacerbation state and their state is updated by day
-3. The decision horizon is set to `r l_spec_1$decision_fu` days
-4. We assume a fixed treatment policy over the decision horizon and the baseline covariates are resampled from the actual trial population
-5. For each participant in the population, we compute the total days in an exacerbation state
-6. For each simulated population we compute the mean days in exacerbation state
-
-Point (4) makes the strong assumption that while carry over effects of a policy may exist, their is no cumulative impact beyond that.
-Point (6) gives us a distribution of mean days in exacerbation state with the uncertainty propagated from the posterior.
-
-The equivalent process can be run to obtain a view on the prior for these parameters.
-
-@tbl-soj-ex-01 summarises the distribution of mean days in exacerbation and health state under each treatment arm for this specific example.
-@tbl-diff-ex-01 summarises the difference between each treatment arm and soc.
 
 ```{r}
 #| label: fig-disc-eh-ex-1
@@ -248,8 +271,6 @@ The equivalent process can be run to obtain a view on the prior for these parame
 
 # Distribution of exacerbations in this sample.
 
-l_cfg <- copy(l[[1]]$l_spec)
-d_w <- copy(l[[1]]$d_w[sim == l_cfg$ex_trial_ix[1]])
 
 # number of unique elements in vec
 d_fig <- d_w[, .(
@@ -267,9 +288,35 @@ ggplot(d_fig, aes(x = n_E)) +
                      breaks = seq(0, 1, by = 0.1))
 ```
 
-
 ```{r}
 #| label: fig-enrol-ex-1
+#| fig-cap: 'Participant entry into study'
+#| fig-height: 4
+#| fig-width: 4
+#| out-height: 4in
+#| out-width: 4in
+#| fig-dpi: 240
+#| fig-align: "center"
+#| fig-pos: H
+
+l_cfg <- copy(l[[1]]$l_spec)
+d_w <- copy(l[[1]]$d_w[sim == l_cfg$ex_trial_ix[1]])
+
+
+d_fig <- d_w[state == "H" & per_id == 1, .SD[1], keyby = id]
+d_fig[, t0 := round(t0)]
+d_fig <- d_fig[, .N, keyby = .(t0)]
+d_fig[, cN := cumsum(N)]
+
+ggplot(d_fig, aes(x = t0, y = cN)) +
+  geom_step() +
+  scale_x_continuous("Day", breaks = seq(0, max(d_fig$t0), by = 100)) +
+  scale_y_continuous("N", breaks = seq(0, max(d_fig$cN), by = 100))
+```
+
+
+```{r}
+#| label: fig-enrol-ex-2
 #| fig-cap: 'Allocation to each treatment over enrolment period'
 #| fig-height: 4
 #| fig-width: 4
@@ -281,6 +328,8 @@ ggplot(d_fig, aes(x = n_E)) +
 
 l_cfg <- copy(l[[1]]$l_spec)
 d_w <- copy(l[[1]]$d_w[sim == l_cfg$ex_trial_ix[1]])
+
+d_enrol <- copy(l[[1]]$d_enrol[sim == l_cfg$ex_trial_ix[1]])
 
 d_fig <- d_w[state == "E", .SD[1], keyby = .(id, per_id)]
 # d_fig[, .N, by = trt]
@@ -307,6 +356,30 @@ ggplot(d_fig, aes(x = ttrt, y = cN, group = trt, col = trt)) +
   scale_x_continuous("Day", breaks = seq(0, max(d_fig$ttrt), by = 200)) +
   scale_y_continuous("N", breaks = seq(0, max(d_fig$cN), by = 100))
 ```
+
+@fig-post-par-ex-1 shows the prior and posterior distribution on the parameters from the model at the time of the last analysis.
+These include the intercept terms for the piecewise baseline hazard, the covariate effects for baseline ppfev1, treatment effects and variance components used to account for repeat measures.
+
+@fig-post-soj-ex-1 shows the prior and posterior on the sojourn and difference in sojourn times in each state (**H**ealthy and **E**xacerbation).
+As noted earlier, to derive these, we use the model joint posterior to simulate the trajectory for a set of participants. 
+Key points in this process are:
+
+1. We simulate a trial population using the same number as presently observed in the analysis for each draw from the model parameters estimates
+2. All participants are assumed to start in an exacerbation state and their state is updated by day
+3. The decision horizon is set to `r l_spec_1$decision_fu` days
+4. We assume a fixed treatment policy over the decision horizon and the baseline covariates are resampled from the actual trial population
+5. For each participant in the population, we compute the total days in an exacerbation state
+6. For each simulated population we compute the mean days in exacerbation state
+
+Point (4) makes the strong assumption that while carry over effects of a policy may exist, their is no cumulative impact beyond that.
+Point (6) gives us a distribution of mean days in exacerbation state with the uncertainty propagated from the posterior.
+
+The steps are repeated for each treatment arm and the results to create treatment comparisons.
+
+The equivalent process can be run to obtain a view on the prior for these parameters.
+
+@tbl-soj-ex-01 summarises the distribution of mean days in exacerbation and health state under each treatment arm for this specific example.
+@tbl-diff-ex-01 summarises the difference between each treatment arm and soc.
 
 ```{r}
 #| label: fig-post-par-ex-1
@@ -345,8 +418,15 @@ p_1 <- ggplot(d_fig[variable %like% "a_"],
               aes(x = value, group = desc, colour = desc, lty = desc)) +
   geom_density() +
   scale_colour_discrete("") +
+  scale_x_continuous("") +
   scale_linetype_discrete("") +
-  facet_wrap(~variable, scales = "free", ncol = 4)
+  ggh4x::facet_wrap2(~variable, scales = "free", ncol = 3) +
+  ggh4x::facetted_pos_scales(
+    x = list(
+      variable %like% "a_he" ~ scale_x_continuous(limits = c(-8, 0)),
+      variable %like% "a_eh" ~ scale_x_continuous(limits = c(-5, 1))
+    )
+  )
 
 p_2 <- ggplot(d_fig[!(variable %like% "a_")], 
               aes(x = value, group = desc, colour = desc, lty = desc)) +
@@ -398,14 +478,25 @@ p_1 <- ggplot(d_fig[variable %like% "mu_"],
   geom_density() +
   scale_colour_discrete("") +
   scale_linetype_discrete("") +
-  facet_wrap(~variable, scales = "free", ncol = 3)
+  facet_wrap(~variable, scales = "free", ncol = 3) +
+  ggh4x::facetted_pos_scales(
+    x = list(
+      variable %in% c("mu_soc_H", "mu_def_h", "mu_dis_H") ~ scale_x_continuous(limits = c(50, 100)),
+      variable %like% "_E" ~ scale_x_continuous(limits = c(0, 25))
+    )
+  )
 
 p_2 <- ggplot(d_fig[!(variable %like% "mu_")], 
               aes(x = value, group = desc, colour = desc, lty = desc)) +
   geom_density() +
   scale_colour_discrete("") +
   scale_linetype_discrete("") +
-  facet_wrap(~variable, scales = "free", ncol = 2)
+  facet_wrap(~variable, scales = "free", ncol = 2) +
+  ggh4x::facetted_pos_scales(
+    x = list(
+      variable %in% c("del") ~ scale_x_continuous(limits = c(-10, 10))
+    )
+  )
 
 p_1 / p_2 +
   plot_layout(heights = c(1, 1), guides = "collect")
@@ -450,7 +541,13 @@ d_trt <- base::merge(d_trt, d_pr_dec, by = c("sim", "ic", "trt"), all.x = T)
 #| tbl-cap-location: bottom
 #| tbl-pos: H
 
+
+d_trt[stat == "mean" & out == "NA (NA, NA)", out := NA]
+
 d_tbl <- dcast(d_trt[stat == "mean"], desc + state + trt ~ N, value.var = "out")
+
+
+options(knitr.kable.NA = "-")
 
 kableExtra::kbl(
   d_tbl, 
@@ -472,6 +569,9 @@ kableExtra::kbl(
 
 d_tbl <- d_trt[stat == "diff"]
 d_tbl <- d_tbl[order(trt, N)]
+d_tbl[out == "NA (NA, NA)", out := NA]
+
+options(knitr.kable.NA = "-")
 
 kableExtra::kbl(
   d_tbl[state == "Exacerbation", .(desc, N, trt, out, pr_fut, pr_ni)], 
@@ -549,7 +649,8 @@ ggplot(d_fig, aes(x = n_E)) +
   scale_x_continuous("Exacerbations", breaks = 0:10) +
   scale_y_continuous("Proportion of Pts", 
                      breaks = seq(0, 1, by = 0.1)) +
-  facet_wrap(desc ~ paste0("sim: ", sim), ncol = length(ix_smpl))
+  facet_wrap(desc ~ paste0("sim: ", sim), ncol = length(ix_smpl),
+             labeller = label_wrap_gen(width = 20))
 
 ```
 
@@ -571,7 +672,8 @@ d_fig <- d_w_smpl[
 ggplot(d_fig, aes(x = dur_eh)) +
   geom_histogram(bins = 20) +
   scale_x_continuous("Duration (days)") +
-  facet_wrap(desc ~ paste0("sim: ", sim), ncol = length(ix_smpl))
+  facet_wrap(desc ~ paste0("sim: ", sim), ncol = length(ix_smpl),
+             labeller = label_wrap_gen(width = 20))
 
 ```
 
@@ -593,7 +695,8 @@ d_fig <- d_w_smpl[
 ggplot(d_fig, aes(x = dur_he_1)) +
   geom_histogram(bins = 20) +
   scale_x_continuous("Duration (days)") +
-  facet_wrap(desc ~ paste0("sim: ", sim), ncol = length(ix_smpl))
+  facet_wrap(desc ~ paste0("sim: ", sim), ncol = length(ix_smpl),
+             labeller = label_wrap_gen(width = 20))
 
 ```
 
@@ -620,7 +723,8 @@ ggplot(d_fig, aes(x = trt, y = N)) +
   geom_bar(stat = "identity") +
   scale_x_discrete("") +
   scale_y_continuous("N") +
-  facet_wrap(desc ~ paste0("sim: ", sim), ncol = length(ix_smpl))
+  facet_wrap(desc ~ paste0("sim: ", sim), ncol = length(ix_smpl),
+             labeller = label_wrap_gen(width = 20))
 
 ```
 
@@ -704,11 +808,9 @@ kableExtra::kbl(
     latex_options = c("scale_down", "repeat_header")) |>
   kableExtra::column_spec(1, width = "3.5cm")|>
   kableExtra::column_spec(2, width = "2cm")|>
-  kableExtra::column_spec(3:5, width = "3.1cm") 
+  kableExtra::column_spec(3:5, width = "2.5cm") 
 
 ```
-
-
 
 
 {{< pagebreak >}}
@@ -716,7 +818,6 @@ kableExtra::kbl(
 ## Sojourn Time
 
 @tbl-soj-01 shows the expectations and 95% uncertainty interval for the posterior means of the sojourn times (days) in each health state by treatment arm over a simulated `r l_spec_1$decision_fu` day decision horizon.
-That is, we collect the posterior means from each simulation and analysis and summarise them by the mean and the 2.5 and 97.5 percentiles.
 
 @tbl-soj-02 provides the difference in sojourn times by health state in each treatment arm relative to the control arm.
 
@@ -779,6 +880,9 @@ d_tbl <- d_tbl[order(desc, trt, state)]
 #| out-width: 100%
 #| tbl-cap-location: bottom
 #| tbl-pos: H
+
+
+options(knitr.kable.NA = "-")
 
 kableExtra::kbl(
   d_tbl, 
@@ -1044,134 +1148,6 @@ kableExtra::kbl(
 :::
 
 {{< pagebreak >}}
-
-# Appendix - Frailty Model {.unnumbered .appendix}
-
-To speed up the model fit for the frailty model the frailty is marginalised as discussed in [@Ibrahim2001, Section 4.1.1].
-
-Specifically, first assume participants $i$ with observations $j = 1, \dots, n_i$ and a frailty $u_i \sim \text{Gamma}(a, a)$ with mean 1 and variance $1/a$. The **conditional** likelihood for all observations from participant $i$ is:
-
-
-$$
-\begin{aligned}
-\mathcal{L}_i(u_i) = \prod_{j=1}^{n_i} f(y_{ij} | u_i)
-\end{aligned}
-$$
-
-with Weibull (PH) pdf $f$ and conditional hazard 
-
-$$
-\begin{aligned}
-h(y_i \mid u_i) = 
-\underbrace{u_i}_{\text{frailty}} \cdot 
-\underbrace{\gamma}_{\text{baseline scale}} \cdot 
-\underbrace{\alpha y_i^{\alpha-1}}_{\text{shape}} \cdot 
-\underbrace{\theta_{ij}}_{\text{covariate effects}}
-\end{aligned}
-$$
-
-with scale modifying covariate terms for ppfev at baseline and treatment effects entering in through $\theta_{ij} = \exp(x_{ij}^\prime \beta)$.
-Alternatively, just suck the baseline scale into the linear predictor:
-
-$$
-\begin{aligned}
-h(y_i \mid u_i) = 
-u_i \cdot 
-\alpha y_i^{\alpha-1}
-\underbrace{\mu_{ij}}_{\text{covariate effects incl. baseline scale}}
-\end{aligned}
-$$
-
-where $\mu = \exp(b_0 + x_{ij}^\prime \beta)$.
-
-Assuming we observe full event series for all participants, subject $i$ contributes:
-
-$$
-\begin{aligned}
-\mathcal{L}_i(u_i) = \prod_{j=1}^{n_i} \alpha \cdot  u_i \mu_{ij} \cdot y_{ij}^{\alpha - 1} \cdot  \exp(-u_i \mu_{ij} y_{ij}^\alpha)
-\end{aligned}
-$$
-
-collect up terms in $u_i$
-
-$$
-\begin{aligned}
-\mathcal{L}_i(u_i) = u_i^{n_i} \cdot C_i \cdot \exp(-u_i S_i)
-\end{aligned}
-$$
-
-where $C_i = \prod_{j=1}^{n_i} \alpha \mu_{ij} y_{ij}^{\alpha - 1}$ and $S_i = \sum_{j=1}^{n_i} \mu_{ij} y_{ij}^\alpha$.
-
-We want the marginal likelihood, i.e. 
-
-$$
-\begin{aligned}
-\mathcal{L}_i = \int_0^\infty \mathcal{L}_i(u_i) \cdot p(u_i) du_i
-\end{aligned}
-$$
-
-where $p(u) = \frac{a^a}{\Gamma(a)} u^{a-1} \exp(-a u)$ is the prior density for $u_i$, here a Gamma distribution (shape and rate parameterisation assuming equal shape and rate):
-
-$$
-\begin{aligned}
-\mathcal{L}_i = \int_0^\infty u_i^{n_i} \cdot C_i \cdot \exp(-u_i S_i) \cdot \frac{a^a}{\Gamma(a)} u_i^{a-1} \exp(-a u_i) du_i
-\end{aligned}
-$$
-
-
-Grouping all the $u_i$ terms together
-
-$$
-\begin{aligned}
-\mathcal{L}_i = C_i \cdot \frac{a^a}{\Gamma(a)} \int_0^\infty u_i^{(n_i + a)-1} \cdot \exp(-(S_i + a)u_i) du_i
-\end{aligned}
-$$
-
-Now we just do the old stats trick of recognising a stripped down $\text{Gamma}(c, r)$ pdf (missing the $\frac{c^r}{\Gamma{c}}$ terms) with the form $u^{c-1} \exp(-r u)$, so we know that the integrand of this must equal $\frac{\Gamma{c}}{c^r}$ in order for the density to integrate to one (see @Wackerly2007 for examples).
-
-If we substitute with $c = n_i + 1$ and $r = S_i + a$, we get:
-
-$$
-\begin{aligned}
-\mathcal{L}_i = C_i \cdot \frac{a^a}{\Gamma(a)} \frac{\Gamma(n_i + a)}{(S_i + a)^{(n_i + a)}}
-\end{aligned}
-$$
-
-Taking logs gives what we need to incorporate into the stan model:
-
-$$
-\begin{aligned}
-\log(\mathcal{L}_i) = \log(C_i) + a\log(a) - \log(\Gamma(a)) + log(\Gamma(n_i + a) - (n_i + a) \log(S_i + a)
-\end{aligned}
-$$
-
-where the $C_i = \sum_j \log(\alpha \mu_{ij} y_{ij}^{\alpha-1}) = \sum_j (\log(\alpha ) + \log(\mu_{ij}) + (\alpha-1) \log(y_{ij}))$
-
-What about if there are censored observations?
-In this case the conditional likelihood is 
-
-$$
-\begin{aligned}
-\mathcal{L}_i(u_i) = \prod_{j=1}^{n_i} f(y_{ij} | u_i) \cdot S(c_i | u_i)
-\end{aligned}
-$$
-
-where the density is for the observed records and the survival function for the final sojourn time of duration $c_i$.
-This works through as previously described and the marginal log-likelihood comes out as:
-
-$$
-\begin{aligned}
-\log(\mathcal{L}_i) &= \sum_{j=1}^{n_i} [\log(\alpha) + \log(\mu_{ij}) +  (\alpha-1) \log(y_{ij}) ] + \\ 
- & \quad \log(\Gamma(n_i + a)) - \\ 
- & \quad \log(\Gamma(a)) + a \log(a) - \\
- & \quad (n_i + a)\log(S_i + a)
-\end{aligned}
-$$
-
-where $S_i = \sum_{j = 1}^{n_i} \mu_{ij} y_{ij}^\alpha + \mu_{i,last} c_i^\alpha$ and where $n_i$ is now counting only the completed transitions, not the censored final sojourn.
-
-In the above you can think of the first part as the log of thew weibull hazard at each time, what you would have if there was no frailty. 
-The last part gives the updated rate parameter after pooling the prior rate with the cumulative hazard.
 
 
 
