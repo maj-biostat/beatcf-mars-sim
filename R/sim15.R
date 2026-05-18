@@ -67,6 +67,12 @@ run_trial <- function(
   # day of enrolment
   loc_t0 <- sim_ipp_thinning(sum(l_spec$N_pt), lambda, rho)
   
+  # t_600 <- numeric(100)
+  # for(i in 1:100){
+  #   t_600[i] = sim_ipp_thinning(sum(l_spec$N_pt), lambda, rho)[600]
+  # }
+  # hist(t_600)
+  
   # loop controls
   stop_enrol <- FALSE
   l_spec$ic <- 1 # interim number
