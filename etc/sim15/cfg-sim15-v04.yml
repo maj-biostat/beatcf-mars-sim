@@ -12,8 +12,8 @@ default:
   nex: 5
   # enrolment
   N_pt: [400, 100, 100]
-  pt_per_day: 0.57
-  ramp_up_days: 120
+  pt_per_day: 1.2
+  ramp_up_days: 60
   
   followup: 365
   decision_fu: 90
