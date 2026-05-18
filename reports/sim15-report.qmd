@@ -192,6 +192,7 @@ The soc remains the reference arm throughout the study.
 # Scenarios
 
 @tbl-scen-01 provides a summary of the key parameters used to configure the scenarios.
+Each scenario was simulated `r l_spec_1$nsim` times with a cohort of `r sum(l_spec_1$N_pt)` participants with each trial having up to `r length(l_spec_1$N_pt)` analyses after `r paste0(cumsum(l_spec_1$N_pt), collapse = ", ")` are enrolled.
 
 ```{r, echo = F, eval = T}
 #| label: tbl-scen-01
