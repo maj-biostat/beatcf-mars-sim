@@ -194,9 +194,9 @@ get_sim16_stan_data <- function(dd, l_spec){
     trt_discont_col = 3,
     
     # zero centred effects with sd
-    pri_b_0 = c(10, 3),
-    pri_b = c(0, 3),
-    pri_s = 1,
+    pri_b_0 = l_spec$pri_b_0,
+    pri_b = l_spec$pri_b,
+    pri_s = l_spec$pri_s,
     
     prior_only = 0
   )
@@ -250,6 +250,11 @@ cfg_update <- function(l_spec){
   
   l_spec$a_he <- unlist(l_spec$a_he) 
   l_spec$a_eh <- unlist(l_spec$a_eh) 
+  
+  
+  l_spec$pri_b_0 <- unlist(l_spec$pri_b_0)
+  l_spec$pri_b <- unlist(l_spec$pri_b)
+  l_spec$pri_s <- unlist(l_spec$pri_s) 
   
   # trt alloc - balanced over number of trts
   

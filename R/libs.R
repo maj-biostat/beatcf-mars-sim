@@ -4,6 +4,7 @@ suppressPackageStartupMessages(library("data.table"))
 suppressPackageStartupMessages(library("ggplot2"))
 suppressPackageStartupMessages(library("ggrepel"))
 suppressPackageStartupMessages(library("git2r"))
+suppressPackageStartupMessages(library("ggplot2.utils"))
 
 # for devtools:
 # https://forum.posit.co/t/failling-install-devtools-error-onload-failed-in-loadnamespace-for-pkgload/64787
