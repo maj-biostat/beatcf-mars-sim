@@ -91,6 +91,13 @@ runsim15:
   just sim15 ../etc/sim15/cfg-sim15-v01.yml
   #just sim15 ../etc/sim15/cfg-sim15-v02.yml
   
+sim16 cfg:
+  Rscript --vanilla ./R/sim16.R run_sim16 {{cfg}}
+  just cleantmp
+
+runsim16:
+  just sim16 ../etc/sim16/cfg-sim16-v01.yml  
+  
 report rep:
   quarto render reports/{{rep}} --to pdf
 
