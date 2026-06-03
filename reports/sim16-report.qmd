@@ -63,7 +63,7 @@ source(paste0(prefix_r, "/data-sim16.R"))
 # Load all the files into a single list.
 
 # files of interest
-sim_lab <- "sim16-01"
+sim_lab <- "sim16-02"
 
 flist <- list.files(paste0(prefix_data, "/", sim_lab), pattern = "sim16")
 toks <- list()
@@ -130,42 +130,45 @@ cannot be bothered to implement it in anything else at the moment).
 |:----|:----|:--------|:--------|
 | 0.1 | 2026-03-04 | First version revised design | - |
 | 0.2 | 2026-03-04 | Incorporate carry-over effects into the healthy state | Feedback from CI |
-| 0.2 | 2026-05-18 | Discrete time process | Better representation of state |
+| 0.3 | 2026-05-18 | Discrete time process | Better representation of state |
+| 0.4 | 2026-06-03 | Revise follow up and use direct parameters for treatment effects | Simplify design |
 \normalsize
 
 {{< pagebreak >}}
 
 # Design
 
-Beat CF Mars is a three arm, sequential trial with adaptive stopping rules based on non-inferiority and futility @Berry2011.
-The primary endpoint is the expected exacerbation days within a 90 day window.
+Beat CF Mars is a three arm, sequential trial with adaptive stopping rules based on non-inferiority and futility, see @Berry2011.
+The primary endpoint is the mean exacerbation days to `r l_spec_1$decision_fu` days.
 
-Participants are enrolled in a well state and followed up over 365 days.
-On exerperiencing the first exacerbation in the follow up period, participants are randomised to:
+Participants are enrolled in a well state and monitored over `r l_spec_1$followup` days.
+On exerperiencing an exacerbation in the monitoring period, participants are randomised to:
 
 + standard of care antibiotics (soc)
 + deferred antibiotics (def)
 + early discontinue antibiotics (dis)
 
-and tracked over 90 days for resolution of symptoms and/or subsequent exacerbation.
+and tracked over `r l_spec_1$decision_fu` days for resolution of symptoms and/or the occurrence of subsequent exacerbations, the goal being to observe the number of exacerbation days over the `r l_spec_1$decision_fu` window.
+If another exacerbation occurs within the `r l_spec_1$decision_fu` day window, the same treatment strategy is retained and the number of days in an exacerbation state continues to increment.
+We follow participants over a `r l_spec_1$decision_fu` day window irrespective of whether this overflows the `r l_spec_1$followup` day monitoring period.
 
-In subsequent exacerbations, participants retain the initial treatment assignment to 90 days.
-We follow participants over the 90 days (irrespective of whether this overflows the 365 day follow up) and capture the number of days in an exacerbation state as a measure to compare across treatment groups.
+If a participant doesn't have an exacerbation, then they would not receive any randomised treatment and so they would not contribute to the analyses.
+Therefore, what we would be characterising amounts to *"Among CF patients who experience an exacerbation that requires treatment, what is the difference in post-exacerbation burden under alternative antibiotic strategies?"*
 
-Clearly, if no exacerbation occurs, then no trt was assigned and so these participants would be excluded from any analysis.
-This loss of data (they provide no information relevant to the analysis) is one of the trade offs of the simplicity of the design.
-
-Another downside is that participants may stop adhering to their assigned treatment if they have a poor response under their assigned randomisation. 
-We also lose the opportunity to randomise a participant to a new treatment if they have multiple exacerbatiuons within the 90 day decision window.
-However, if they have another exacerbation beyond the 90 day follow up and within the 365 days of total monitoring then we could potentially re-randomise.
+A variation on the approach (possibly a necessary variation) is to re-randomise participant to a new treatment if they have multiple exacerbatiuons that fit within the `r l_spec_1$followup` day monitoring period.
+For example, if someone has an exacerbation 14 days after enrolment, we would follow them for 90 days under their assign treatment.
+After the 90 days are complete and they have recovered, any subsequent exacerbations could potentially be incorporated under a new randomisation.
 
 # Model
 
-Mean exacerbation days by group conditional on prognostic.
+In this version, the model adopts a normal approximation on the mean exacerbation days to `r l_spec_1$decision_fu` days.
+Given the normal approximation and the design, the conditional effects are equivalent to the marginal effects and so introducing prognostic covariates would be useful.
+
+In practice (in the actual trial analysis) we would likely use a proportional odds model for number of days.
 
 # Treatment Effects
 
-Conditional effects based on normal assumption for the data.
+Treatment effects represent the difference in mean exacerbation days to `r l_spec_1$decision_fu` days across groups.
 
 # Decision Processes
 
@@ -181,6 +184,9 @@ The soc remains the reference arm throughout the study.
 
 @tbl-scen-01 provides a summary of the key parameters used to configure the scenarios.
 Each scenario was simulated `r l_spec_1$nsim` times with a cohort of `r sum(l_spec_1$N_pt)` participants with each trial having up to `r length(l_spec_1$N_pt)` analyses after `r paste0(cumsum(l_spec_1$N_pt), collapse = ", ")` are enrolled.
+
+The data generating process is equivalent to what was used in the previous design.
+That is we use the same multi-state model, but make a variation to what data we assume is collected for the analyses, as discussed earlier in the design section.
 
 ```{r, echo = F, eval = T}
 #| label: tbl-scen-01
@@ -245,12 +251,12 @@ d_N_trt <- d_all[evt == 1, .N, keyby = trt]
 The example is from the first scenario and uses the first simulated trial.
 All the figures in this section relate to a single trial.
 
-Of the `r nrow(d_all)` entering into the trial, `r sprintf("%.0f (%.0f%%)", sum(d_all$evt), 100 * mean(d_all$evt))` had an exacerbation and therefore entered into randomised treatment.
+Of the `r nrow(d_all)` entering into the trial, `r sprintf("%.0f (%.0f%%)", sum(d_all$evt), 100 * mean(d_all$evt))` had an exacerbation within the `r l_spec_1$followup` day monitoring period.
+This cohort therefore entered into randomised treatment and were followed up for a subsequent `r l_spec_1$decision_fu` days (irrespective of whether this overflows the `r l_spec_1$followup` monitoring window).
 
-@fig-ex-1-disc-exac shows the distribution of the number of exacerbations based on the collection approach.
-Again, we assume that participants are monitored for `r l_spec_1$followup` days for the occurrence of an exacerbation. 
-If an exacerbation occurs, then we follow participants up for `r l_spec_1$decision_fu` days (irrespective of whether this overflows the `r l_spec_1$followup` monitoring window) and determine how many days they are in an exacerbation state.
-Once, the `r l_spec_1$decision_fu` day follow up is reached, the participant is considered to have completed their involvement in the study with regards to the primary outcome.
+@fig-ex-1-disc-exac shows the distribution of the number of exacerbations based on the data collection approach.
+Once the `r l_spec_1$decision_fu` day follow up is reached, the participant is considered to have completed their involvement in the study with regards to the primary outcome with their number of days (to  `r l_spec_1$decision_fu`) is what is used in the analysis and group comparison.
+Variations to this approach may be possible such as continuing to monitor the participant for subsequent exacerbations beyond the `r l_spec_1$decision_fu` day window, assuming the monitoring period has not yet been reached.
 
 @fig-ex-1-enrol shows the progression of participants entering the trial and @fig-ex-2-enrol-alloc shows how each of the treatment arms grow as exacerbations occur.
 Of the `r d_all[evt == 1, .N]` randomised, `r d_N_trt[trt == "soc", N]` were assigned to SOC, `r d_N_trt[trt == "def", N]` to the defer strategy and `r d_N_trt[trt == "dis", N]` to early discontinue.
@@ -349,16 +355,18 @@ ggplot(d_fig, aes(x = wk, y = c_N, group = trt, col = trt)) +
     "#A85F18", "#CC8922", "#228DCC"
   )) +
   scale_x_continuous("Week", breaks = seq(0, max(d_fig$wk), by = 10)) +
-  scale_y_continuous("N", breaks = seq(0, max(d_fig$c_N), by = 100))
+  scale_y_continuous("N", breaks = seq(0, max(d_fig$c_N), by = 20))
 ```
 
 ### Days to Exacerbation
 
-@fig-ex-1-tt-exac shows the KM survival curves for time to exacerbation (censored at 365) for all enrolments (LHS) and those with events (and therefore receiving randomised treatment and included in primary analysis).
+@fig-ex-1-tt-fu shows the total days of follow up, comprising the monitoring period to 365 days plus 90 day follow up on exacerbation.
+
+@fig-ex-1-tt-exac shows the KM survival curves for time to exacerbation (censored at 365) for all enrolments of which those with events would be randomised and enter into the primary analysis.
 
 ```{r}
-#| label: fig-ex-1-tt-exac
-#| fig-cap: 'KM survival curves for time to exacerbation by treatment. LHS: All data including censored participants. RHS: participants receiving randomised treatment (i.e. those with exacerbations)'
+#| label: fig-ex-1-tt-fu
+#| fig-cap: 'Distribution of total follow up time (monitoring period t0 365 days plus 90 day follow up on exacerbation)'
 #| fig-height: 4
 #| fig-width: 6
 #| out-height: 4in
@@ -371,25 +379,46 @@ ggplot(d_fig, aes(x = wk, y = c_N, group = trt, col = trt)) +
 d_fig <- copy(d_all)
 d_fig[, trt := factor(trt, levels = c("def", "dis", "soc", "none"))]
 
+d_fig[, days_followed := day_of_exac + evt * l_spec_1$decision_fu]
+
 # # https://github.com/tidyverse/ggplot2/issues/2051
-p_1 <- ggplot(d_fig[trt != "none"], aes(time = day_of_exac, status = evt)) +
-  geom_km(lwd = 0.4) +
-  scale_color_discrete("Treatment") +
-  scale_x_continuous("Day", breaks = seq(0, max(d_fig$day_of_exac), by = 50)) +
-  scale_y_continuous("Survival")
+p_1 <- ggplot(d_fig, aes(x = days_followed, group = trt)) +
+  geom_histogram(bins = 30, col = "black") + 
+  facet_wrap(~ trt, nrow = 1) +
+  scale_x_continuous("Total days followed") 
 
-p_2 <- ggplot(d_fig[trt != "none"], aes(time = day_of_exac, status = evt, col = factor(trt))) +
-  geom_km(lwd = 0.4) +
-  scale_color_discrete("Treatment") +
-  scale_x_continuous("Day", breaks = seq(0, max(d_fig$day_of_exac), by = 50)) +
-  scale_y_continuous("Survival")
-
-p_1 + p_2
+p_1
 ```
+
+```{r}
+#| label: fig-ex-1-tt-exac
+#| fig-cap: 'KM survival curves for time to exacerbation by treatment (all data including censored participants).'
+#| fig-height: 4
+#| fig-width: 4
+#| out-height: 4in
+#| out-width: 4in
+#| fig-dpi: 300
+#| fig-align: "center"
+#| fig-pos: H
+
+
+d_fig <- copy(d_all)
+d_fig[, trt := factor(trt, levels = c("def", "dis", "soc", "none"))]
+
+# # https://github.com/tidyverse/ggplot2/issues/2051
+p_1 <- ggplot(d_fig, aes(time = day_of_exac, status = evt)) +
+  geom_km(lwd = 0.4) +
+  scale_color_discrete("Treatment") +
+  scale_x_continuous("Day", breaks = seq(0, max(d_fig$day_of_exac), by = 50)) +
+  scale_y_continuous("Survival", limits = c(0, 1), breaks = seq(0, 1, by = 0.1))
+
+p_1
+```
+
 
 ### Exacerbation Days
 
-@fig-ex-1-exac-days shows the distribution of exacerbation days amongst those enrolled that had one or more exacerbations. 
+@fig-ex-1-exac-days shows the distribution of exacerbation days following randomisation, amongst those enrolled and that had one or more exacerbations. 
 
 ```{r}
 #| label: fig-ex-1-exac-days
@@ -530,7 +559,7 @@ for(i in 1:length(l)){
   
   l_cfg <- copy(l[[i]]$l_spec)
   
-  # extrapolate the rmst forward to impute the effects in those sims that had
+  # extrapolate to impute the effects in those sims that had
   # early stopping
   d_tmp[, mu := nafill(mu, type = "locf"), keyby = .(sim, par)]
   
