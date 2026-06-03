@@ -448,7 +448,7 @@ ggplot(d_fig[], aes(x = exac_days, group = trt)) +
 
 ```{r}
 #| label: fig-ex-1-post-1
-#| fig-cap: 'Prior and posterior for model parameters'
+#| fig-cap: 'Prior and posterior for model parameters (vertical shows the NI margin reference)'
 #| fig-height: 6
 #| fig-width: 6
 #| out-height: 6in
@@ -468,16 +468,20 @@ d_par <- rbind(d_pri_par, d_post_par)
 
 d_fig <- melt(d_par, id.vars = c("desc", "sim", "ic"))
 d_fig[, desc := factor(desc, levels = c("posterior", "prior"))]
+d_fig[variable %in% c("b_def", "b_dis"), ref := l_spec_1$dec_eh_delta_ni]
 
 p_1 <- ggplot(d_fig, 
               aes(x = value, group = desc, colour = desc, lty = desc)) +
   geom_density() +
+  geom_vline(aes(xintercept = ref), lwd = 0.3) +
   scale_colour_discrete("") +
   scale_x_continuous("") +
   scale_linetype_discrete("") +
-  ggh4x::facet_wrap2(variable~ic, scales = "free", ncol = max(d_fig$ic)) 
+  ggh4x::facet_wrap2(variable~ic, scales = "free", 
+                     labeller = label_both,
+                     ncol = max(d_fig$ic)) 
 
-p_1 
+suppressWarnings(print(p_1 ))
 
 ```
 
