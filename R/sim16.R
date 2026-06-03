@@ -413,29 +413,13 @@ run_sim16 <- function(){
   
   Sys.sleep(10)
   
-  # l_ret <- list(
-  #   d_all = d_all,
-  #   d_post_smry_1 = d_post_smry_1,
-  #   # d_post_smry_2 = d_post_smry_2,
-  #   # d_post_smry_3 = d_post_smry_3,
-  #   d_trt_effects = d_trt_effects, 
-  #   d_pr_dec = d_pr_dec,
-  #   stop_at = stop_at,
-  #   l_spec = l_spec
-  # )
-  # 
-  
   # data from each simulated trial
-  d_w <- rbindlist(lapply(1:length(r), function(i){ 
-    r[[i]]$d_w
+  d_all <- rbindlist(lapply(1:length(r), function(i){ 
+    r[[i]]$d_all
   } ), idcol = "sim")
   
   d_post_smry_1 <- rbindlist(lapply(1:length(r), function(i){ 
     r[[i]]$d_post_smry_1
-  } ), idcol = "sim")
-  
-  d_trt_effects <- rbindlist(lapply(1:length(r), function(i){ 
-    r[[i]]$d_trt_effects
   } ), idcol = "sim")
   
   d_pr_dec <- rbindlist(lapply(1:length(r), function(i){ 
@@ -446,16 +430,8 @@ run_sim16 <- function(){
     r[[i]]$d_pri_par
   } ), idcol = "sim")
   
-  d_pri_res <- rbindlist(lapply(1:length(r), function(i){ 
-    r[[i]]$d_pri_res
-  } ), idcol = "sim")
-  
   d_post_par <- rbindlist(lapply(1:length(r), function(i){ 
     r[[i]]$d_post_par
-  } ), idcol = "sim")
-  
-  d_post_res <- rbindlist(lapply(1:length(r), function(i){ 
-    r[[i]]$d_post_res
   } ), idcol = "sim")
   
   d_enrol <- rbindlist(lapply(1:length(r), function(i){ 
@@ -464,14 +440,11 @@ run_sim16 <- function(){
   
   l <- list(
     l_spec = l_spec,
-    d_w = d_w,
+    d_all = d_all,
     d_post_smry_1 = d_post_smry_1,
-    d_trt_effects = d_trt_effects,
     d_pr_dec = d_pr_dec,
     d_pri_par = d_pri_par,
-    d_pri_res = d_pri_res,
     d_post_par = d_post_par,
-    d_post_res = d_post_res,
     d_enrol = d_enrol
   )
   

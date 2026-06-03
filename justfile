@@ -97,6 +97,9 @@ sim16 cfg:
 
 runsim16:
   just sim16 ../etc/sim16/cfg-sim16-v01.yml  
+  just sim16 ../etc/sim16/cfg-sim16-v02.yml  
+  just sim16 ../etc/sim16/cfg-sim16-v03.yml  
+  just sim16 ../etc/sim16/cfg-sim16-v04.yml  
   
 report rep:
   quarto render reports/{{rep}} --to pdf
