@@ -1,0 +1,713 @@
+---
+title: BEAT CF MARS
+subtitle: |
+    Simulation Report
+date: last-modified
+date-format: "D MMMM YYYY"
+author: Mark Jones
+editor: source
+bibliography: ../etc/refs.bib
+csl: ../etc/elsevier-harvard.csl
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE
+)
+```
+
+```{r}
+#| label: load-data
+#| code-summary: Data load
+#| echo: false
+
+# uml digs
+suppressPackageStartupMessages(library(nomnoml))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(qs))
+suppressPackageStartupMessages(library(git2r))
+suppressPackageStartupMessages(suppressWarnings(library(gt)))
+suppressPackageStartupMessages(library(ggh4x))
+suppressPackageStartupMessages(library(lubridate))
+suppressPackageStartupMessages(library(scales))
+suppressPackageStartupMessages(library(patchwork))
+suppressPackageStartupMessages(library(pbapply))
+
+
+toks <- unlist(tstrsplit(getwd(), "/")) 
+if(toks[length(toks)] == "beatcf-mars-sim"){
+  prefix_cfg <- "./etc/sim16/"
+  prefix_stan <- "./stan"
+  prefix_fig <- "./fig"
+  prefix_data <- "./data"
+  prefix_r <- "./R"
+} else {
+  prefix_cfg <- "../etc/sim16/"
+  prefix_stan <- "../stan"
+  prefix_fig <- "../fig"
+  prefix_data <- "../data"
+  prefix_r <- "../R"
+}
+
+
+
+source(paste0(prefix_r, "/libs.R"))
+source(paste0(prefix_r, "/init.R"))
+source(paste0(prefix_r, "/util.R"))
+source(paste0(prefix_r, "/data-sim16.R"))
+
+
+# Each input file corresponds to the results from a single simulation
+# scenario/configuration.
+# Load all the files into a single list.
+
+# files of interest
+sim_lab <- "sim16-01"
+
+flist <- list.files(paste0(prefix_data, "/", sim_lab), pattern = "sim16")
+toks <- list()
+l <- list()
+i <- 1
+
+for(i in 1:length(flist)){
+
+  l[[i]] <- qs::qread(file.path(paste0(prefix_data, "/", sim_lab), flist[i]))
+  toks[[i]] <-  unlist(tstrsplit(flist[i], "[-.]"))
+}
+
+N_sims <- l[[1]]$cfg$nsim
+
+
+
+# temp to replace
+# l_spec <- get_prototype_cfg()
+l_spec_1 <- l[[1]]$l_spec
+
+desc_labs <- character()
+
+for(i in 1:length(l)){
+  
+  desc_labs <- c(desc_labs, l[[i]]$l_spec$desc)
+  
+}
+
+```
+
+{{< pagebreak >}}
+
+::: summary
+|     |        |
+|:----|:------------|
+|Study title:  |  BEAT-CF MARS |
+|Reference intervention: |  Standard airway clearance therapy at least twice per day for 14 days, plus 14 days of oral antibiotics commencing as soon as practicable (and ≥ 72 hours and < 7 days) after onset of new or acute worsening of cough. |   
+|Intervention: | (1) Deferred antibiotic strategy (2) Early discontinuation antibiotic strategy. |   
+|Outcome: | Time to recovery from onset of exacerbation |   
+|Study design:  |   Bayesian adaptive trial with early stopping rules | 
+|Sponsor:  |    University of Sydney, NSW, Australia | 
+Protocol: |  todo |
+|Registration:  |    todo | 
+|HREC:  |   todo | 
+|Study date of first consent:  |   todo | 
+|Principal coordinating investigators:  |   Tom Snelling | 
+:::
+
+<!-- 
+Note that the above relies on the pandoc extension implemented in the lua file 
+in the etc directory. It additionally relies on the presence of a custom style
+in word called study summary. It will currently only work for word (because I
+cannot be bothered to implement it in anything else at the moment).
+-->
+
+
+{{< pagebreak >}}
+
+# Version history {.unlisted .unnumbered}
+
+
+\tiny
+| Version    |   Date     | Change    |   Reason     |
+|:----|:----|:--------|:--------|
+| 0.1 | 2026-03-04 | First version revised design | - |
+| 0.2 | 2026-03-04 | Incorporate carry-over effects into the healthy state | Feedback from CI |
+| 0.2 | 2026-05-18 | Discrete time process | Better representation of state |
+\normalsize
+
+{{< pagebreak >}}
+
+# Design
+
+Beat CF Mars is a three arm, sequential trial with adaptive stopping rules based on non-inferiority and futility @Berry2011.
+The primary endpoint is the expected exacerbation days within a 90 day window.
+
+Participants are enrolled in a well state and followed up over 365 days.
+On exerperiencing the first exacerbation in the follow up period, participants are randomised to:
+
++ standard of care antibiotics (soc)
++ deferred antibiotics (def)
++ early discontinue antibiotics (dis)
+
+and tracked over 90 days for resolution of symptoms and/or subsequent exacerbation.
+
+In subsequent exacerbations, participants retain the initial treatment assignment to 90 days.
+We follow participants over the 90 days (irrespective of whether this overflows the 365 day follow up) and capture the number of days in an exacerbation state as a measure to compare across treatment groups.
+
+Clearly, if no exacerbation occurs, then no trt was assigned and so these participants would be excluded from any analysis.
+This loss of data (they provide no information relevant to the analysis) is one of the trade offs of the simplicity of the design.
+
+Another downside is that participants may stop adhering to their assigned treatment if they have a poor response under their assigned randomisation. 
+We also lose the opportunity to randomise a participant to a new treatment if they have multiple exacerbatiuons within the 90 day decision window.
+However, if they have another exacerbation beyond the 90 day follow up and within the 365 days of total monitoring then we could potentially re-randomise.
+
+# Model
+
+Mean exacerbation days by group conditional on prognostic.
+
+# Treatment Effects
+
+Conditional effects based on normal assumption for the data.
+
+# Decision Processes
+
+At each analysis we use the difference in mean exacerbation days to compute the probability of non-inferiority.
+
+We adopt a **non-inferiority** margin of `r l_spec_1$dec_eh_delta_ni` days and require a `r l_spec_1$dec_thresh_ni` probability that the treatments arms (def and dis) are lower than the margin to stop the trial for non-inferiority.
+
+Additionally, if the the treatments arms (def and dis) are greater than the NI margin with probability `r l_spec_1$dec_thresh_fut` then we stop future enrolment into the arm for **futility**.
+
+The soc remains the reference arm throughout the study.
+
+# Scenarios
+
+@tbl-scen-01 provides a summary of the key parameters used to configure the scenarios.
+Each scenario was simulated `r l_spec_1$nsim` times with a cohort of `r sum(l_spec_1$N_pt)` participants with each trial having up to `r length(l_spec_1$N_pt)` analyses after `r paste0(cumsum(l_spec_1$N_pt), collapse = ", ")` are enrolled.
+
+```{r, echo = F, eval = T}
+#| label: tbl-scen-01
+#| tbl-cap: 'Scenarios - key simulation parameters'
+#| column: page
+#| out-width: 100%
+#| tbl-cap-location: bottom
+#| tbl-pos: H
+
+i <- 1
+d_scen <- data.table()
+g_scen_names <- c()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  l_cfg <- copy(l[[i]]$l_spec)
+  
+  d_tmp <- data.table(
+    desc = l_cfg$desc,
+    b_trt_eh = sprintf("%.2f, %.2f", l_cfg$b_trt_eh[2], l_cfg$b_trt_eh[3]),
+    b_trt_he = sprintf("%.2f, %.2f", l_cfg$b_trt_he[2], l_cfg$b_trt_he[3]),
+    
+    ni_margin = l_cfg$dec_eh_delta_ni,
+    dec_thresh_ni = l_cfg$dec_thresh_ni,
+    dec_thresh_fut = l_cfg$dec_thresh_fut,
+    decision_fu = l_cfg$decision_fu
+    )
+  
+  d_scen <- rbind(d_scen, d_tmp)
+}
+
+
+
+kableExtra::kbl(
+  d_scen, 
+  escape = TRUE, booktabs = TRUE, align = c("lcccccc"),
+  linesep = "",
+  col.names=c("Scenario", "Treatment effects (E)", "Treatment effects (H)", 
+              "NI Margin", "NI Threshold", "Fut Threshold", "Dec FU Days"), 
+  digits = 2)  |>
+  kableExtra::kable_styling(font_size = 9)  |>
+  kableExtra::column_spec(1, width = "3.5cm")|>
+  kableExtra::column_spec(2:3, width = "2cm")|>
+  kableExtra::column_spec(4:7, width = "1.5cm")
+```
+
+
+# Results
+
+## Example Trial
+
+### Enrolment and Allocation
+
+```{r, echo = F}
+l_cfg <- copy(l[[1]]$l_spec)
+d_all <- copy(l[[1]]$d_all[sim == l_cfg$ex_trial_ix[1]])
+
+d_N_trt <- d_all[evt == 1, .N, keyby = trt]
+```
+
+The example is from the first scenario and uses the first simulated trial.
+All the figures in this section relate to a single trial.
+
+Of the `r nrow(d_all)` entering into the trial, `r sprintf("%.0f (%.0f%%)", sum(d_all$evt), 100 * mean(d_all$evt))` had an exacerbation and therefore entered into randomised treatment.
+
+@fig-ex-1-disc-exac shows the distribution of the number of exacerbations based on the collection approach.
+Again, we assume that participants are monitored for `r l_spec_1$followup` days for the occurrence of an exacerbation. 
+If an exacerbation occurs, then we follow participants up for `r l_spec_1$decision_fu` days (irrespective of whether this overflows the `r l_spec_1$followup` monitoring window) and determine how many days they are in an exacerbation state.
+Once, the `r l_spec_1$decision_fu` day follow up is reached, the participant is considered to have completed their involvement in the study with regards to the primary outcome.
+
+@fig-ex-1-enrol shows the progression of participants entering the trial and @fig-ex-2-enrol-alloc shows how each of the treatment arms grow as exacerbations occur.
+Of the `r d_all[evt == 1, .N]` randomised, `r d_N_trt[trt == "soc", N]` were assigned to SOC, `r d_N_trt[trt == "def", N]` to the defer strategy and `r d_N_trt[trt == "dis", N]` to early discontinue.
+
+```{r}
+#| label: fig-ex-1-disc-exac
+#| fig-cap: 'Distribution of exacerbations'
+#| fig-height: 4
+#| fig-width: 4
+#| out-height: 4in
+#| out-width: 4in
+#| fig-dpi: 240
+#| fig-align: "center"
+#| fig-pos: H
+
+# Distribution of exacerbations in this sample.
+
+
+# number of unique elements in vec
+d_fig <- copy(d_all)
+
+# d_fig[, .N, keyby = .(desc, sim, n_E)]
+
+# https://github.com/tidyverse/ggplot2/issues/2051
+ggplot(d_fig, aes(x = exac_count)) +
+  geom_bar(aes(y = after_stat(prop), group = 1)) +
+  scale_x_continuous("Exacerbations", breaks = 0:10) +
+  scale_y_continuous("Proportion of Pts", 
+                     breaks = seq(0, 1, by = 0.1))
+```
+
+```{r}
+#| label: fig-ex-1-enrol
+#| fig-cap: 'Participant entry into study'
+#| fig-height: 4
+#| fig-width: 4
+#| out-height: 4in
+#| out-width: 4in
+#| fig-dpi: 240
+#| fig-align: "center"
+#| fig-pos: H
+
+l_cfg <- copy(l[[1]]$l_spec)
+d_fig_1 <- copy(l[[1]]$d_all[sim == l_cfg$ex_trial_ix[1]])
+d_fig_2 <- copy(l[[1]]$d_all[sim == l_cfg$ex_trial_ix[1] & evt == 1])
+
+
+d_fig_1[, wk := t0 %/% 7]
+d_fig_1 <- d_fig_1[, .N, keyby = .(wk)]
+d_fig_1[, c_N := cumsum(N)]
+d_fig_1[, desc := "Enrolled"]
+
+d_fig_2[, wk := t0 %/% 7]
+d_fig_2 <- d_fig_2[, .N, keyby = .(wk)]
+d_fig_2[, c_N := cumsum(N)]
+d_fig_2[, desc := "Randomised"]
+
+d_fig <- rbind(d_fig_1, d_fig_2)
+
+tit <- sprintf("Enrolment (mean = %.1f per week over enrolment period)", d_fig_1[, mean(N)])
+
+ggplot(d_fig, aes(x = wk, y = c_N, group = desc, lty = desc)) +
+  geom_vline(aes(xintercept = 52), lwd = 0.3) +
+  geom_step() +
+  scale_linetype_discrete("")+
+  scale_x_continuous("Week", breaks = seq(0, max(d_fig$wk), by = 10)) +
+  scale_y_continuous("N", breaks = seq(0, max(d_fig$c_N), by = 100)) +
+  ggtitle(tit)
+```
+
+
+```{r}
+#| label: fig-ex-2-enrol-alloc
+#| fig-cap: 'Allocation to each treatment over enrolment period'
+#| fig-height: 4
+#| fig-width: 4
+#| out-height: 4in
+#| out-width: 4in
+#| fig-dpi: 240
+#| fig-align: "center"
+#| fig-pos: H
+
+l_cfg <- copy(l[[1]]$l_spec)
+d_fig <- copy(l[[1]]$d_all[sim == l_cfg$ex_trial_ix[1] & evt == 1])
+
+d_enrol <- copy(l[[1]]$d_enrol[sim == l_cfg$ex_trial_ix[1]])
+
+
+d_fig[, wk := t0 %/% 7]
+d_fig <- d_fig[, .N, keyby = .(wk, trt)]
+d_fig[, c_N := cumsum(N), keyby = .(trt)]
+
+ggplot(d_fig, aes(x = wk, y = c_N, group = trt, col = trt)) +
+  geom_step() +
+  scale_color_manual("", values = c(
+    "#A85F18", "#CC8922", "#228DCC"
+  )) +
+  scale_x_continuous("Week", breaks = seq(0, max(d_fig$wk), by = 10)) +
+  scale_y_continuous("N", breaks = seq(0, max(d_fig$c_N), by = 100))
+```
+
+### Days to Exacerbation
+
+@fig-ex-1-tt-exac shows the KM survival curves for time to exacerbation (censored at 365) for all enrolments (LHS) and those with events (and therefore receiving randomised treatment and included in primary analysis).
+
+```{r}
+#| label: fig-ex-1-tt-exac
+#| fig-cap: 'KM survival curves for time to exacerbation by treatment. LHS: All data including censored participants. RHS: participants receiving randomised treatment (i.e. those with exacerbations)'
+#| fig-height: 4
+#| fig-width: 6
+#| out-height: 4in
+#| out-width: 6in
+#| fig-dpi: 300
+#| fig-align: "center"
+#| fig-pos: H
+
+
+d_fig <- copy(d_all)
+d_fig[, trt := factor(trt, levels = c("def", "dis", "soc", "none"))]
+
+# # https://github.com/tidyverse/ggplot2/issues/2051
+p_1 <- ggplot(d_fig[trt != "none"], aes(time = day_of_exac, status = evt)) +
+  geom_km(lwd = 0.4) +
+  scale_color_discrete("Treatment") +
+  scale_x_continuous("Day", breaks = seq(0, max(d_fig$day_of_exac), by = 50)) +
+  scale_y_continuous("Survival")
+
+p_2 <- ggplot(d_fig[trt != "none"], aes(time = day_of_exac, status = evt, col = factor(trt))) +
+  geom_km(lwd = 0.4) +
+  scale_color_discrete("Treatment") +
+  scale_x_continuous("Day", breaks = seq(0, max(d_fig$day_of_exac), by = 50)) +
+  scale_y_continuous("Survival")
+
+p_1 + p_2
+```
+
+### Exacerbation Days
+
+@fig-ex-1-exac-days shows the distribution of exacerbation days amongst those enrolled that had one or more exacerbations. 
+
+```{r}
+#| label: fig-ex-1-exac-days
+#| fig-cap: 'Exacerbation days to 90 days amongst those randomised'
+#| fig-height: 5
+#| fig-width: 5
+#| out-height: 5in
+#| out-width: 5in
+#| fig-dpi: 300
+#| fig-align: "center"
+#| fig-pos: H
+
+
+d_fig <- copy(d_all[evt == 1])
+
+# https://github.com/tidyverse/ggplot2/issues/2051
+ggplot(d_fig[], aes(x = exac_days, group = trt)) +
+  geom_histogram(bins = 30, fill = "grey", col = "black") +
+  scale_x_continuous("Day") +
+  scale_y_continuous("N") +
+  facet_wrap(~trt, ncol = 1)
+```
+
+### Model Outputs
+
+@fig-ex-1-post-1 shows the model outputs at the final analysis.
+
+```{r}
+#| label: fig-ex-1-post-1
+#| fig-cap: 'Prior and posterior for model parameters'
+#| fig-height: 6
+#| fig-width: 6
+#| out-height: 6in
+#| out-width: 6in
+#| fig-dpi: 240
+#| fig-align: "center"
+#| fig-pos: H
+
+l_cfg <- copy(l[[1]]$l_spec)
+d_pri_par <- copy(l[[1]]$d_pri_par[sim == l_cfg$ex_trial_ix[1]])
+d_post_par <- copy(l[[1]]$d_post_par[sim == l_cfg$ex_trial_ix[1]])
+
+d_pri_par[, desc := "prior"]
+d_post_par[, desc := "posterior"]
+
+d_par <- rbind(d_pri_par, d_post_par)
+
+d_fig <- melt(d_par, id.vars = c("desc", "sim", "ic"))
+d_fig[, desc := factor(desc, levels = c("posterior", "prior"))]
+
+p_1 <- ggplot(d_fig, 
+              aes(x = value, group = desc, colour = desc, lty = desc)) +
+  geom_density() +
+  scale_colour_discrete("") +
+  scale_x_continuous("") +
+  scale_linetype_discrete("") +
+  ggh4x::facet_wrap2(variable~ic, scales = "free", ncol = max(d_fig$ic)) 
+
+p_1 
+
+```
+
+## Trial Population
+
+```{r, eval = T}
+#| label: exac-comp
+#| code-summary: Frequency of exacerbation
+#| echo: FALSE
+
+i <- 1
+d_all <- data.table()
+
+g_scen_names <- c()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  l_cfg <- copy(l[[i]]$l_spec)
+  
+  # add desc...
+  d_tmp <- copy(l[[i]]$d_all)
+  d_tmp[, desc := l_cfg$desc]
+  
+  g_scen_names <- c(g_scen_names, l_cfg$desc)
+  
+  d_tmp[, ix_desc := i]
+  d_all <- rbind(d_all, d_tmp)
+}
+
+d_all[, desc := factor(desc, levels = g_scen_names)]
+
+
+```
+
+@fig-ppfev0 shows the relationship between the standardised ppfev1 at baseline and smoothed proportion having the event.
+Essentially for increasing baseline ppfev1, there is a decreasing risk of exacerbation.
+
+```{r}
+#| label: fig-ppfev0
+#| fig-cap: 'Smoothed proportion of participants having exacerbation (binned risk of exacerbation) by standardised baseline ppfev1'
+#| fig-height: 4
+#| fig-width: 4
+#| out-height: 4in
+#| out-width: 4in
+#| fig-dpi: 300
+#| fig-align: "center"
+#| fig-pos: H
+
+d_fig <- copy(d_all)
+
+# https://github.com/tidyverse/ggplot2/issues/2051
+ggplot(d_fig, aes(x = ppfev_0, y = evt)) +
+  geom_smooth(se = F, col = 1, lwd = 0.5) +
+  scale_x_continuous("Standardised baseline PPFEV1") +
+  scale_y_continuous("Proportion with Event",
+                     breaks = seq(0, 1, by = 0.1)) +
+  facet_wrap(desc ~ .)
+
+```
+
+## Parameters 
+
+@tbl-par-comp summarises the model parameter estimates, by scenario and analysis, averged over the simulations.
+
+```{r, eval = T}
+#| label: tbl-par-comp
+#| tbl-cap: 'Posterior parameter summary'
+
+i <- 1
+d_par <- data.table()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  # extract the decision matrix - sim, analysis, quantity, domain level decision
+  d_tmp <- copy(l[[i]]$d_post_smry_1[
+    par %in% l_spec_1$par_names])
+  
+  l_cfg <- copy(l[[i]]$l_spec)
+  
+  # extrapolate the rmst forward to impute the effects in those sims that had
+  # early stopping
+  d_tmp[, mu := nafill(mu, type = "locf"), keyby = .(sim, par)]
+  
+  d_smry <- d_tmp[, .(
+    mu = mean(mu),
+    lo = quantile(mu, prob = 0.025),
+    hi = quantile(mu, prob = 0.975)
+    ), keyby = .(ic, par)]
+  
+  d_smry[, N := cumsum(l_cfg$N_pt)[ic]]
+    
+  d_par <- rbind(
+    d_par,
+    cbind(scenario = i, desc = l_cfg$desc, d_smry)
+  )
+}
+
+d_par[, stat := sprintf("%.1f (%.1f, %.1f)", mu, lo, hi)]
+
+d_tbl <- dcast(d_par, desc + par ~ N, value.var = "stat")
+
+d_tbl[, desc := factor(desc, levels = desc_labs)]
+d_tbl <- d_tbl[order(desc, par)]
+
+kableExtra::kbl(
+  d_tbl, 
+  booktabs = TRUE, align = c("llccc"), longtable = TRUE,
+  linesep = c("", "", "", "\\addlinespace"),
+  col.names=c("Scenario", "Parameter", cumsum(l_cfg$N_pt)), digits = 1)  |>
+  kableExtra::kable_styling(
+    font_size = 8,
+    latex_options = c("scale_down", "repeat_header")) |>
+  kableExtra::column_spec(1, width = "3.5cm")|>
+  kableExtra::column_spec(2, width = "2cm")|>
+  kableExtra::column_spec(3:5, width = "2.5cm") 
+
+```
+
+{{< pagebreak >}}
+
+
+## Decision Probability
+
+@tbl-dec-pr-1 shows the cumulative probability of the non-inferiority and futility decisions based on the difference in the exacerbation sojourn times.
+
+```{r, echo = F, eval = T}
+#| label: tbl-dec-pr-1
+#| tbl-cap: 'Cumulative probability of each decision type'
+#| column: page
+#| out-width: 100%
+#| tbl-cap-location: bottom
+#| tbl-pos: H
+
+
+i <- 1
+d_dec <- data.table()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  # extract the decision matrix - sim, analysis, quantity, domain level decision
+  d_dec_1 <- copy(l[[i]]$d_pr_dec[trt %in% c("def", "dis")])
+  
+  # config for scenario
+  l_cfg <- copy(l[[i]]$l_spec)
+  
+  # number of enrolments at each interim (interim sample size sequence)
+  d_N <- data.table(ic = seq_along(l_cfg$N_pt), N = cumsum(l_cfg$N_pt))
+  
+  # compute the cumulative instances of a decision being made by sim, each 
+  # decision type and by parameter
+  d_dec_1[, cdec := as.integer(cumsum(dec)>0), keyby = .(sim, rule, trt)]
+  d_dec_1[, cdec := nafill(cdec, type = "locf"), keyby = .(sim, rule, trt)]
+  d_dec_1[, cdec := as.logical(cdec)]
+  
+  d_dec_1 <- base::merge(d_dec_1, d_N, by = "ic")
+  
+  # cumulative proportion for which each decision quantity has been met by 
+  # analysis and domain
+  d_dec_1 <- d_dec_1[, .(pr_val = mean(cdec)), keyby = .(ic, N, rule, trt)]
+  
+  d_dec <- rbind(
+    d_dec,
+    cbind(scenario = i, desc = l_cfg$desc, d_dec_1)
+  )
+
+}
+
+d_tbl <- dcast(
+  d_dec, desc + rule  + trt ~ N, value.var = "pr_val")
+
+d_tbl[, desc := factor(desc, levels = desc_labs)]
+d_tbl[, rule := factor(rule, levels = c("ni", "fut"), labels = c("NI", "Fut"))]
+d_tbl <- d_tbl[order(desc, rule)]
+
+
+kableExtra::kbl(
+  d_tbl, 
+  escape = TRUE, booktabs = TRUE, align = c("lllccc"),
+  linesep = c("", "", "", "\\addlinespace"),
+  col.names=c("Scenario", "Rule", "Treatment", cumsum(l_cfg$N_pt)), 
+  digits = 2)  |>
+  kableExtra::kable_styling(font_size = 8) |>
+  kableExtra::column_spec(1, width = "5cm")|>
+  kableExtra::column_spec(2:6, width = "1.5cm")
+
+
+
+```
+
+
+
+
+
+{{< pagebreak >}}
+
+## Sample Size
+
+Expected number of enrolments on each treatment arm under each scenario.
+
+```{r, echo = F, eval = T}
+#| label: tbl-samp-size
+#| tbl-cap: 'Mean sample size by scenario and treatment group'
+#| column: page
+#| out-width: 100%
+#| tbl-cap-location: bottom
+#| tbl-pos: H
+
+i <- 1
+d_N_by_rand <- data.table()
+
+for(i in 1:length(l)){
+  
+  # config for scenario
+  l_cfg <- copy(l[[i]]$l_spec)
+   
+  d_all <- copy(l[[i]]$d_all[evt == 1])
+  
+  d_smry <- d_all[, .N, keyby = .(sim, trt)]
+  
+  d_N_by_rand <- rbind(
+    d_N_by_rand,
+    cbind(
+      scenario = i, desc = l_cfg$desc, 
+      d_smry[, .(mu_N = mean(N), sd_N = sd(N)), keyby = trt]
+    )
+  )
+  
+}
+d_N_by_rand[, out := sprintf("%.0f (%.0f)", mu_N, sd_N)]
+d_tbl <- dcast(d_N_by_rand, scenario + desc ~ trt, value.var = "out")
+d_tbl <- d_tbl[order(scenario)]
+
+
+kableExtra::kbl(
+  d_tbl[, .SD, .SDcols = -c("scenario")], 
+  escape = TRUE, booktabs = TRUE, align = c("lrrr"),
+  col.names=c("Scenario", "def", "dis", "soc"), 
+  digits = 2)  |>
+  kableExtra::kable_styling(font_size = 8) 
+
+
+```
+
+
+
+{{< pagebreak >}}
+
+# References {.unnumbered}
+
+<!-- Needs to have a citation for this to work otherwise you will get the old \end{CSLReferences} error  -->
+
+::: {#refs}
+:::
+
+{{< pagebreak >}}
+
+
+
+
