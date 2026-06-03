@@ -154,6 +154,8 @@ run_trial <- function(
     d_all <- rbind(d_all, d)
     
     # segment by state by adding run ids
+    # the bin corresponds to the piecewise component of the hazard
+    # the run length id gives the point when any change in state occurs
     d_all[state == "H", bin := l_spec$v_lu_he_bin[day_in_state + 1L] ]
     d_all[state == "E", bin := l_spec$v_lu_eh_bin[day_in_state + 1L] ]
     d_all[, rlgrp := rleid(id, state, trt, bin)]
