@@ -1,0 +1,158 @@
+---
+title: "Sim 18 - necessary parameter transformations"
+format: html
+---
+
+
+Assume the linear predictor for an ordinal model is as follows: 
+
+```
+X <- model.matrix(~ x_trt + x_prev +
+                      x_time + I(x_time^2) +
+                      x_gap_time +
+                      x_trt * x_time , 
+                    data = d_obs)
+X_mod <- X[, -1]
+```
+
+where each of the terms derives from a data generation process that produces values on the natural scale.
+
++ `x_trt` is coded as a factor with three levels, the reference being soc
++ `x_prev` is coded as a factor with three levels, the reference being none (the others mild and sever)
++ `x_time` is a centered and scaled version of days which is from 1 to 28 (the day of onset is coded zero but because this has no previous state it is dropped prior to creating the design matrix for fitting the model)
++ `x_time` simply creates the quadratic term
++ `x_gap_time` is an indicator to reflect the observation process when we switch to weekly rather than daily follow up
++ `x_trt` x `x_time` is the interaction
+
+It produces the following:
+
+```
+> X_mod
+     x_trt2 x_trt3 x_prev2 x_prev3      x_time I(x_time^2) x_gap_time2 x_trt2:x_time x_trt3:x_time
+1         0      1       1       0 -1.25323785 1.570605101           0    0.00000000   -1.25323785
+2         0      1       0       1 -1.10793491 1.227519761           0    0.00000000   -1.10793491
+3         0      1       1       0 -0.96263197 0.926660309           0    0.00000000   -0.96263197
+4         0      1       0       1 -0.81732903 0.668026744           0    0.00000000   -0.81732903
+5         0      1       0       1 -0.67202609 0.451619068           0    0.00000000   -0.67202609
+etc
+```
+
+The reason for scaling time is that it majorly improves mcmc sampling, but some of the parameters get screwed up and we need to back transform.
+Say the parameters in the model are the ordered vector of cutpoints `c` and a vector `b` that maps to these parameters:
+
+```
+b[1]: x_trtLevel2
+b[2]: x_trtLevel3
+b[3]: x_prevLevel2
+b[4]: x_prevLevel3
+b[5]: x_time
+b[6]: I(x_time^2)
+b[4]: x_gap_time
+b[8]: x_trtLevel2:x_time
+b[9]: x_trtLevel3:x_time
+```
+
+Now say the original days variable is $t$.
+So, what we are doing is fitting the data to $z = \frac{t - \mu}{\sigma}$ where $\mu$ is the mean of the days variable and $\sigma$ is the standard deviation.
+
+Assume that the treatment indicators are $T_1$ and $T_2$, the prev indicators are $P_1$ and $P_2$ and the gap time indicator is $G$.
+The time dependent part of the linear predictor is
+
+$$
+\begin{aligned}
+\eta = \dots + \beta_{trt_2} T_2 + \beta_{trt_3} T_3 + \beta_{time_1} z +  \beta_{time_2} z^2 + \beta_{int_2} T_2 \cdot z + \beta_{int_3} T_3 \cdot z  
+\end{aligned}
+$$
+
+i.e. a function of the $T_j$ and $t$, the $P_l$ and $G$ don't come into it.
+
+Substitute $z = \frac{t - \mu}{\sigma}$ into the above
+
+$$
+\begin{aligned}
+\eta = \dots + \beta_{trt_2} T_2 + \beta_{trt_3} T_3 + \beta_{time_1} \left( \frac{t - \mu}{\sigma} \right) +  \beta_{time_2} \left( \frac{t - \mu}{\sigma} \right) ^2 + \beta_{int_2} T_2 \cdot \left( \frac{t - \mu}{\sigma} \right)  + \beta_{int_3} T_3 \cdot \left( \frac{t - \mu}{\sigma} \right) 
+\end{aligned}
+$$
+
+Now, say you expand:
+
+$$
+\begin{aligned}
+\beta_{int_2} T_2 \cdot \left( \frac{t - \mu}{\sigma} \right)  = \left( \frac{\beta_{int_2}}{\sigma} \right)(T_2 \cdot t) - \left( \frac{\beta_{int_2}}{\sigma} \right)(T_2)
+\end{aligned}
+$$
+
+You can see that we have ended up with a part of the interaction creating a term that relies solely on $T_2$ (and obviously this also occurs for $T_3$).
+
+Collecting all the terms (is a bit of a algebra mare) but gives:
+
+$$
+\begin{aligned}
+\eta &= \dots + \underbrace{\vphantom{\left(\frac{\beta _{\text{int2}}\mu }{\sigma }\right)}\left(\beta _{\text{trt2}}-\frac{\beta _{\text{int2}}\mu }{\sigma }\right)}_{\beta _{\text{trt2}}^{\text{orig}}}T_{2} +
+\underbrace{\vphantom{\left(\frac{\beta _{\text{int2}}\mu }{\sigma }\right)}\left(\beta _{\text{trt3}}-\frac{\beta _{\text{int3}}\mu }{\sigma }\right)}_{\beta _{\text{trt3}}^{\text{orig}}}T_{3}+ \\
+&\quad \underbrace{\vphantom{\left(\frac{\beta _{\text{int2}}\mu }{\sigma }\right)}\left(\frac{\beta _{\text{time}}}{\sigma }-\frac{2\mu \beta _{\text{quad}}}{\sigma ^{2}}\right)}_{\beta _{\text{time}}^{\text{orig}}}t+
+\underbrace{\vphantom{\left(\frac{\beta _{\text{int2}}\mu }{\sigma }\right)}\left(\frac{\beta _{\text{quad}}}{\sigma ^{2}}\right)}_{\beta _{\text{quad}}^{\text{orig}}}t^{2}+  \\
+&\quad \underbrace{\vphantom{\left(\frac{\beta _{\text{int2}}\mu }{\sigma }\right)}\left(\frac{\beta _{\text{int2}}}{\sigma }\right)}_{\beta _{\text{int2}}^{\text{orig}}}(T_{2}\cdot t)+
+\underbrace{\vphantom{\left(\frac{\beta _{\text{int2}}\mu }{\sigma }\right)}\left(\frac{\beta _{\text{int3}}}{\sigma }\right)}_{\beta _{\text{int3}}^{\text{orig}}}(T_{3}\cdot t) + \text{Some \ baseline \ shift}
+\end{aligned}
+$$
+
+
+Because the scaled time variable $z$ has a mean offset $\mu$, the zero-point of $z$ is different from the zero-point of original days $t$.
+In the scaled model, $\beta_{trt2}$ represents the treatment effect when $z = 0$ (which is actually when days = $\mu$). 
+On the original scale, $\beta_{trt2}^{orig}$ must represent the treatment effect when $t = 0$. 
+The term $-\frac{\beta_{int2}\mu}{\sigma}$ is the correction to slide the baseline treatment effect back from day $\mu$ to day 0.
+
+When you expand out the linear predictor you get some stand alone contants coming into existence.
+For example, the linear time term:
+
+$$
+\beta_{time}z = \beta_{time1} \frac{t-\mu}{\sigma} = \left( \frac{\beta_{time1}}{\sigma} \right) t - \underbrace{\left(\frac{\beta _{\text{time1}}\mu }{\sigma }\right)}_{\text{Constant}}
+$$
+
+Similarly, for the quadratic term you end up with a constant equal to $\frac{2\mu \beta_{time2}}{\sigma^2}$.
+
+These create a total baseline shift which polutes the intercept terms, i.e. the cutpoints.
+This is because the linear predictor value is being matched against what is therefore necesarily a scaled cutpoint.
+To get the cutpoints back onto the original scale, you need to remove the baseline shift:
+
+$$
+c_k^{orig} = c_k - \left(    \frac{\beta_{time2} \mu}{\sigma^2}   - \frac{\beta_{time1} \mu}{\sigma}   \right) 
+$$
+
+all of which is implemented in the generated quantities block for the `cf-markov-2.stan` model but look something like this:
+
+\small
+```
+generated quantities {
+  vector[P] b_orig;
+  ordered[K-1] cutpoints_orig;
+  
+  // 1. x_prev remains unchanged (no interaction with time)
+  b_orig[3] = b[3];
+  b_orig[4] = b[4];
+  
+  // 2. Rescale Quadratic Time Coefficient
+  b_orig[6] = b[6] / (sigma_time ^ 2);
+  
+  // 3. Rescale Linear Time Coefficient
+  b_orig[5] = (b[5] / sigma_time) - (2.0 * mu_time * b[6]) / (sigma_time ^ 2);
+  
+  // 4. Back-transform Interaction Coefficients (Rescaled by sigma)
+  b_orig[8] = b[8] / sigma_time;
+  b_orig[9] = b[9] / sigma_time;
+  
+  // 5. Back-transform Treatment Main Effects (Shifted by the interaction)
+  b_orig[1] = b[1] - (b[7] * mu_time) / sigma_time;
+  b_orig[2] = b[2] - (b[8] * mu_time) / sigma_time;
+  
+  // 6. Back-transform Cutpoints (Shifted by the baseline time effects)
+  for (k in 1:(K-1)) {
+    cutpoints_orig[k] = cutpoints[k] - ((b[6] * (mu_time^2)) / (sigma_time^2) - (b[5] * mu_time) / sigma_time);
+  }
+}
+```
+\normalsize
+
+
+
