@@ -1,0 +1,63 @@
+default:
+  desc: "Treatments equivalent"
+  nsim: 5
+  mc_cores: 40
+  mcmc_warmup: 1000
+  mcmc_iter: 1000
+  mcmc_chain: 1
+  # redraws for effect calculation
+  mcmc_B: 1000
+  
+  # example trials
+  nex: 5
+  # enrolment
+  N_pt: [400, 100, 100]
+  pt_per_day: 1.2
+  ramp_up_days: 60
+  
+  # administrative censor
+  followup: 720
+  followup_dec: 28
+  visit_days: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 21, 28]
+  
+  # Weakly informative priors, set with reference to the natural scale: 
+  # log acceleration factors beyond +-3 (i.e. AF outside
+  # roughly [0.05, 20]) are clinically implausible, so prior_beta1_sd = 1 
+  # keeps substantial prior mass within +-2 on the log scale (AF in [0.14, 7.4]) 
+  # while still being clearly dominated by the likelihood for a ~ hundreds of pt
+  pri_b_0_sd:     5
+  pri_b_trt_sd: 1
+  pri_log_sig_mu: 0
+  pri_log_sig_sd: 1
+  pri_rho_raw_sd: 1     
+  
+  state_lab: ["none", "mild", "severe"]
+  # controls which trt can be allocated
+  trt_active: [1, 1, 1]
+  trt_lab: ["soc", "def", "dis"]
+  
+  p_init: [0, 0.4, 0.6]
+  
+  alpha: [-0.5, 1.2]
+  b_trt: [0, 0.5, 1]
+  b_prev: [0, 1.5, 0.1]
+  b_time_1: -0.4
+  b_time_2: 0.002
+  b_trt_time: [0, 0, 0]
+  b_gap: [0, 0]
+  
+  # decision reference values - think of these as the non-inferiority margins
+  
+  # will not tolerate expected total time in exacerbation to be more than 
+  # dec_eh_delta_ni days longer over the follow up
+  dec_delta_ni: 1
+  
+  # could equivalently say that we will not tolerate the same amount of days
+  # less of health.
+  
+  # decision probability thresholds - 
+  
+  # level of certainty we require to make claims
+  dec_thresh_ni: 0.97
+  dec_thresh_fut: 0.80
+    
