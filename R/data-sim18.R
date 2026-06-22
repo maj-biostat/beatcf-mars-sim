@@ -22,232 +22,72 @@ source(paste0(prefix_r, '/util.R'))
 
 
 
-#' 
-get_sim18_pt <- function(
-    l_spec
-  ){
-  
-  # age distribution - truncated log normal - restrict age to (age_lwr,age_upr)
-  p_lt_age_lwr <- plnorm(
-    l_spec$age_min, meanlog = log(l_spec$age_mean), sdlog = l_spec$age_sd, lower.tail = T)
-  p_gt_age_upr <- plnorm(
-    l_spec$age_max, meanlog = log(l_spec$age_mean), sdlog = l_spec$age_sd, lower.tail = F)
-  # sample u in [p0, 1)
-  u <- p_lt_age_lwr + runif(1, 0, (1 - (p_lt_age_lwr + p_gt_age_upr))) 
-  age <- qlnorm(u, meanlog = log(l_spec$age_mean), sdlog = l_spec$age_sd)
-  
-  eh_u <- rnorm(1, 0, l_spec$u_sd_eh)
-  he_u <- rnorm(1, 0, l_spec$u_sd_he)
-  
-  # make time to first exacerbation exponential
-  
-  
-  # duration of exacerbation on treatment is log-normal
-  
-  
-  # time to recrudescence for a proportion of the cohort
-  
-  
-  
-  # entry time is zero, in a healthy state
-  day_of_fu <- 0
-  state <- "H"
-  v_state <- rep("H", l_spec$decision_fu)
-  
-  exac_count  <- 0
-  
-  names(l_spec$b_trt_eh) <- l_spec$trt_lab
-  names(l_spec$b_trt_he) <- l_spec$trt_lab
-  
-  # days to first exacerbatin (in healthy state)
-  days_in_init <- 0
-  t_exac <- 0
-  # evt indicator
-  status <- 0
-  
-  # trt isn't assigned unless an exac occurs
-  trt <- "none"
-  
-  repeat {
-    
-    days_in_init <- days_in_init + 1
-    bin_ix <- l_spec$v_lu_he_bin[days_in_init]
-    lp <- l_spec$a_he[bin_ix] +
-      he_u +
-      l_spec$b_ppfev_he * ppfev_0
-    
-    event <- rbinom(1, 1, plogis(lp))
-    
-    if(event == 1){
-      t_exac = days_in_init
-      status <- 1
-      state <- "E"
-      exac_count <- 1
-      break
-    }
-    
-    if(days_in_init >= 365){
-      t_exac <- l_spec$followup
-      status <- 0
-      break
-    }
-  }
-  c(t_exac, status, state)
-  
-  if(status == 1){
-    
-    trt <- sample(l_spec$trt_lab[l_spec$trt_active], 1)
-    days_in_state <- 0
-    
-    for(i in 1:l_spec$decision_fu){
-      
-      if (state == "E") {
-        
-        bin_ix <- l_spec$v_lu_eh_bin[days_in_state + 1L]
-        lp <- l_spec$a_eh[bin_ix] + eh_u +
-          l_spec$b_ppfev_eh * ppfev_0 +
-          l_spec$b_trt_eh[trt]
-        
-        days_in_state <- days_in_state + 1
-        y <- rbinom(1,1,plogis(lp))
-        
-        if(y == 1){
-          state <- "H"
-          days_in_state <- 0
-        }
-        
-      } else {
-        
-        bin_ix <- l_spec$v_lu_he_bin[days_in_state + 1L]
-        # carryover trt is already set
-        lp <- l_spec$a_he[bin_ix] + he_u +
-          l_spec$b_ppfev_he * ppfev_0 +
-          l_spec$b_trt_he[trt]
-        
-        days_in_state <- days_in_state + 1
-        y <- rbinom(1,1,plogis(lp))
-        
-        if(y == 1){
-          state <- "E"
-          exac_count <- exac_count + 1
-          days_in_state <- 0
-        }
-      }
-      
-      v_state[i] <- state
-    }
-    
-  }
-  
-  # the last observation should probably be censored because we do not see
-  # the completion of the exacerbation or healthy spell
-  d_pt <- data.table(
-    day_of_exac = t_exac,
-    evt = status,
-    trt = trt,
-    exac_days = sum(v_state == "E"),
-    exac_count = exac_count
-  )
-  d_pt <- cbind(age = age, ppfev_0 = ppfev_0, d_pt)
-  d_pt[, age := age + day_of_fu/l_spec$followup]
-  d_pt[]
-}
+
 
 #' Wrapper to invoke state transition simulation for individual patients used
 #' to create cohort
 #' 
-get_sim18_cohort <- function(l_spec){
+sim18_cohort <- function(l_spec){
   
   id_cohort <- l_spec$is:l_spec$ie
   N_cohort <- length(id_cohort)
   
+  # produce data for every day and then chop it down to what we observe
   d_cohort <- data.table(
     id  = l_spec$is:l_spec$ie,
+    day = rep(0:l_spec$max_day, N_cohort),
     trt = sample(l_spec$trt_lab[l_spec$trt_active], N_cohort, replace = T)
   )
+  setorder(d_cohort, id, day)
+  d_cohort[, t_0 := l_spec$t_0[id]]
   
-  # Draw correlated standard normal scores (copula scale)
-  # (w1, w2) ~ BVN(0, 0, 1, 1, rho)
-  w_1 <- rnorm(N_cohort)
-  # indep:
-  z_2 <- rnorm(N_cohort)
-  # incorporate correlation
-  w_2 <- l_spec$rho * w_1 + sqrt(1 - l_spec$rho^2) * z_2
-  # should be approx l_spec$rho
-  # cor(w_1, w_2)
+  d_cohort[, state := NA_integer_]
+  d_cohort[day==0, state:= sample(l_spec$state_opts, .N, replace = TRUE, prob = l_spec$p_init)]
   
-  # Map margins to uniform via standard normal CDF
-  u_1 <- pnorm(w_1)
-  u_2 <- pnorm(w_2)
+  for(i in seq_len(N_cohort))
+  {
+    
+    rows <- which(d_cohort$id == id_cohort[i])
+    
+    for(j in 2:length(rows))
+    {
+      
+      prev <- d_cohort$state[rows[j-1]]
+      
+      # all intervals are structurally 1 because we simulate daily and then 
+      # subset to the survey days
+      interval <- 1
+      
+      tt <- d_cohort$day[rows[j]]
+      trt <- d_cohort$trt[rows[j]]
+      
+      lp <-
+        # treatment
+        l_spec$b_trt[trt] +
+        # previous state
+        l_spec$b_prev[prev] +
+        # time (quadratic)
+        l_spec$b_time_1*tt +
+        l_spec$b_time_2*tt^2 +
+        # time by treatment (linear)
+        l_spec$b_trt_time[trt]*tt +
+        # gap length - structurally zero and is only relevant in model
+        # where we have gaps in observation
+        l_spec$b_gap[interval]
+      
+      # not very efficient but it will do
+      d_cohort$state[rows[j]] <- sim18_rord_pom_3(lp,l_spec$alpha)
+      
+    }
+    
+  }
   
-  # Map uniforms through the inverse log-logistic AFT CDF 
-  # Log-logistic AFT: 
-  # the logit transform converts the [0,1] variable into logistic
-  # log(T) = mu + sigma * logit(u),  
-  # u ~ Uniform(0,1)
-
-  # The cdf for T is the same as the cdf for epsi where epsi = logit(u) 
-  # P(T <= t)= P(epsi <= z) = u = F(t)
-  # logit(u) = (log(t)-mu)/sigma
-  # log(t) = mu + sigma*logit(u)
+  d_obs <- d_cohort[day %in% l_spec$visit_days]
   
-  mu_1 <- l_spec$b_1_0 + l_spec$b_1_trt[d_cohort[, trt]]
-  mu_2 <- l_spec$b_2_0 + l_spec$b_2_trt[d_cohort[, trt]]
-  
-  logit <- function(p) log(p / (1 - p))
-  
-  true_t1 <- exp(mu_1 + l_spec$sig_1 * qlogis(u_1))
-  # gap time AFTER recovery, i.e.
-  true_t2 <- exp(mu_2 + l_spec$sig_2 * qlogis(u_2))   
-  
-  # calendar time of next exacerbation is true_t1 + true_t2
-  
-  d_cohort[, `:=`(true_t1 = true_t1, true_t2 = true_t2)]
-  
-  # Administrative censoring on the calendar scale:
-  # Pt followed from randomisation (assume to be time 0) up to l_spec$followup days
-  # T1 is censored if true_t1 > l_spec$followup days. If T1 is observed,
-  # T2's clock starts at true_t1 (calendar time), and the remaining budget
-  # for observing T2 is (l_spec$followup days - true_t1); T2 is censored if
-  # true_t2 exceeds that remaining budget. 
-  
-  # If T1 itself is censored, T2 is
-  # structurally unobserved/undefined (the pt never recovered within
-  # the window - unlikely).
-  # In that situation T2 as right-censored at a small positive placeholder 
-  # gap time (1e-6 days; see t2_placeholder below). 
-  
-  # This is not an arbitrary hack: for the Gaussian-copula
-  # log-logistic likelihood, the both-censored contribution P(T1>t1, T2>t2) 
-  # collapses to S1(t1) alone as t2 -> 0+ (since F2(t2) -> 0 and the copula CDF
-  # C(u1,u2;rho) -> 0 along with it), so this placeholder correctly
-  # encodes "T2's clock never started" as "pure T1 censoring" without
-  # needing a separate code path in the Stan model. 
-  
-  
-  d_cohort[, evt_1 := as.integer(true_t1 <= l_spec$followup)]
-  d_cohort[, t1_obs := pmin(true_t1, l_spec$followup)]
-  
-  d_cohort[, remaining_window := l_spec$followup - t1_obs]
-  d_cohort[, evt_2 := as.integer(evt_1 == 1L & true_t2 <= remaining_window)]
-  
-  ## Placeholder gap time for T2 when T1 itself is censored: this needs to
-  ## be small relative to the realistic T2 scale (so the both-censored
-  ## likelihood contribution correctly collapses to ~S1(t1), see the
-  ## analytic check in the accompanying notes) WITHOUT being so close to
-  ## machine epsilon that log(t2) becomes an extreme value feeding into the
-  ## Stan likelihood's log-logistic transform -- 1e-6 days is many orders
-  ## of magnitude below any realistic gap time in this trial while numerically
-  ## benign (log(1e-6) ~= -13.8, well within normal double precision range).
-  t2_placeholder <- 1e-6
-  
-  d_cohort[, t2_obs := fifelse(
-    evt_1 == 1L,
-    pmin(true_t2, pmax(remaining_window, t2_placeholder)),
-    t2_placeholder   ## d2 is forced to 0 in this branch by construction
-  )]
-  
-  d_cohort[]
+  list(
+    d_cohort = d_cohort,
+    d_obs = d_obs
+  )
   
 }
 
@@ -255,106 +95,216 @@ get_sim18_cohort <- function(l_spec){
 
 #' Convert sample data.table into lists suitable for stan models
 #' 
-get_sim18_stan_data <- function(dd, l_spec){
+sim18_stan_data <- function(dd, l_spec){
   
   
-  dd[trt == "def", defer := 1]
-  dd[trt != "def", defer := 0]
-  dd[trt == "dis", discont := 1]
-  dd[trt != "dis", discont := 0]
+  setorder(dd, id, day)
   
-  X <- model.matrix(~-1 + ppfev_0 + defer + discont, data = dd)
+  dd[, `:=`(
+    prev_state = data.table::shift(state, 1L),
+    prev_day   = data.table::shift(day, 1L)
+  ), by = id]
+  
+  # For the day zero of onset, we have no prev state. We can either assume that they
+  # were well the day before or just drop that observation and include it in day 1
+  # of follow up. I do the latter.
+  dd[, gap_len := day - prev_day]
+  dd <- dd[day != 0]
+  # gives 16 days of follow up per pt 14 whole days and then 1 obs in wk 3 and 4
+  dd[, trt_idx := match(trt, l_spec$trt_lab)]
+  
+  dd[, x_time := copy(day)]
+  # scaling makes this sample a lot faster but is a pain in the arse
+  # for linear predictors with interactions
+  # additionally means you need to back scale intercepts
+  dd[, x_time := scale(x_time)]
+  dd[, x_gap_time := factor(fifelse(dd$gap_len == 1, 1, 2))]
+  dd[, x_trt := factor(trt_idx)]
+  dd[, x_prev := factor(prev_state, levels = l_spec$state_opts)]
+  
+  X <- model.matrix(~ x_trt + x_prev +
+                      x_time + I(x_time^2) +
+                      x_gap_time +
+                      x_trt * x_time, 
+                    data = dd)
+  X_mod <- X[, -1]
   
   ld <- list(
-    N = dd[, .N],
-    
-    P = ncol(X),
-    X = X,
-    
-    y = dd$exac_days,
-    
-    trt_defer_col = 2,
-    trt_discont_col = 3,
-    
-    # zero centred effects with sd
-    pri_b_0 = l_spec$pri_b_0,
-    pri_b = l_spec$pri_b,
-    pri_s = l_spec$pri_s,
-    
-    prior_only = 0
+    N  = nrow(dd),
+    P = ncol(X_mod),
+    X = X_mod,
+    y = dd$state,
+    # Indexing parameters within design matrix.
+    # First list any variable with no dependency on time
+    ix_trt_2 = 1,
+    ix_trt_3 = 2,
+    ix_prev_2 = 3,
+    ix_prev_3 = 4,
+    ix_time_1 = 5,
+    ix_time_2 = 6,
+    ix_gap = 7,
+    ix_trt_time_2 = 8,
+    ix_trt_time_3 = 9,
+    mu_days = mean(dd$day),
+    sd_days = sd(dd$day)
   )
+  stopifnot(names(X_mod)[ld$ix_trt_2] == "x_trt2")
+  stopifnot(names(X_mod)[ld$ix_trt_3] == "x_trt3")
+  stopifnot(names(X_mod)[ld$ix_prev_2] == "x_prev2")
+  stopifnot(names(X_mod)[ld$ix_prev_3] == "x_prev3")
+  stopifnot(names(X_mod)[ld$ix_time_1] == "x_time")
+  stopifnot(names(X_mod)[ld$ix_time_2] == "I(x_time^2)")
+  stopifnot(names(X_mod)[ld$ix_gap] == "x_gap_time2")
+  stopifnot(names(X_mod)[ld$ix_trt_time_2] == "x_trt2:x_time")
+  stopifnot(names(X_mod)[ld$ix_trt_time_3] == "x_trt3:x_time")
   
   ld
 }
 
-#' Convert the day wise data into segments 
-#' 
-sim18_long_to_wide <- function(dd){
+
+
+# construct 3 state transition probs based on linear predictor and 
+# cutpoints from ordinal model
+sim18_rord_pom_3 <- function(lp, alpha)
+{
+  p0 <- plogis(alpha[1] - lp)
+  p1 <- plogis(alpha[2] - lp) - p0
+  p2 <- 1 - p0 - p1
   
-  dd_w <- dd[, .(
-    tstart = min(day_of_fu)-1,
-    tstop = max(day_of_fu),
-    evt = max(y),
-    state = state[1],
-    trt = trt[1],
-    bin = bin[1],
-    ppfev_0 = ppfev_0[1]
-  ), keyby = .(id, rlgrp)]
+  sample(1:3, 1, prob = c(p0, p1, p2)) 
+}
+
+sim18_transition_matrix <- function(day, gap_ix = 1, trt, l_spec)
+{
   
-  # View(d_cohort_w)
+  P <- matrix(0,3,3)
   
-  dd_w[, .N, keyby = .(id, state)][, .(mu = mean(N)), keyby = state]
+  for(prev in l_spec$state_opts){
+    
+    lp <-
+      l_spec$b_trt[trt] +
+      l_spec$b_prev[prev] +
+      l_spec$b_time_1 * day +
+      l_spec$b_time_2 * day^2 +
+      l_spec$b_trt_time[trt] * day +
+      l_spec$b_gap[gap_ix]
+    
+    p1 <- plogis(l_spec$alpha[1] - lp)
+    p2 <- plogis(l_spec$alpha[2] - lp) - p1
+    p3 <- 1 - p1 - p2
+    
+    P[prev,] <- c(p1,p2,p3)
+    
+  }
   
-  dd_w[, state := factor(state, levels = c("H", "E"))]
+  # from 
+  rownames(P) <- l_spec$state_lab
+  # to 
+  colnames(P) <- l_spec$state_lab
+  P
   
-  dd_w[trt == "def", defer := 1]
-  dd_w[trt != "def", defer := 0]
-  dd_w[trt == "dis", discont := 1]
-  dd_w[trt != "dis", discont := 0]
-  
-  dd_w[tstart == 0, i_entry := 1]
-  dd_w[tstart != 0, i_entry := 0]
-  
-  dd_w[, len_seg := tstop - tstart]
-  
-  dd_w
 }
 
 
 
 
+sim18_sop <- function(days = 1:28, l_spec)
+{
+  
+  # has to start at day 1
+  stopifnot(days[1] == 1)
+  
+  out <- matrix(NA, length(days) + 1, 3)
+  
+  out[1,] <- l_spec$p_init
+  
+  # starting point
+  pi <- l_spec$p_init
+  
+  d_sop <- data.table()
+  
+  for(trt in l_spec$trt_lab){
+    
+    for(i in seq_along(days)){
+      
+      day = days[i]
+      
+      if(day == 1){
+        gap_ix = 1;
+      } 
+      
+      if(day > 1){
+        if(days[i] - days[i-1] == 1){
+          gap_ix = 1
+        } else {
+          gap_ix = 2
+        }
+      }
+      
+      Pt <- sim18_transition_matrix(day, gap_ix, trt, l_spec)
+      
+      pi <- drop(pi %*% Pt)
+      
+      out[i + 1,] <- pi
+      
+    }
+    
+    d_sop <- rbind(
+      d_sop, 
+      data.table(
+        trt = trt,
+        day = c(0, days),
+        none = out[,1],
+        mild = out[,2],
+        severe = out[,3]
+      )
+    )
+  }
+  
+  d_sop
+  
+}
 
 
 update_sim18_cfg <- function(l_spec){
   
-  
-  l_spec$pri_b_0 <- unlist(l_spec$pri_b_0)
-  l_spec$pri_b <- unlist(l_spec$pri_b)
-  l_spec$pri_s <- unlist(l_spec$pri_s) 
-  
-  
-  # initially all trt arms are active
   l_spec$trt_lab <- unlist(l_spec$trt_lab)
+  l_spec$state_lab <- unlist(l_spec$state_lab)
+  
+  l_spec$alpha <- unlist(l_spec$alpha)
+  l_spec$b_trt <- unlist(l_spec$b_trt)
+  names(l_spec$b_trt) <- l_spec$trt_lab
+  
   # *** Has to be converted to logical otherwise you are just going to be 
   # indexing trt 1
   l_spec$trt_active <- as.logical(l_spec$trt_active)
   names(l_spec$trt_active) <- l_spec$trt_lab
   
+  l_spec$state_opts <- seq_along(l_spec$state_lab)
+  names(l_spec$state_opts) <- l_spec$state_lab
   
-  l_spec$par_names <- c(
-    "b_1_0", 
-    "b_1_trt[2]", "b_1_trt[3]",
-    "b_2_0", 
-    "b_2_trt[2]", "b_2_trt[3]"
-  )
+  l_spec$visit_days <- unlist(l_spec$visit_days)
+  l_spec$max_day <- max(l_spec$visit_days)
   
-  l_spec$b_1_0 <- log(l_spec$e_b_1_0) 
-  l_spec$b_1_trt <- log(unlist(l_spec$e_b_1_trt))
-  names(l_spec$b_1_trt) <- l_spec$trt_lab
+  l_spec$b_prev <- unlist(l_spec$b_prev)
   
-  l_spec$b_2_0 <- log(l_spec$e_b_2_0) 
-  l_spec$b_2_trt <- log(unlist(l_spec$e_b_2_trt))
-  names(l_spec$b_2_trt) <- l_spec$trt_lab
+  l_spec$b_trt_time <- unlist(l_spec$b_trt_time)
+  names(l_spec$b_trt_time) <- l_spec$trt_lab
+  
+  l_spec$b_gap <- unlist(l_spec$b_gap)
+  l_spec$p_init <- unlist(l_spec$p_init)
+  
+  l_spec$smry_pars <- c("a", "b_trt", "b_prev", "b_time_1", "b_time_2", "b_gap", "b_trt_time")
+  
+  l_spec$full_pars <- c("a[1]", "a[2]",
+                        "b_trt[1]", "b_trt[2]", "b_trt[3]",
+                        "b_prev[1]", "b_prev[2]", "b_prev[3]",
+                        "b_time_1", "b_time_2",
+                        "b_gap[1]", "b_gap[2]",
+                        "b_trt_time[1]", "b_trt_time[2]", "b_trt_time[3]")
+    
+    
+    c("a", "b_trt", "b_prev", "b_time_1", "b_time_2", "b_gap", "b_trt_time")
   
   if(l_spec$nex > 0){
     l_spec$nex <- pmin(l_spec$nex, l_spec$nsim)

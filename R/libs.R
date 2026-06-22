@@ -1,4 +1,6 @@
 suppressPackageStartupMessages(library("cmdstanr"))
+suppressPackageStartupMessages(library("posterior"))
+
 suppressPackageStartupMessages(library("config"))
 suppressPackageStartupMessages(library("data.table"))
 suppressPackageStartupMessages(library("ggplot2"))
