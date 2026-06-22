@@ -43,26 +43,6 @@ model {
 }
 generated quantities{
   
-  // vector[P] g;
-  // vector[2] alpha;
-  // 
-  // g[ix_no_trans] = b[ix_no_trans];
-  // g[ix_time_1] = (b[ix_time_1] / sd_days) - (2.0 * mu_days * b[ix_time_2]) / pow(sd_days, 2);
-  // g[ix_time_2] = b[ix_time_2] / pow(sd_days, 2);
-  // 
-  // // 4. Back-transform Interaction Coefficients (Rescaled by sigma)
-  // g[ix_trt_time_1] = b[ix_trt_time_1] / sd_days;
-  // g[ix_trt_time_2] = b[ix_trt_time_2] / sd_days;
-  // 
-  // // 5. Back-transform Treatment Main Effects (Shifted by the interaction)
-  // g[ix_trt_1] = b[ix_trt_1] - (b[ix_trt_time_1] * mu_days) / sd_days;
-  // g[ix_trt_2] = b[ix_trt_2] - (b[ix_trt_time_2] * mu_days) / sd_days;
-  // 
-  // 
-  // for (k in 1:2) {
-  //   alpha[k] = a[k] - ((b[ix_time_2] * pow(mu_days,2)) / pow(sd_days, 2) - (b[ix_time_1] * mu_days) / sd_days);
-  // }
-  
   // see sim18-back-transform-note.qmd
   vector[2] a;
   for (k in 1:2) {
@@ -82,7 +62,9 @@ generated quantities{
   real b_time_1 = (b[ix_time_1] / sd_days) - (2.0 * mu_days * b[ix_time_2]) / pow(sd_days, 2);
   real b_time_2 = b[ix_time_2] / pow(sd_days, 2);
   
-  real b_gap = b[ix_gap];
+  vector[2] b_gap;
+  b_gap[1] = 0.0;
+  b_gap[2] = b[ix_gap];
   
   vector[3] b_trt_time;
   b_trt_time[1] = 0.0;

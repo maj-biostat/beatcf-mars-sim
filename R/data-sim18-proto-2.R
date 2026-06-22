@@ -17,9 +17,7 @@ rord_pom <- function(lp, alpha)
   sample(1:3, 1, prob = c(p0, p1, p2)) 
 }
 
-sim_cf_trial <- function(
-    l_spec
-)
+sim_cf_trial <- function(l_spec)
 {
   
   trt <- sample(l_spec$trt_lab, l_spec$n, replace = TRUE)
@@ -63,7 +61,7 @@ sim_cf_trial <- function(
         l_spec$b_trt_time[trt]*tt +
         # gap length - structurally zero and is only relevant in model
         # where we have gaps in observation
-        l_spec$b_gap*interval
+        l_spec$b_gap[interval]
       
       dt$state[rows[j]] <- rord_pom(lp,l_spec$alpha)
       
@@ -82,9 +80,7 @@ sim_cf_trial <- function(
 }
 
 
-transition_matrix <- function(day,
-                              trt,
-                              l_spec)
+transition_matrix <- function(day, gap_ix = 1, trt, l_spec)
 {
   
   P <- matrix(0,3,3)
@@ -97,7 +93,7 @@ transition_matrix <- function(day,
       l_spec$b_time_1 * day +
       l_spec$b_time_2 * day^2 +
       l_spec$b_trt_time[trt] * day +
-      l_spec$b_gap
+      l_spec$b_gap[gap_ix]
     
     p1 <- plogis(l_spec$alpha[1] - lp)
     p2 <- plogis(l_spec$alpha[2] - lp) - p1
@@ -116,11 +112,13 @@ transition_matrix <- function(day,
 }
 
 
-state_occupancy <- function(days,
-                            l_spec)
+state_occupancy <- function(days = 1:28, l_spec)
 {
   
-  out <- matrix(NA, days + 1, 3)
+  # has to start at day 1
+  stopifnot(days[1] == 1)
+  
+  out <- matrix(NA, length(days) + 1, 3)
   
   out[1,] <- l_spec$p_init
   
@@ -131,17 +129,27 @@ state_occupancy <- function(days,
   
   for(trt in l_spec$trt_lab){
     
-    for(day in 1:days){
+    for(i in seq_along(days)){
       
-      Pt <- transition_matrix(
-        day,
-        trt,
-        l_spec
-      )
+      day = days[i]
+      
+      if(day == 1){
+        gap_ix = 1;
+      } 
+      
+      if(day > 1){
+        if(days[i] - days[i-1] == 1){
+          gap_ix = 1
+        } else {
+          gap_ix = 2
+        }
+      }
+      
+      Pt <- transition_matrix(day, gap_ix, trt, l_spec)
       
       pi <- drop(pi %*% Pt)
       
-      out[day + 1,] <- pi
+      out[i + 1,] <- pi
       
     }
     
@@ -149,7 +157,7 @@ state_occupancy <- function(days,
       d_sop, 
       data.table(
       trt = trt,
-      day = 0:days,
+      day = c(0, days),
       none = out[,1],
       mild = out[,2],
       severe = out[,3]
@@ -175,12 +183,12 @@ if(testing_0){
   l_spec$days = 28
   l_spec$visit_days = c(0:14,21,28)
   
-  l_spec$alpha = c(-0.5,1.2)
+  l_spec$alpha = c(-0.5, 1.2)
   
   l_spec$b_trt = c(
     soc    = 0,
     def    = 0.5,
-    dis = 1.2
+    dis    = 1
   )
   
   l_spec$b_prev = c(0, 1.5, 0.1)
@@ -188,17 +196,17 @@ if(testing_0){
   # linear term
   l_spec$b_time_1 = -0.4
   # quadratic term
-  l_spec$b_time_2 = 0.05
+  l_spec$b_time_2 = 0.002
   
   # treatment by time
   l_spec$b_trt_time = c(
     soc = 0,
-    def = 0.2,
+    def = 0,
     dis = 0
   )
   
   # for the data generation 
-  l_spec$b_gap = 0
+  l_spec$b_gap = c(0, 0)
   l_spec$p_init <- c(0, 0.4, 0.6)
 }
 
@@ -211,8 +219,9 @@ if(testing_1){
   n_sim <- 10
   
   # truth
-  d_sop <- state_occupancy(14, l_spec)
-  d_sop <- d_sop[day %in% 1:14]
+  survey_day <- c(1:14, 21)
+  d_sop <- state_occupancy(days = survey_day, l_spec)
+  d_sop <- d_sop[day %in% survey_day]
   d_sop <- melt(d_sop, id.vars = c("trt", "day"), variable.name = "state", value.name = "sop")
   
   
@@ -233,7 +242,7 @@ if(testing_1){
       )
       d_tbl_2[, prop := N/N_unit]
       
-      d_tbl_2 <- d_tbl_2[day %in% 1:14]
+      d_tbl_2 <- d_tbl_2[day %in% survey_day]
       d_tbl_2
       
     }), idcol = "id_sim")
@@ -241,12 +250,12 @@ if(testing_1){
   
   d_smry <- d_r[, .(mu_p = mean(prop)), keyby = .(state, trt, day)]
   d_smry <- merge(
-    CJ(state = names(l_spec$state_opts), trt = l_spec$trt_lab, day = 1:14), 
+    CJ(state = names(l_spec$state_opts), trt = l_spec$trt_lab, day = survey_day), 
     d_smry, 
     all.x = T, by = c("state", "trt", "day") )
   d_smry[is.na(mu_p), mu_p := 0]
   
-  d_smry <- merge(d_smry, d_sop, by = c("trt", "day", "state"), all.x = T)
+  d_smry <- merge(d_smry, d_sop[day > 0], by = c("trt", "day", "state"), all.x = T)
   
   
   ggplot(d_smry, aes(x = mu_p, y = sop)) + 
@@ -303,12 +312,7 @@ if(testing_2){
   d_obs[, x_gap_time := factor(fifelse(d_obs$gap_len == 1, 1, 2))]
   d_obs[, x_trt := factor(trt_idx)]
   d_obs[, x_prev := factor(prev_state, levels = l_spec$state_opts)]
-  
-  # b_trt[trt] + b_prev[prev] + 
-  #   b_time_1*time + b_time_2*pow(time, 2) +
-  #   b_trt_time[trt] .* time +
-  #   b_gap[gap_time];
-  
+
   X <- model.matrix(~ x_trt + x_prev +
                       x_time + I(x_time^2) +
                       x_gap_time +
@@ -321,7 +325,7 @@ if(testing_2){
     P = ncol(X_mod),
     X = X_mod,
     y = d_obs$state,
-    # back transforms
+    # Indexing parameters within design matrix.
     # First list any variable with no dependency on time
     ix_trt_2 = 1,
     ix_trt_3 = 2,
@@ -394,16 +398,70 @@ if(testing_2){
   d_smry[, cover := (q_025 < truth & truth < q_975) | mu == truth]
   d_smry[]
     
+  # calculate sop based on parameter estimates at their post mean
+  l_spec_mod <- copy(l_spec)
+  l_spec_mod$alpha <- d_smry[variable %in% c("a[1]", "a[2]"), mu]
+  l_spec_mod$b_trt <- d_smry[variable %in% c("b_trt[1]", "b_trt[2]", "b_trt[3]"), mu]
+  l_spec_mod$b_prev <- d_smry[variable %in% c("b_prev[1]", "b_prev[2]", "b_prev[3]"), mu]
+  l_spec_mod$b_time_1 <- d_smry[variable %in% c("b_time_1"), mu]
+  l_spec_mod$b_time_2 <- d_smry[variable %in% c("b_time_2"), mu]
+  l_spec_mod$b_gap <- d_smry[variable %in% c("b_gap[1]", "b_gap[2]"), mu]
+  l_spec_mod$b_trt_time <- d_smry[variable %in% c("b_trt_time[1]", "b_trt_time[2]", "b_trt_time[3]"), mu]
   
-  # generate transition matrix for every draw
+  names(l_spec_mod$b_trt) <- c("soc", "def", "dis")
+  names(l_spec_mod$b_trt_time) <- c("soc", "def", "dis")
   
-  # the gap parameter would probably be excluded for daily
-  
-  # obtain the sop
-    
-  
+  # obtain sop based on posterior means
+  d_sop_mod <- state_occupancy(days = l_spec$visit_days[-1], l_spec_mod)
   
   
+  d_fig_1 <- copy(d_obs)
+  d_fig_1[, state := factor(state, levels = 1:3, labels = names(l_spec$state_opts))]
+  d_fig_1[, trt := factor(trt, levels = l_spec$trt_lab)]
+  
+  d_fig_2 <- merge(
+    d_fig_1[, .N, keyby = .(trt, state, day)],
+    d_fig_1[, .(N_trt = length(unique(id))), keyby = .(trt)],
+    by = "trt", all.x = T
+  )
+  d_fig_2[, prop := N/N_trt]
+  d_fig_2 <- merge(
+    CJ(trt = l_spec$trt_lab, state = names(l_spec$state_opts), day = l_spec$visit_days[-1]), 
+    d_fig_2, 
+    by = c("trt", "state", "day"),
+    all.x = T
+  )
+  d_fig_2[is.na(prop), prop := 0]
+  d_fig_2[, source := "Observed"]
+  d_fig_2[, `:=`(N = NULL, N_trt = NULL)]
+  
+  d_fig_3 <- melt(d_sop_mod[day > 0], id.vars = c("trt", "day"), 
+                  variable.name = "state", value.name = "prop")
+  d_fig_3[, source := "Model"]
+  
+  
+  d_fig <- rbind(d_fig_2, d_fig_3)
+  
+  ggplot(d_fig, aes(x = day, y = prop, group = state)) +
+    geom_point() +
+    facet_wrap(source ~ trt, ncol = 3)
+  
+  ggplot(d_fig[source == "Observed"], aes(x = day, y = prop, group = state, col = state)) +
+    geom_point() +
+    geom_line(
+      data = d_fig[source == "Model"],
+      aes(x = day, y = prop, group = state, col = state)
+    ) +
+    facet_wrap(. ~ trt, ncol = 3)
+  
+  # days in state
+  d_days <- copy(d_sop_mod[, ])
+  d_days[, gap := day - data.table::shift(day, type = "lag"), keyby = trt]
+  d_days <- d_days[day > 1]
+  d_tbl <- melt(d_days, id.vars = c("trt", "day", "gap"), 
+                variable.name = "state", value.name = "prop")
+  d_tbl[, p_sum := prop * gap]
+  d_tbl[, sum(p_sum), keyby = .(trt, state)]
   
   
 }
