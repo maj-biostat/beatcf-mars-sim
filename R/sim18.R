@@ -256,17 +256,8 @@ run_trial <- function(
       )
     ]
     
-    # d_tmp <- melt(d_sop[day > 0, .(id_draw, trt, day, none, mild, severe)], 
-    #               id.vars = c("id_draw", "trt", "day"), variable.name = "state")[
-    #                 , .(ic = l_spec$ic,
-    #                     mu = mean(value), 
-    #                     lo = quantile(value, prob = 0.025),
-    #                     hi = quantile(value, prob = 0.975)),
-    #                 keyby = .(state, trt, day)
-    #               ]
-    # d_w <- dcast(d_tmp, state + day ~ trt, value.var = "mu")
-    # d_w[, `:=`(def = round(def, 2), dis = round(dis, 2), soc = round(soc, 2))]
     
+    # posterior summary - what are the estimated sops
     d_post_smry_2[
       melt(d_sop[day > 0, .(id_draw, trt, day, none, mild, severe)], 
            id.vars = c("id_draw", "trt", "day"), variable.name = "state")[
@@ -297,9 +288,11 @@ run_trial <- function(
     ]
     
     
-    # posterior summary - evaluating decision rules
+    # posterior summary - evaluating decision rules on the differences
     d_post_smry_4[
-      melt(d_dur[state == "none", .(id_draw, delta_def, delta_dis)], id.vars = c("id_draw"), variable.name = "par")[
+      melt(d_dur[
+        state == "none", .(id_draw, delta_def, delta_dis)], 
+        id.vars = c("id_draw"), variable.name = "par")[
         , .(
           ic = l_spec$ic,
           rule = "ni",
@@ -385,9 +378,13 @@ run_trial <- function(
     d_post_smry_2 = d_post_smry_2,
     d_post_smry_3 = d_post_smry_3,
     d_post_smry_4 = d_post_smry_4,
+    d_post_par = d_post_par,
+    d_post_sop = d_post_sop,
     stop_at = stop_at,
     l_spec = l_spec
   )
+  
+  
   
   # 
   
@@ -466,12 +463,23 @@ run_sim18 <- function(){
     r[[i]]$d_post_smry_4
   } ), idcol = "sim")
   
+  d_post_par <- rbindlist(lapply(1:length(r), function(i){ 
+    r[[i]]$d_post_par
+  } ), idcol = "sim")
+  
+  d_post_sop <- rbindlist(lapply(1:length(r), function(i){ 
+    r[[i]]$d_post_sop
+  } ), idcol = "sim")
+  
   l <- list(
     l_spec = l_spec,
     d_all = d_all,
     d_post_smry_1 = d_post_smry_1,
+    d_post_smry_2 = d_post_smry_2,
     d_post_smry_3 = d_post_smry_3,
-    d_post_smry_4 = d_post_smry_4
+    d_post_smry_4 = d_post_smry_4,
+    d_post_par = d_post_par,
+    d_post_sop = d_post_sop
   )
   
   toks <- unlist(tstrsplit(args[2], "[-.]"))

@@ -302,6 +302,13 @@ update_sim18_cfg <- function(l_spec){
                         "b_time_1", "b_time_2",
                         "b_gap[1]", "b_gap[2]",
                         "b_trt_time[1]", "b_trt_time[2]", "b_trt_time[3]")
+  
+  l_spec$non_zero_pars <- c("a[1]", "a[2]",
+                        "b_trt[2]", "b_trt[3]",
+                        "b_prev[2]", "b_prev[3]",
+                        "b_time_1", "b_time_2",
+                        "b_gap[2]",
+                        "b_trt_time[2]", "b_trt_time[3]")
     
     
     c("a", "b_trt", "b_prev", "b_time_1", "b_time_2", "b_gap", "b_trt_time")
@@ -316,4 +323,47 @@ update_sim18_cfg <- function(l_spec){
 }
 
 
-
+sim18_example_data <- function(){
+  
+  source("R/libs.R")
+  source("R/init.R")
+  source("R/util.R")
+  
+  f_cfgsc <- file.path("./etc/sim18/cfg-sim18-v01.yml")
+  l_spec <- config::get(file = f_cfgsc)
+  
+  l_spec <- update_sim18_cfg(l_spec)
+  l_spec$t_0 <- seq_along(1:sum(l_spec$N_pt)) 
+  
+  
+  l_spec$is <- 1
+  l_spec$ie <- sum(l_spec$N_pt)
+  
+  d_daily <- sim18_cohort(l_spec)$d_cohort
+  
+  
+  
+  d_tbl_1 <- copy(d_daily)
+  d_tbl_1[, state := factor(
+    state, levels = l_spec$state_opts, labels = names(l_spec$state_opts))]
+  d_tbl_1[, trt := factor(trt, levels = l_spec$trt_lab)]
+  
+  d_tbl_2 <- d_tbl_1[, .(.N), keyby = .(state, trt, day)]
+  d_tbl_2 <- base::merge(
+    d_tbl_2, 
+    d_tbl_1[, .(N_unit = length(unique(id))), keyby = .(trt)],
+    by = "trt", all.x = T
+  )
+  d_tbl_2[, prop := N/N_unit]
+  
+  p_1 <- ggplot(d_tbl_1, aes(fill = state, x = day)) +
+    geom_bar(position = "fill") +
+    scale_fill_discrete("") +
+    scale_x_continuous("", breaks = 1:max(d_tbl_1$day)) +
+    facet_wrap(~trt, ncol = 1) +
+    theme(
+      legend.position = "bottom"
+    )
+  print(p_1)
+  
+}
