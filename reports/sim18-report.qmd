@@ -291,18 +291,171 @@ kableExtra::kbl(
 
 # Results
 
-## Example Trial
+
+```{r, echo = F}
+ex_trial_plots <- function(id_scen = 1, id_ex = 1){
+  
+  l_cfg <- copy(l[[id_scen]]$l_spec)
+  stopifnot(id_ex <= l_cfg$nex)
+  
+  d_all <- copy(l[[id_scen]]$d_all[sim == l_cfg$ex_trial_ix[id_ex]])
+  d_post_smry_1 <- copy(l[[id_scen]]$d_post_smry_1[sim == l_cfg$ex_trial_ix[id_ex]])
+  d_post_smry_2 <- copy(l[[id_scen]]$d_post_smry_2[sim == l_cfg$ex_trial_ix[id_ex]])
+  d_post_smry_3 <- copy(l[[id_scen]]$d_post_smry_3[sim == l_cfg$ex_trial_ix[id_ex]])
+  d_post_smry_4 <- copy(l[[id_scen]]$d_post_smry_4[sim == l_cfg$ex_trial_ix[id_ex]])
+  d_post_sop <- copy(l[[id_scen]]$d_post_sop[sim == l_cfg$ex_trial_ix[id_ex]])
+  
+  
+  # observed data - proportion by day and state ------------
+  d_fig_1 <- copy(d_all)
+  d_fig_1[, state := factor(
+    state, levels = l_cfg$state_opts, labels = names(l_cfg$state_opts))]
+  d_fig_1[, trt := factor(trt, levels = l_cfg$trt_lab)]
+  
+  d_fig_2 <- d_fig_1[, .(.N), keyby = .(state, trt, day)]
+  d_fig_2 <- base::merge(
+    d_fig_2, 
+    d_fig_1[, .(N_unit = length(unique(id))), keyby = .(trt)],
+    by = "trt", all.x = T
+  )
+  d_fig_2[, prop := N/N_unit]
+  
+  p_1 <- ggplot(d_fig_1, aes(fill = state, x = day)) +
+    geom_bar(position = "fill") +
+    scale_fill_discrete("") +
+    scale_x_continuous("", breaks = 1:max(d_fig_1$day)) +
+    facet_wrap(~trt, ncol = 1) +
+    theme(
+      legend.position = "bottom"
+    )
+ 
+  
+  # Observed vs model data -------------------------------
+  # Observed data, filling in missing parts.
+  d_fig_1 <- copy(d_all)
+  d_fig_1[, state := factor(
+    state, levels = l_cfg$state_opts, labels = names(l_cfg$state_opts))]
+  d_fig_1[, trt := factor(trt, levels = l_cfg$trt_lab)]
+  
+  d_fig_2 <- d_fig_1[, .(.N), keyby = .(state, trt, day)]
+  d_fig_2 <- base::merge(
+    d_fig_2, 
+    d_fig_1[, .(N_unit = length(unique(id))), keyby = .(trt)],
+    by = "trt", all.x = T
+  )
+  d_fig_2[, prop := N/N_unit]
+  d_fig_2 <- base::merge(
+    CJ(trt = l_spec_1$trt_lab, 
+       state = names(l_spec_1$state_opts), 
+       day = l_spec_1$visit_days[-1]), 
+    d_fig_2, 
+    by = c("trt", "state", "day"),
+    all.x = T
+  )
+  d_fig_2[is.na(prop), prop := 0]
+  d_fig_2[, source := "Observed"]
+  d_fig_2[, `:=`(N = NULL, N_unit = NULL)]
+  
+  stopifnot(
+    nrow(d_fig_2) == 
+      length(l_cfg$state_lab) * length(l_cfg$trt_lab) * length(l_cfg$visit_days[-1]))
+    
+  # Summary from model parameters
+  d_fig_3 <- d_post_smry_2[ic == d_post_smry_2[!is.na(mu), max(ic)]]
+  d_fig_3 <- d_fig_3[, .(trt, state, day, prop = mu, lo, hi, source = "Model")]
+  
+  
+  d_fig <- rbind(d_fig_2, d_fig_3, fill = T)
+    
+  p_2 <- ggplot(
+    d_fig[source == "Model"], aes(x = day, y = prop, group = state, col = state)) +
+    geom_linerange(aes(ymin = lo, ymax = hi), lwd = 0.3) +
+    geom_line(lwd = 0.3) +
+    geom_point(
+      data =  d_fig[source == "Observed"], 
+      aes(x = day, y = prop, group = state, col = state),
+      inherit.aes = F
+    ) +
+    scale_x_continuous("", breaks = seq(1, max(d_fig_1$day), by = 2)) +
+    scale_y_continuous("SOP", breaks = seq(0, 1, by = 0.1)) +
+    scale_color_discrete("") +
+    facet_wrap(. ~ trt, ncol = 3) +
+    theme(
+      legend.position = "bottom"
+    )
+  
+  
+  
+  
+  
+  
+  # durations and trt effects -------------
+  d_post_sop[, gap := day - data.table::shift(day, type = "lag"), keyby = .(id_draw, trt)]
+  d_post_sop[, `:=`(
+    prop_none = none * gap,
+    prop_mild = mild * gap,
+    prop_severe = severe * gap)]
+      
+  # posterior days in each state
+  d_dur <- melt(
+    d_post_sop[day > 0, .(
+      none = sum(none * gap),
+      mild = sum(mild * gap),
+      severe = sum(severe * gap)
+      ), keyby = .(trt, id_draw)], id.vars = c("trt", "id_draw"), 
+    variable.name = "state", value.name = "days")
+  
+  d_fig_1 <- dcast(d_dur, state + id_draw ~ trt, value.var = "days")
+  d_fig_1[, delta_def := def - soc]
+  d_fig_1[, delta_dis := dis - soc]
+    
+  d_fig_2 <- melt(d_fig_1, id.vars = c("state", "id_draw"), 
+                  variable.name = "par")
+    
+  p_3 <- ggplot(
+    d_fig_2[!(par %like% "delta")], aes(x = value, group = par)) +
+    geom_density(lwd = 0.3) +
+    scale_x_continuous("") +
+    scale_y_continuous("Density") +
+    facet_grid(par ~ state, scales = "free_x") 
+  
+  p_4 <- ggplot(
+    d_fig_2[par %like% "delta"], aes(x = value, group = par)) +
+    geom_density(lwd = 0.3) +
+    scale_x_continuous("") +
+    scale_y_continuous("Density") +
+    ggh4x::facet_grid2(par ~ state, scales = "free_x") 
+
+  
+  
+  list(
+    l_cfg = l_cfg,
+    d_all = d_all,
+    d_post_smry_1 = d_post_smry_1,
+    d_post_smry_2 = d_post_smry_2,
+    d_post_smry_3 = d_post_smry_3,
+    d_post_smry_4 = d_post_smry_4,
+    d_post_sop = d_post_sop,
+    p_obs = p_1,
+    p_cmp = p_2,
+    p_dur = p_3 ,
+    p_del = p_4
+  )
+  
+}
+```
+
+
+## Example Trial 1
 
 
 ```{r, echo = F}
-l_cfg <- copy(l[[1]]$l_spec)
-d_all <- copy(l[[1]]$d_all[sim == l_cfg$ex_trial_ix[1]])
-d_post_smry_2 <- copy(l[[1]]$d_post_smry_2[sim == l_cfg$ex_trial_ix[1]])
-d_post_smry_3 <- copy(l[[1]]$d_post_smry_3[sim == l_cfg$ex_trial_ix[1]])
-d_post_sop <- copy(l[[1]]$d_post_sop[sim == l_cfg$ex_trial_ix[1]])
+id_scen <- 1
+l_ex <- ex_trial_plots(id_scen, 1)
+
 ```
 
-In the example trial `r length(unique(d_all$id))` were randomised.
+In the example trial `r length(unique(l_ex$d_all$id))` were randomised.
 
 ### Trial Data
 
@@ -317,28 +470,8 @@ In the example trial `r length(unique(d_all$id))` were randomised.
 #| fig-align: "center"
 #| fig-pos: H
 
-d_fig_1 <- copy(d_all)
-d_fig_1[, state := factor(
-  state, levels = l_cfg$state_opts, labels = names(l_cfg$state_opts))]
-d_fig_1[, trt := factor(trt, levels = l_cfg$trt_lab)]
 
-d_fig_2 <- d_fig_1[, .(.N), keyby = .(state, trt, day)]
-d_fig_2 <- base::merge(
-  d_fig_2, 
-  d_fig_1[, .(N_unit = length(unique(id))), keyby = .(trt)],
-  by = "trt", all.x = T
-)
-d_fig_2[, prop := N/N_unit]
-
-p_1 <- ggplot(d_fig_1, aes(fill = state, x = day)) +
-  geom_bar(position = "fill") +
-  scale_fill_discrete("") +
-  scale_x_continuous("", breaks = 1:max(d_fig_1$day)) +
-  facet_wrap(~trt, ncol = 1) +
-  theme(
-    legend.position = "bottom"
-  )
-print(p_1)
+print(l_ex$p_obs)
 ```
 
 
@@ -355,67 +488,122 @@ print(p_1)
 #| fig-align: "center"
 #| fig-pos: H
 
-# Observed data, filling in missing parts.
-d_fig_1 <- copy(d_all)
-d_fig_1[, state := factor(
-  state, levels = l_cfg$state_opts, labels = names(l_cfg$state_opts))]
-d_fig_1[, trt := factor(trt, levels = l_cfg$trt_lab)]
-
-d_fig_2 <- d_fig_1[, .(.N), keyby = .(state, trt, day)]
-d_fig_2 <- base::merge(
-  d_fig_2, 
-  d_fig_1[, .(N_unit = length(unique(id))), keyby = .(trt)],
-  by = "trt", all.x = T
-)
-d_fig_2[, prop := N/N_unit]
-d_fig_2 <- base::merge(
-  CJ(trt = l_spec_1$trt_lab, 
-     state = names(l_spec_1$state_opts), 
-     day = l_spec_1$visit_days[-1]), 
-  d_fig_2, 
-  by = c("trt", "state", "day"),
-  all.x = T
-)
-d_fig_2[is.na(prop), prop := 0]
-d_fig_2[, source := "Observed"]
-d_fig_2[, `:=`(N = NULL, N_unit = NULL)]
-
-stopifnot(
-  nrow(d_fig_2) == 
-    length(l_cfg$state_lab) * length(l_cfg$trt_lab) * length(l_cfg$visit_days[-1]))
-  
-# Summary from model parameters
-d_fig_3 <- d_post_smry_2[ic == d_post_smry_2[!is.na(mu), max(ic)]]
-d_fig_3 <- d_fig_3[, .(trt, state, day, prop = mu, lo, hi, source = "Model")]
 
 
-d_fig <- rbind(d_fig_2, d_fig_3, fill = T)
-  
-ggplot(
-  d_fig[source == "Model"], aes(x = day, y = prop, group = state, col = state)) +
-  geom_linerange(aes(ymin = lo, ymax = hi), lwd = 0.3) +
-  geom_line(lwd = 0.3) +
-  geom_point(
-    data =  d_fig[source == "Observed"], 
-    aes(x = day, y = prop, group = state, col = state),
-    inherit.aes = F
-  ) +
-  scale_x_continuous("", breaks = seq(1, max(d_fig_1$day), by = 2)) +
-  scale_y_continuous("SOP", breaks = seq(0, 1, by = 0.1)) +
-  scale_color_discrete("") +
-  facet_wrap(. ~ trt, ncol = 3) +
-  theme(
-    legend.position = "bottom"
-  )
+
+print(l_ex$p_cmp)
 ```
 
 
-### Treatment Effects
+### Soujourn Times
+
+```{r}
+#| label: fig-ex-1-soujourn
+#| fig-cap: 'Posterior density of duration in each state'
+#| fig-height: 5
+#| fig-width: 6
+#| out-height: 5in
+#| out-width: 6in
+#| fig-dpi: 240
+#| fig-align: "center"
+#| fig-pos: H
+
+print(l_ex$p_dur)
+```
+
+
+
+### Difference in Soujourn Times
 
 ```{r}
 #| label: fig-ex-1-trt-eff
-#| fig-cap: 'Posterior density: (UPR) time in each state, (LWR) difference for time in each state (intervention - soc days)'
-#| fig-height: 8
+#| fig-cap: 'Posterior density of difference in duration in each state (trt - soc)'
+#| fig-height: 5
+#| fig-width: 6
+#| out-height: 5in
+#| out-width: 6in
+#| fig-dpi: 240
+#| fig-align: "center"
+#| fig-pos: H
+
+print(l_ex$p_del)
+```
+
+
+### Trial Decisions
+
+```{r}
+#| label: tbl-ex-1-decision
+#| tbl-cap: 'Trial decisions by analysis (based on difference in symptom free days)'
+
+d_tbl_1 <- l_ex$d_post_smry_3[
+  par %in% c("delta_def", "delta_dis") & state == "none", 
+  .(ic, par, mu, lo, hi)]
+d_tbl_2 <- l_ex$d_post_smry_4[, .(ic, rule, par, p)]
+d_tbl_2 <- dcast(d_tbl_2, ic + par ~ rule, value.var = "p")
+
+d_tbl <- base::merge(
+  d_tbl_1,
+  d_tbl_2, 
+  by = c("ic", "par")
+)
+d_tbl[!is.na(mu), out := sprintf("%.2f (%.2f, %.2f)", mu, lo, hi)]
+d_tbl <- d_tbl[, .(ic, par, out, ni, fut)]
+
+options(knitr.kable.NA = "-")
+kableExtra::kbl(
+  d_tbl, 
+  booktabs = TRUE, align = c("llccc"), longtable = TRUE,
+  linesep = c(rep("", 1), "\\addlinespace"),
+  col.names=c("Analysis", "Par", "Mean (CrI)", "Pr(NI)", "Pr(fut)"), 
+  digits = 1)  |>
+  kableExtra::kable_styling(
+    font_size = 8,
+    latex_options = c("scale_down", "repeat_header")) |>
+  kableExtra::column_spec(1, width = "1.5cm")|>
+  kableExtra::column_spec(2, width = "2cm")|>
+  kableExtra::column_spec(3, width = "2.5cm")|>
+  kableExtra::column_spec(4:5, width = "2cm")
+```
+
+{{< pagebreak >}}
+
+
+## Example Trial 2
+
+
+```{r, echo = F}
+id_scen <- 1
+l_ex <- ex_trial_plots(id_scen, 3)
+
+```
+
+In the example trial `r length(unique(l_ex$d_all$id))` were randomised.
+
+### Trial Data
+
+```{r}
+#| label: fig-ex-2-obs
+#| fig-cap: 'Summary of trial data: proportion in each state by day'
+#| fig-height: 6
+#| fig-width: 6
+#| out-height: 6in
+#| out-width: 6in
+#| fig-dpi: 240
+#| fig-align: "center"
+#| fig-pos: H
+
+
+print(l_ex$p_obs)
+```
+
+
+### SOPs
+
+```{r}
+#| label: fig-ex-2-sop
+#| fig-cap: 'Summary of trial data vs model SOP'
+#| fig-height: 4
 #| fig-width: 6
 #| out-height: 4in
 #| out-width: 6in
@@ -423,46 +611,78 @@ ggplot(
 #| fig-align: "center"
 #| fig-pos: H
 
-d_post_sop[, gap := day - data.table::shift(day, type = "lag"), keyby = .(id_draw, trt)]
-d_post_sop[, `:=`(
-  prop_none = none * gap,
-  prop_mild = mild * gap,
-  prop_severe = severe * gap)]
-    
-    
-# posterior days in each state
-d_dur <- melt(
-  d_post_sop[day > 0, .(
-    none = sum(none * gap),
-    mild = sum(mild * gap),
-    severe = sum(severe * gap)
-    ), keyby = .(trt, id_draw)], id.vars = c("trt", "id_draw"), 
-  variable.name = "state", value.name = "days")
-
-d_fig_1 <- dcast(d_dur, state + id_draw ~ trt, value.var = "days")
-d_fig_1[, delta_def := def - soc]
-d_fig_1[, delta_dis := dis - soc]
-  
-d_fig_2 <- melt(d_fig_1, id.vars = c("state", "id_draw"), 
-                variable.name = "par")
-  
-p_1 <- ggplot(
-  d_fig_2[!(par %like% "delta")], aes(x = value, group = par)) +
-  geom_density(lwd = 0.3) +
-  scale_x_continuous("") +
-  scale_y_continuous("Density") +
-  facet_grid(par ~ state, scales = "free_x") 
-
-p_2 <- ggplot(
-  d_fig_2[par %like% "delta"], aes(x = value, group = par)) +
-  geom_density(lwd = 0.3) +
-  scale_x_continuous("") +
-  scale_y_continuous("Density") +
-  ggh4x::facet_grid2(par ~ state, scales = "free_x") 
-
-p_1 / p_2
+print(l_ex$p_cmp)
 ```
 
+### Soujourn Times
+
+```{r}
+#| label: fig-ex-2-soujourn
+#| fig-cap: 'Posterior density of duration in each state'
+#| fig-height: 5
+#| fig-width: 6
+#| out-height: 5in
+#| out-width: 6in
+#| fig-dpi: 240
+#| fig-align: "center"
+#| fig-pos: H
+
+print(l_ex$p_dur)
+```
+
+### Difference in Soujourn Times
+
+```{r}
+#| label: fig-ex-2-trt-eff
+#| fig-cap: 'Posterior density of difference in duration in each state (trt - soc)'
+#| fig-height: 5
+#| fig-width: 6
+#| out-height: 5in
+#| out-width: 6in
+#| fig-dpi: 240
+#| fig-align: "center"
+#| fig-pos: H
+
+print(l_ex$p_del)
+```
+
+
+
+### Trial Decisions
+
+```{r}
+#| label: tbl-ex-2-decision
+#| tbl-cap: 'Trial decisions by analysis (based on difference in symptom free days)'
+
+d_tbl_1 <- l_ex$d_post_smry_3[
+  par %in% c("delta_def", "delta_dis") & state == "none", 
+  .(ic, par, mu, lo, hi)]
+d_tbl_2 <- l_ex$d_post_smry_4[, .(ic, rule, par, p)]
+d_tbl_2 <- dcast(d_tbl_2, ic + par ~ rule, value.var = "p")
+
+d_tbl <- base::merge(
+  d_tbl_1,
+  d_tbl_2, 
+  by = c("ic", "par")
+)
+d_tbl[!is.na(mu), out := sprintf("%.2f (%.2f, %.2f)", mu, lo, hi)]
+d_tbl <- d_tbl[, .(ic, par, out, ni, fut)]
+
+options(knitr.kable.NA = "-")
+kableExtra::kbl(
+  d_tbl, 
+  booktabs = TRUE, align = c("llccc"), longtable = TRUE,
+  linesep = c(rep("", 1), "\\addlinespace"),
+  col.names=c("Analysis", "Par", "Mean (CrI)", "Pr(NI)", "Pr(fut)"), 
+  digits = 1)  |>
+  kableExtra::kable_styling(
+    font_size = 8,
+    latex_options = c("scale_down", "repeat_header")) |>
+  kableExtra::column_spec(1, width = "1.5cm")|>
+  kableExtra::column_spec(2, width = "2cm")|>
+  kableExtra::column_spec(3, width = "2.5cm")|>
+  kableExtra::column_spec(4:5, width = "2cm")
+```
 
 
 {{< pagebreak >}}
@@ -477,13 +697,13 @@ p_1 / p_2
 
 i <- 1
 d_par <- data.table()
+d_par_tru <- data.table()
 
 # For each scenario that was simulated
 for(i in 1:length(l)){
   
   # extract the decision matrix - sim, analysis, quantity, domain level decision
-  d_tmp <- copy(l[[i]]$d_post_smry_1[
-    par %in% l_spec_1$non_zero_pars])
+  d_tmp <- copy(l[[i]]$d_post_smry_1[par %in% l_spec_1$non_zero_pars])
   
   l_cfg <- copy(l[[i]]$l_spec)
   
@@ -503,27 +723,53 @@ for(i in 1:length(l)){
     d_par,
     cbind(scenario = i, desc = l_cfg$desc, d_smry)
   )
+  
+  d_tmp <- data.table(
+    desc = l_cfg$desc, 
+    par = l_spec_1$non_zero_pars,
+    tru = c(
+      l_cfg$alpha, l_cfg$b_trt[-1], l_cfg$b_prev[-1],
+      l_cfg$b_time_1, l_cfg$b_time_2, l_cfg$b_gap[-1], 
+      l_cfg$b_trt_time[-1]
+  ))
+  
+  d_par_tru <- rbind(
+    d_par_tru,
+    d_tmp
+  )
 }
 
 d_par[, stat := sprintf("%.2f (%.2f, %.2f)", mu, lo, hi)]
 
-d_tbl <- dcast(d_par, desc + par ~ N, value.var = "stat")
-d_tbl[, par := factor(par, levels = l_spec_1$non_zero_pars)]
 
+
+
+d_tbl <- dcast(d_par, desc + par ~ N, value.var = "stat")
+d_tbl <- base::merge(
+  d_tbl, 
+  d_par_tru, 
+  by = c("desc", "par"),
+  all.x = T
+)
+
+
+d_tbl[, par := factor(par, levels = l_spec_1$non_zero_pars)]
 d_tbl[, desc := factor(desc, levels = desc_labs)]
 d_tbl <- d_tbl[order(desc, par)]
 
 kableExtra::kbl(
   d_tbl, 
-  booktabs = TRUE, align = c("llccc"), longtable = TRUE,
+  booktabs = TRUE, align = c("llcccc"), longtable = TRUE,
   linesep = c(rep("", 10), "\\addlinespace"),
-  col.names=c("Scenario", "Parameter", cumsum(l_cfg$N_pt)), digits = 1)  |>
+  col.names=c("Scenario", "Parameter", cumsum(l_cfg$N_pt), "True value"), 
+  digits = 1)  |>
   kableExtra::kable_styling(
     font_size = 8,
     latex_options = c("scale_down", "repeat_header")) |>
   kableExtra::column_spec(1, width = "3.5cm")|>
   kableExtra::column_spec(2, width = "2cm")|>
-  kableExtra::column_spec(3:5, width = "2.5cm") 
+  kableExtra::column_spec(3:5, width = "2.5cm") |>
+  kableExtra::column_spec(6, width = "1.5cm")
 
 ```
 
