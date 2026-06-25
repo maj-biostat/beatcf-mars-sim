@@ -29,16 +29,15 @@ l_spec <- list(
   followup = 720,
   followup_dec = 28,
   visit_days = c(0, 1, 2, 3, 4, 5, 6, 7, 14, 21, 28),
-  pri_b_0_sd = 5,
-  pri_b_trt_sd = 1,
-  pri_log_sig_mu = 0,
-  pri_log_sig_sd = 1,
-  pri_rho_raw_sd = 1,
   state_lab = c("none", "mild", "severe"),
   trt_active = c(1, 1, 1),
   trt_lab = c("soc", "def", "dis"),
   alpha = c(-0.5, 1.2),
-  b_trt = c(0, 0, 0),
+  # 0.1418942 -0.4000009 -0.4000000 corresponds to an NI of 0.40
+  # 0.1592559 -0.4499971 -0.4500000 corresponds to an NI of 0.45
+  # 0.1765427 -0.5000003 -0.5000000 corresponds to an NI of 0.50
+  # 0.1937544 -0.5498294 -0.5500000 corresponds to an NI of 0.55 
+  b_trt = c(0.0, 0.1592559, 0.0)   ,
   b_prev = c(0, 2, 1),
   b_time_1 = -0.32,
   b_time_2 = 0.003,
@@ -375,7 +374,6 @@ sim18_sop <- function(days = 1:28, l_spec)
   
 }
 
-
 update_sim18_cfg <- function(l_spec){
   
   l_spec$trt_lab <- unlist(l_spec$trt_lab)
@@ -429,88 +427,27 @@ update_sim18_cfg <- function(l_spec){
     l_spec$ex_trial_ix[1] <- 1
   }
   
+  # convert to the induced expected difference in sojourn times
+  l_spec$delta_lab <- c("delta_def", "delta_dis")
+  d_sop <- sim18_sop(1:28, l_spec)
+  d_tbl <- dcast(d_sop, day ~ trt, value.var = "none")
+  
+  l_spec$dur_tru <- c( 
+    d_tbl[day > 0, sum(soc)],
+    d_tbl[day > 0, sum(def)],
+    d_tbl[day > 0, sum(dis)]
+  )
+  names(l_spec$dur_tru) <- l_spec$trt_lab
+  
+  l_spec$delta_dur_tru <- c( 
+    d_tbl[, sum(def - soc)],
+    d_tbl[, sum(dis - soc)]
+  )
+  names(l_spec$delta_dur_tru) <- l_spec$delta_lab
+  
   l_spec
 }
 
-
-sim18_example_data <- function(){
-  
-  source("R/libs.R")
-  source("R/init.R")
-  source("R/util.R")
-  
-  f_cfgsc <- file.path("./etc/sim18/cfg-sim18-v01.yml")
-  l_spec <- config::get(file = f_cfgsc)
-  
-  l_spec <- update_sim18_cfg(l_spec)
-  l_spec$t_0 <- seq_along(1:sum(l_spec$N_pt)) 
-  
-  
-  l_spec$is <- 1
-  l_spec$ie <- sum(l_spec$N_pt)
-  
-  d_daily <- sim18_cohort(l_spec)$d_cohort
-  
-  
-  
-  d_tbl_1 <- copy(d_daily)
-  d_tbl_1[, state := factor(
-    state, levels = l_spec$state_opts, labels = names(l_spec$state_opts))]
-  d_tbl_1[, trt := factor(trt, levels = l_spec$trt_lab)]
-  
-  d_tbl_2 <- d_tbl_1[, .(.N), keyby = .(state, trt, day)]
-  d_tbl_2 <- base::merge(
-    d_tbl_2, 
-    d_tbl_1[, .(N_unit = length(unique(id))), keyby = .(trt)],
-    by = "trt", all.x = T
-  )
-  d_tbl_2[, prop := N/N_unit]
-  
-  p_1 <- ggplot(d_tbl_1, aes(fill = state, x = day)) +
-    geom_bar(position = "fill") +
-    scale_fill_discrete("") +
-    scale_x_continuous("", breaks = 1:max(d_tbl_1$day)) +
-    facet_wrap(~trt, ncol = 1) +
-    theme(
-      legend.position = "bottom"
-    )
-  print(p_1)
-  
-  
-  
-  
-  source("R/libs.R")
-  source("R/init.R")
-  source("R/util.R")
-  
-  f_cfgsc <- file.path("./etc/sim18/cfg-sim18-v01.yml")
-  l_spec <- config::get(file = f_cfgsc)
-  
-  l_spec <- update_sim18_cfg(l_spec)
-  l_spec$t_0 <- seq_along(1:sum(l_spec$N_pt)) 
-  
-  
-  l_spec$is <- 1
-  l_spec$ie <- sum(l_spec$N_pt)
-  
-  l_spec$b_trt["def"] = 0.17655
-  l_spec$b_trt
-  
-  d_sop <- sim18_sop(1:28, l_spec)
-  d_tbl <- dcast(d_sop, day ~ trt, value.var = "none")
-  colSums(d_tbl)
-  d_tbl[, .(del_def = sum(def - soc))]
-  
-  colSums(cbind(
-    d_sop[trt == "soc", .(day, none_soc = none)],
-    d_sop[trt == "def", .(day, none_def = none)],
-    d_sop[trt == "dis", .(day, none_dis = none)]))
-  
-  
-  d_sop[day < 2]
-  
-  
-}
 
 
 #' Inhomogeneous Poisson process
@@ -525,8 +462,6 @@ sim_ipp_thinning <- function(
 
 
 
-#' Main trial loop, sequentially creating patient sample, assigning trt and 
-#' running analyses and decision processes.
 run_trial <- function(
     ix,
     l_spec,
@@ -563,7 +498,7 @@ run_trial <- function(
     ic = 1:N_analys,
     par = l_spec$full_pars
   )
-
+  
   d_post_smry_1[, mu := NA_real_]
   d_post_smry_1[, lo := NA_real_]
   d_post_smry_1[, hi := NA_real_]
@@ -583,9 +518,7 @@ run_trial <- function(
   d_post_smry_3 <- CJ(
     ic = 1:N_analys,
     state = l_spec$state_lab,
-    par = c(
-      "soc", "def", "dis", "delta_def", "delta_dis"
-    )
+    par = c(l_spec$trt_lab, l_spec$delta_lab)
   )
   d_post_smry_3[, mu := NA_real_]
   d_post_smry_3[, lo := NA_real_]
@@ -595,7 +528,7 @@ run_trial <- function(
   d_post_smry_4 <- CJ(
     ic = 1:N_analys,
     rule = c("ni", "fut"),
-    par = c("delta_def", "delta_dis"),
+    par = l_spec$delta_lab,
     p = NA_real_,
     dec = NA_integer_
   )
@@ -628,7 +561,7 @@ run_trial <- function(
     # We are assuming that the analysis takes place on pt having reached endpoint
     
     d <- sim18_cohort(l_spec)$d_obs
-
+    
     log_info("Trial ", ix, " cohort ", l_spec$ic, " generated")
     
     # combine the existing and new data
@@ -650,17 +583,25 @@ run_trial <- function(
       # we have completed the subsequent 90 day follow up
       incl_ids <- d_all[t_0 + l_spec$followup_dec < t_now, unique(id)]
       l_mod <- sim18_stan_data(dd = copy(d_all[id %in% incl_ids]), l_spec)
-    
+      
     }
     
     f_1_optim <- m_1$optimize(data = l_mod, jacobian = TRUE)
     f_1 <- m_1$laplace(data = l_mod, mode = f_1_optim, draws = 2000, refresh = 0)
     
+    # f_1 <- m_1$sample(
+    #   l_mod,
+    #   iter_warmup = l_spec$mcmc_warmup, iter_sampling = l_spec$mcmc_iter,
+    #   parallel_chains = l_spec$mcmc_chain, chains = l_spec$mcmc_chain,
+    #   refresh = 0, show_exceptions = T,
+    #   max_treedepth = 11
+    # )
+    
     m_post <- f_1$draws(variables = l_spec$smry_pars, format = "matrix")
     
     l_spec_mod <- copy(l_spec)
     d_sop <- rbindlist(lapply(1:nrow(m_post), function(ii){
-
+      
       # calculate sop based on parameter estimates at their post mean
       l_spec_mod$alpha <- as.numeric(m_post[ii , c("a[1]", "a[2]")])
       l_spec_mod$b_trt <- as.numeric(m_post[ii , c("b_trt[1]", "b_trt[2]", "b_trt[3]")])  
@@ -669,10 +610,10 @@ run_trial <- function(
       l_spec_mod$b_time_2 <- as.numeric(m_post[ii , c("b_time_2")]) 
       l_spec_mod$b_gap <- as.numeric(m_post[ii , c("b_gap[1]", "b_gap[2]")])
       l_spec_mod$b_trt_time <- as.numeric(m_post[ii , c("b_trt_time[1]", "b_trt_time[2]", "b_trt_time[3]")])  
-
+      
       names(l_spec_mod$b_trt) <- l_spec_mod$trt_lab
       names(l_spec_mod$b_trt_time) <- l_spec_mod$trt_lab
-
+      
       d_tmp <- sim18_sop(days = l_spec$visit_days[-1], l_spec_mod)
       d_tmp
       
@@ -697,7 +638,7 @@ run_trial <- function(
     
     
     d_sop[, gap := day - data.table::shift(day, type = "lag"), keyby = .(id_draw, trt)]
-
+    
     d_sop[, `:=`(
       prop_none = none * gap,
       prop_mild = mild * gap,
@@ -707,15 +648,18 @@ run_trial <- function(
     # days in each state
     d_dur <- melt(
       d_sop[day > 0, .(
-      none = sum(none * gap),
-      mild = sum(mild * gap),
-      severe = sum(severe * gap)
+        none = sum(none * gap),
+        mild = sum(mild * gap),
+        severe = sum(severe * gap)
       ), keyby = .(trt, id_draw)], id.vars = c("trt", "id_draw"), 
       variable.name = "state", value.name = "days")
     
     d_dur <- dcast(d_dur, state + id_draw ~ trt, value.var = "days")
     d_dur[, delta_def := def - soc]
     d_dur[, delta_dis := dis - soc]
+    
+    # sd(d_dur$delta_def)
+    # sd(d_dur$delta_dis)
     
     # posterior summary (did the model recover the data generating pars)
     d_post <- data.table(m_post)
@@ -730,7 +674,7 @@ run_trial <- function(
         hi = apply(d_post, 2, function(z){
           quantile(z, prob = 0.975)
         })
-        ),
+      ),
       on = .(ic, par), `:=`(
         mu = i.mu, lo = i.lo, hi = i.hi
       )
@@ -773,15 +717,15 @@ run_trial <- function(
       melt(d_dur[
         state == "none", .(id_draw, delta_def, delta_dis)], 
         id.vars = c("id_draw"), variable.name = "par")[
-        , .(
-          ic = l_spec$ic,
-          rule = "ni",
-          # probability that difference in number of symptom free days is above 
-          # some nominal reduction
-          p = mean(value > -l_spec$dec_delta_ni) ,
-          dec = NA_real_
-        ), keyby = .(par)
-      ],
+          , .(
+            ic = l_spec$ic,
+            rule = "ni",
+            # probability that difference in number of symptom free days is above 
+            # some nominal reduction
+            p = mean(value > -l_spec$dec_delta_ni) ,
+            dec = NA_real_
+          ), keyby = .(par)
+        ],
       on = .(ic, rule, par), `:=`(
         p = i.p, dec = i.dec
       )
@@ -920,7 +864,7 @@ run_sim18 <- function(){
     })
   
   
-  Sys.sleep(10)
+  
   
   # data from each simulated trial
   d_all <- rbindlist(lapply(1:length(r), function(i){ 
@@ -962,6 +906,7 @@ run_sim18 <- function(){
     d_post_sop = d_post_sop
   )
   
+  
   fname <- paste0("sim18-", format(Sys.time(), "%Y%m%d-%H%M%S"), ".qs")
   
   message("fname is ", fname)
@@ -970,8 +915,6 @@ run_sim18 <- function(){
   
   message("saved")
 }
-
-
 
 
 
