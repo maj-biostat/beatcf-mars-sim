@@ -20,16 +20,6 @@ default:
   followup_dec: 28
   visit_days: [0, 1, 2, 3, 4, 5, 6, 7, 14, 21, 28]
   
-  # Weakly informative priors, set with reference to the natural scale: 
-  # log acceleration factors beyond +-3 (i.e. AF outside
-  # roughly [0.05, 20]) are clinically implausible, so prior_beta1_sd = 1 
-  # keeps substantial prior mass within +-2 on the log scale (AF in [0.14, 7.4]) 
-  # while still being clearly dominated by the likelihood for a ~ hundreds of pt
-  pri_b_0_sd:     5
-  pri_b_trt_sd: 1
-  pri_log_sig_mu: 0
-  pri_log_sig_sd: 1
-  pri_rho_raw_sd: 1     
   
   state_lab: ["none", "mild", "severe"]
   # controls which trt can be allocated
@@ -49,11 +39,12 @@ default:
   # 0.1592559 -0.4499971 -0.4500000 corresponds to an NI of 0.45
   # 0.1765427 -0.5000003 -0.5000000 corresponds to an NI of 0.50
   # 0.1937544 -0.5498294 -0.5500000 corresponds to an NI of 0.55 
-  b_trt: [0.0, 0.1592559, 0.0]   
+  b_trt: [0.0, 0.1765427, 0.0]   
   b_prev: [0.0, 2.0, 1.0]  # orig [0.0, 1.5, 0.1]
   b_time_1: -0.32  # orig -0.4
   b_time_2: 0.003  # orig 0.002
   b_gap: [0.0, 0.0]
+  b_trt_gap: [0.0, 0.0, 0.0]
   b_trt_time: [0.0, 0.0, 0.0]
   
   # decision reference values - think of these as the non-inferiority margins
@@ -61,7 +52,7 @@ default:
   # will not tolerate expected total time in exacerbation to be more than 
   # NOTE - for type i error evaluation this has to align with a treatment 
   # effect that induces an appropriate change in sojourn times across trt.
-  dec_delta_ni: 0.45
+  dec_delta_ni: 0.5
   
   # could equivalently say that we will not tolerate the same amount of days
   # less of health.

@@ -89,12 +89,7 @@ N_sims <- l[[1]]$cfg$nsim
 # l_spec <- get_prototype_cfg()
 l_spec_1 <- l[[1]]$l_spec
 
-l_spec_1$non_zero_pars <- c("a[1]", "a[2]",
-                        "b_trt[2]", "b_trt[3]",
-                        "b_prev[2]", "b_prev[3]",
-                        "b_time_1", "b_time_2",
-                        "b_gap[2]",
-                        "b_trt_time[2]", "b_trt_time[3]")
+
 
 desc_labs <- character()
 
@@ -291,6 +286,25 @@ kableExtra::kbl(
   kableExtra::column_spec(4:6, width = "1.5cm")
 ```
 
+Further configuration from first simulation scenario.
+
+\footnotesize
+```{r, echo = T}
+l_spec_1$p_init
+l_spec_1$alpha
+l_spec_1$b_trt
+l_spec_1$b_prev
+l_spec_1$b_time_1
+l_spec_1$b_time_2
+l_spec_1$b_gap
+l_spec_1$b_trt_time
+l_spec_1$dec_delta_ni
+l_spec_1$dec_thresh_ni
+l_spec_1$dec_thresh_fut
+l_spec_1$visit_days
+```
+\normalsize
+
 
 # Results
 
@@ -315,14 +329,6 @@ ex_trial_plots <- function(id_scen = 1, id_ex = 1, include_tran_m = F){
   d_fig_1[, state := factor(
     state, levels = l_cfg$state_opts, labels = names(l_cfg$state_opts))]
   d_fig_1[, trt := factor(trt, levels = l_cfg$trt_lab)]
-  
-  d_fig_2 <- d_fig_1[, .(.N), keyby = .(state, trt, day)]
-  d_fig_2 <- base::merge(
-    d_fig_2, 
-    d_fig_1[, .(N_unit = length(unique(id))), keyby = .(trt)],
-    by = "trt", all.x = T
-  )
-  d_fig_2[, prop := N/N_unit]
   
   p_1 <- ggplot(d_fig_1, aes(fill = state, x = day)) +
     geom_bar(position = "fill") +
@@ -375,12 +381,13 @@ ex_trial_plots <- function(id_scen = 1, id_ex = 1, include_tran_m = F){
     
   p_2 <- ggplot(
     d_fig[source == "Model"], aes(x = day, y = prop, group = state, col = state)) +
-    geom_linerange(aes(ymin = lo, ymax = hi), lwd = 0.3) +
+    # geom_linerange(aes(ymin = lo, ymax = hi), lwd = 0.3) +
     geom_line(lwd = 0.3) +
+    geom_point(size = 0.5) +
     geom_point(
       data =  d_fig[source == "Observed"], 
       aes(x = day, y = prop, group = state, col = state),
-      inherit.aes = F
+      inherit.aes = F, shape = 1
     ) +
     scale_x_continuous("", breaks = seq(1, max(d_fig_1$day), by = 2)) +
     scale_y_continuous("SOP", breaks = seq(0, 1, by = 0.1)) +
@@ -409,8 +416,8 @@ ex_trial_plots <- function(id_scen = 1, id_ex = 1, include_tran_m = F){
   if(include_tran_m){
     m_post <- as.matrix(d_post_par)
   l_spec_mod <- copy(l_cfg)
-  t_days <- l_cfg$visit_days[-1]
-  t_gaps <- diff(l_cfg$visit_days)
+  t_days <- 1:max(l_cfg$visit_days)
+  t_gaps <- rep(1, length = max(l_cfg$visit_days))
   # gaps are indexing
   t_gaps[t_gaps == 7] <- 2
   ii <- jj <- kk <- 1
@@ -464,18 +471,14 @@ ex_trial_plots <- function(id_scen = 1, id_ex = 1, include_tran_m = F){
   
   
   # durations and trt effects -------------
-  d_post_sop[, gap := day - data.table::shift(day, type = "lag"), keyby = .(id_draw, trt)]
-  d_post_sop[, `:=`(
-    prop_none = none * gap,
-    prop_mild = mild * gap,
-    prop_severe = severe * gap)]
-      
+  d_post_sop[, gap := day - data.table::shift(day, type = "lag"), keyby = .(id_draw, trt, ic)]
+
   # posterior days in each state
   d_dur <- melt(
     d_post_sop[day > 0 & ic == max(d_post_sop$ic), .(
-      none = sum(none * gap),
-      mild = sum(mild * gap),
-      severe = sum(severe * gap)
+      none = sum(none),
+      mild = sum(mild),
+      severe = sum(severe)
       ), keyby = .(trt, id_draw)], id.vars = c("trt", "id_draw"), 
     variable.name = "state", value.name = "days")
   
@@ -539,7 +542,7 @@ In the example trial `r length(unique(l_ex$d_all$id))` were randomised.
 
 ```{r}
 #| label: fig-ex-1-obs
-#| fig-cap: 'Summary of trial data: proportion in each state by day'
+#| fig-cap: 'Summary of trial data: observed proportion in each state by visit day'
 #| fig-height: 6
 #| fig-width: 6
 #| out-height: 6in
@@ -941,7 +944,7 @@ kableExtra::kbl(
 
 ```{r, eval = T}
 #| label: tbl-par-cmp-2
-#| tbl-cap: 'Posterior parameter summary (model parameters)'
+#| tbl-cap: 'Posterior parameter summary (derived parameters - sojourn times)'
 
 i <- 1
 d_par <- data.table()
@@ -1026,7 +1029,7 @@ kableExtra::kbl(
 
 ```{r, eval = T}
 #| label: tbl-par-cmp-3
-#| tbl-cap: 'Posterior parameter summary (model parameters)'
+#| tbl-cap: 'Posterior parameter summary (derived parameters - difference in sojourn times)'
 
 i <- 1
 d_par <- data.table()

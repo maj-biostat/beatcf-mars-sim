@@ -72,8 +72,12 @@ sim18_cohort <- function(l_spec){
         # time by treatment (linear)
         l_spec$b_trt_time[trt]*tt +
         # gap length - structurally zero and is only relevant in model
-        # where we have gaps in observation
-        l_spec$b_gap[interval]
+        # where we have gaps in observation and it constitutes a nuissance param
+        l_spec$b_gap[interval] +
+        # trt x gap is similarly structurally zero and is only relevant in 
+        # the model to account for differential progression across trt arms
+        as.numeric(interval != 1) * l_spec$b_trt_gap[trt] 
+        
       
       # not very efficient but it will do
       d_cohort$state[rows[j]] <- sim18_rord_pom_3(lp,l_spec$alpha)
@@ -125,6 +129,7 @@ sim18_stan_data <- function(dd, l_spec){
   X <- model.matrix(~ x_trt + x_prev +
                       x_time + I(x_time^2) +
                       x_gap_time +
+                      x_trt * x_gap_time + 
                       x_trt * x_time, 
                     data = dd)
   X_mod <- X[, -1]
@@ -143,8 +148,10 @@ sim18_stan_data <- function(dd, l_spec){
     ix_time_1 = 5,
     ix_time_2 = 6,
     ix_gap = 7,
-    ix_trt_time_2 = 8,
-    ix_trt_time_3 = 9,
+    ix_trt_gap_2 = 8,
+    ix_trt_gap_3 = 9,
+    ix_trt_time_2 = 10,
+    ix_trt_time_3 = 11,
     mu_days = mean(dd$day),
     sd_days = sd(dd$day)
   )
@@ -155,6 +162,8 @@ sim18_stan_data <- function(dd, l_spec){
   stopifnot(names(X_mod)[ld$ix_time_1] == "x_time")
   stopifnot(names(X_mod)[ld$ix_time_2] == "I(x_time^2)")
   stopifnot(names(X_mod)[ld$ix_gap] == "x_gap_time2")
+  stopifnot(names(X_mod)[ld$ix_trt_gap_2] == "x_trt2:x_gap_time2")
+  stopifnot(names(X_mod)[ld$ix_trt_gap_3] == "x_trt3:x_gap_time2")
   stopifnot(names(X_mod)[ld$ix_trt_time_2] == "x_trt2:x_time")
   stopifnot(names(X_mod)[ld$ix_trt_time_3] == "x_trt3:x_time")
   
@@ -187,7 +196,8 @@ sim18_transition_matrix <- function(day, gap_ix = 1, trt, l_spec)
       l_spec$b_time_1 * day +
       l_spec$b_time_2 * day^2 +
       l_spec$b_trt_time[trt] * day +
-      l_spec$b_gap[gap_ix]
+      l_spec$b_gap[gap_ix] +
+      as.numeric(gap_ix != 1) * l_spec$b_trt_gap[trt]
     
     p1 <- plogis(l_spec$alpha[1] - lp)
     p2 <- plogis(l_spec$alpha[2] - lp) - p1
@@ -292,15 +302,21 @@ update_sim18_cfg <- function(l_spec){
   names(l_spec$b_trt_time) <- l_spec$trt_lab
   
   l_spec$b_gap <- unlist(l_spec$b_gap)
+  
+  l_spec$b_trt_gap <- unlist(l_spec$b_trt_gap)
+  names(l_spec$b_trt_gap) <- l_spec$trt_lab
+  
   l_spec$p_init <- unlist(l_spec$p_init)
   
-  l_spec$smry_pars <- c("a", "b_trt", "b_prev", "b_time_1", "b_time_2", "b_gap", "b_trt_time")
+  l_spec$smry_pars <- c(
+    "a", "b_trt", "b_prev", "b_time_1", "b_time_2", "b_gap", "b_trt_gap", "b_trt_time")
   
   l_spec$full_pars <- c("a[1]", "a[2]",
                         "b_trt[1]", "b_trt[2]", "b_trt[3]",
                         "b_prev[1]", "b_prev[2]", "b_prev[3]",
                         "b_time_1", "b_time_2",
                         "b_gap[1]", "b_gap[2]",
+                        "b_trt_gap[1]", "b_trt_gap[2]", "b_trt_gap[3]",
                         "b_trt_time[1]", "b_trt_time[2]", "b_trt_time[3]")
   
   l_spec$non_zero_pars <- c("a[1]", "a[2]",
@@ -308,10 +324,8 @@ update_sim18_cfg <- function(l_spec){
                         "b_prev[2]", "b_prev[3]",
                         "b_time_1", "b_time_2",
                         "b_gap[2]",
+                        "b_trt_gap[2]", "b_trt_gap[3]",
                         "b_trt_time[2]", "b_trt_time[3]")
-    
-    
-    c("a", "b_trt", "b_prev", "b_time_1", "b_time_2", "b_gap", "b_trt_time")
   
   if(l_spec$nex > 0){
     l_spec$nex <- pmin(l_spec$nex, l_spec$nsim)

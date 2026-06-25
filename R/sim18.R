@@ -93,7 +93,7 @@ run_trial <- function(
     ic = 1:N_analys,
     state = l_spec$state_lab,
     trt = l_spec$trt_lab,
-    day = l_spec$visit_days[-1]
+    day = 1:max(l_spec$visit_days)
   )
   d_post_smry_2[, mu := NA_real_]
   d_post_smry_2[, lo := NA_real_]
@@ -183,7 +183,7 @@ run_trial <- function(
     # )
     
     m_post <- f_1$draws(variables = l_spec$smry_pars, format = "matrix")
-    
+    ii <- 1
     l_spec_mod <- copy(l_spec)
     d_sop <- rbindlist(lapply(1:nrow(m_post), function(ii){
 
@@ -194,12 +194,15 @@ run_trial <- function(
       l_spec_mod$b_time_1 <- as.numeric(m_post[ii , c("b_time_1")])  
       l_spec_mod$b_time_2 <- as.numeric(m_post[ii , c("b_time_2")]) 
       l_spec_mod$b_gap <- as.numeric(m_post[ii , c("b_gap[1]", "b_gap[2]")])
+      l_spec_mod$b_trt_gap <- as.numeric(m_post[ii , c("b_trt_gap[1]", "b_trt_gap[2]", "b_trt_gap[3]")])  
       l_spec_mod$b_trt_time <- as.numeric(m_post[ii , c("b_trt_time[1]", "b_trt_time[2]", "b_trt_time[3]")])  
 
       names(l_spec_mod$b_trt) <- l_spec_mod$trt_lab
+      names(l_spec_mod$b_trt_gap) <- l_spec_mod$trt_lab
       names(l_spec_mod$b_trt_time) <- l_spec_mod$trt_lab
+      
 
-      d_tmp <- sim18_sop(days = l_spec$visit_days[-1], l_spec_mod)
+      d_tmp <- sim18_sop(days = 1:max(l_spec$visit_days), l_spec_mod)
       d_tmp
       
     }), idcol = "id_draw" )
