@@ -374,12 +374,12 @@ sim18_calibrate_trt <- function(l_spec){
   m_test_range = matrix(NA, ncol = 2, nrow = 10000)
   # treatment effects to consider on the log odds scale
   # start with 0 to 0.5 and then refine from there
-  b_trt_lo <- 0.15
-  b_trt_hi <- 0.2
+  b_trt_lo <- 0.20
+  b_trt_hi <- 0.25
   m_test_range[, 1] <- seq(b_trt_lo, b_trt_hi, length = nrow(m_test_range))
   i <- 1
   
-  l_spec$dec_delta_ni <- 0.5
+  l_spec$dec_delta_ni <- 0.65
   message("Traget NI margin  : ", l_spec$dec_delta_ni)
   
   for(i in 1:nrow(m_test_range)){
