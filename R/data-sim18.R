@@ -218,12 +218,12 @@ sim18_sop <- function(days = 1:28, l_spec)
   
   out[1,] <- l_spec$p_init
   
-  # starting point
-  pi <- l_spec$p_init
-  
   d_sop <- data.table()
   
   for(trt in l_spec$trt_lab){
+    
+    # starting point
+    pi <- l_spec$p_init
     
     for(i in seq_along(days)){
       
@@ -318,8 +318,76 @@ update_sim18_cfg <- function(l_spec){
     l_spec$ex_trial_ix <- sort(sample(1:l_spec$nsim, size = l_spec$nex, replace = F))
     l_spec$ex_trial_ix[1] <- 1
   }
+    
+  # convert to the induced expected difference in sojourn times
+  l_spec$delta_lab <- c("delta_def", "delta_dis")
+  d_sop <- sim18_sop(1:28, l_spec)
+  d_tbl <- dcast(d_sop, day ~ trt, value.var = "none")
   
+  l_spec$dur_tru <- c( 
+    d_tbl[day > 0, sum(soc)],
+    d_tbl[day > 0, sum(def)],
+    d_tbl[day > 0, sum(dis)]
+  )
+  names(l_spec$dur_tru) <- l_spec$trt_lab
+  
+  l_spec$delta_dur_tru <- c( 
+    d_tbl[day > 0, sum(def - soc)],
+    d_tbl[day > 0, sum(dis - soc)]
+  )
+  names(l_spec$delta_dur_tru) <- l_spec$delta_lab
+   
   l_spec
+}
+
+# use to approximate treatment effects that will lead to desired differences
+# across arms in terms of soujourn time
+sim18_calibrate_trt <- function(l_spec){
+  
+  source("R/libs.R")
+  source("R/init.R")
+  source("R/util.R")
+
+  f_cfgsc <- file.path("./etc/sim18/cfg-sim18-v01.yml")
+  l_spec <- config::get(file = f_cfgsc)
+
+  l_spec <- update_sim18_cfg(l_spec)
+  l_spec$t_0 <- seq_along(1:sum(l_spec$N_pt))
+
+  l_spec$is <- 1
+  l_spec$ie <- sum(l_spec$N_pt)
+  
+  m_test_range = matrix(NA, ncol = 2, nrow = 10000)
+  # treatment effects to consider on the log odds scale
+  # start with 0 to 0.5 and then refine from there
+  b_trt_lo <- 0.15
+  b_trt_hi <- 0.2
+  m_test_range[, 1] <- seq(b_trt_lo, b_trt_hi, length = nrow(m_test_range))
+  i <- 1
+  
+  l_spec$dec_delta_ni <- 0.5
+  message("Traget NI margin  : ", l_spec$dec_delta_ni)
+  
+  for(i in 1:nrow(m_test_range)){
+    l_spec$b_trt["def"] = m_test_range[i, 1]
+    
+    # convert to the induced expected difference in sojourn times
+    d_sop <- sim18_sop(1:28, l_spec)
+     
+    d_tbl <- dcast(d_sop[day > 0], day ~ trt, value.var = "none")
+    
+    m_test_range[i, 2] = d_tbl[, sum(def - soc)]
+  }
+  m_test_range <- cbind(m_test_range, -l_spec$dec_delta_ni)
+  # what magnitude of treatment effect results in a difference in sojourn times
+  # equal to the NI margin?
+  # it may be worth doing this multiple times for progressively more constrained
+  # ranges for the treatment effect range to explore.
+  m_test_range[which.min(abs(m_test_range[, 2] - m_test_range[, 3])), ]
+  
+
+  
+  
 }
 
 

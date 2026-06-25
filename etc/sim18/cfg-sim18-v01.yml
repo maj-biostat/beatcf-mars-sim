@@ -1,5 +1,5 @@
 default:
-  desc: "Treatments equivalent"
+  desc: "Defer at NI Boundary"
   nsim: 500
   mc_cores: 40
   mcmc_warmup: 1000
@@ -18,7 +18,7 @@ default:
   # administrative censor
   followup: 720
   followup_dec: 28
-  visit_days: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 21, 28]
+  visit_days: [0, 1, 2, 3, 4, 5, 6, 7, 14, 21, 28]
   
   # Weakly informative priors, set with reference to the natural scale: 
   # log acceleration factors beyond +-3 (i.e. AF outside
@@ -39,7 +39,17 @@ default:
   p_init: [0, 0.4, 0.6]
   
   alpha: [-0.5, 1.2]
-  b_trt: [0.0, 0.0, 0.0]
+  
+  # The time in state is calculated as a sum of the sops by day up to day 28.
+  # However, we only observe a subset of the days so the model is recovering 
+  # the sops at a subset of days. We scale the sops by the gap. This is 
+  # probably a bit of a problem as it could lead to both under or over estimates.
+  
+  # 0.1418942 -0.4000009 -0.4000000 corresponds to an NI of 0.40
+  # 0.1592559 -0.4499971 -0.4500000 corresponds to an NI of 0.45
+  # 0.1765427 -0.5000003 -0.5000000 corresponds to an NI of 0.50
+  # 0.1937544 -0.5498294 -0.5500000 corresponds to an NI of 0.55 
+  b_trt: [0.0, 0.1592559, 0.0]   
   b_prev: [0.0, 2.0, 1.0]  # orig [0.0, 1.5, 0.1]
   b_time_1: -0.32  # orig -0.4
   b_time_2: 0.003  # orig 0.002
@@ -49,8 +59,9 @@ default:
   # decision reference values - think of these as the non-inferiority margins
   
   # will not tolerate expected total time in exacerbation to be more than 
-  # dec_eh_delta_ni days longer over the follow up
-  dec_delta_ni: 0.5
+  # NOTE - for type i error evaluation this has to align with a treatment 
+  # effect that induces an appropriate change in sojourn times across trt.
+  dec_delta_ni: 0.45
   
   # could equivalently say that we will not tolerate the same amount of days
   # less of health.

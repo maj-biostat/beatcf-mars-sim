@@ -10,6 +10,9 @@ toc: true
 toc-depth: 3
 bibliography: ../etc/refs.bib
 csl: ../etc/elsevier-harvard.csl
+include-in-header:
+  text: |
+    \usepackage{makecell}
 ---
 
 ```{r, include = FALSE}
@@ -65,7 +68,7 @@ source(paste0(prefix_r, "/data-sim18.R"))
 # Load all the files into a single list.
 
 # files of interest
-sim_lab <- "sim18-01"
+sim_lab <- "sim18-03"
 
 flist <- list.files(paste0(prefix_data, "/", sim_lab), pattern = "sim18")
 toks <- list()
@@ -224,7 +227,7 @@ An analogous definition is assumed for futility:
 
 $$
 \begin{aligned}
-Pr(\text{days}_{trt} - \text{days}_{soc} < -`r ni_delta`) > `r threshold_ni`
+Pr(\text{days}_{trt} - \text{days}_{soc} < -`r ni_delta`) > `r threshold_fut`
 \end{aligned}
 $$
 
@@ -281,7 +284,7 @@ kableExtra::kbl(
   linesep = "",
   col.names=c("Scenario", "Treatment effects", 
               "NI Margin", "NI Threshold", "Fut Threshold", "Dec FU Days"), 
-  digits = 2)  |>
+  digits = 3)  |>
   kableExtra::kable_styling(font_size = 9)  |>
   kableExtra::column_spec(1, width = "3.5cm")|>
   kableExtra::column_spec(2:3, width = "2cm")|>
@@ -293,7 +296,7 @@ kableExtra::kbl(
 
 
 ```{r, echo = F}
-ex_trial_plots <- function(id_scen = 1, id_ex = 1){
+ex_trial_plots <- function(id_scen = 1, id_ex = 1, include_tran_m = F){
   
   l_cfg <- copy(l[[id_scen]]$l_spec)
   stopifnot(id_ex <= l_cfg$nex)
@@ -303,6 +306,7 @@ ex_trial_plots <- function(id_scen = 1, id_ex = 1){
   d_post_smry_2 <- copy(l[[id_scen]]$d_post_smry_2[sim == l_cfg$ex_trial_ix[id_ex]])
   d_post_smry_3 <- copy(l[[id_scen]]$d_post_smry_3[sim == l_cfg$ex_trial_ix[id_ex]])
   d_post_smry_4 <- copy(l[[id_scen]]$d_post_smry_4[sim == l_cfg$ex_trial_ix[id_ex]])
+  d_post_par <- copy(l[[id_scen]]$d_post_par[sim == l_cfg$ex_trial_ix[id_ex]])
   d_post_sop <- copy(l[[id_scen]]$d_post_sop[sim == l_cfg$ex_trial_ix[id_ex]])
   
   
@@ -330,7 +334,7 @@ ex_trial_plots <- function(id_scen = 1, id_ex = 1){
     )
  
   
-  # Observed vs model data -------------------------------
+  # Observed vs model sop -------------------------------
   # Observed data, filling in missing parts.
   d_fig_1 <- copy(d_all)
   d_fig_1[, state := factor(
@@ -366,6 +370,8 @@ ex_trial_plots <- function(id_scen = 1, id_ex = 1){
   
   
   d_fig <- rbind(d_fig_2, d_fig_3, fill = T)
+  d_fig[, state := factor(state, levels = l_cfg$state_lab)]
+  d_fig[, trt := factor(trt, levels = l_cfg$trt_lab)]
     
   p_2 <- ggplot(
     d_fig[source == "Model"], aes(x = day, y = prop, group = state, col = state)) +
@@ -385,8 +391,76 @@ ex_trial_plots <- function(id_scen = 1, id_ex = 1){
     )
   
   
+  p_3 <- ggplot(
+    d_fig[source == "Model"], aes(
+      x = day, y = prop, group = trt, col = trt, lty = trt)) +
+    geom_line(lwd = 0.3) +
+    scale_x_continuous("", breaks = seq(1, max(d_fig_1$day), by = 2)) +
+    scale_y_continuous("SOP", breaks = seq(0, 1, by = 0.1)) +
+    scale_color_discrete("") +
+    scale_linetype_discrete("") +
+    facet_wrap(. ~ state, ncol = 3) +
+    theme(
+      legend.position = "bottom"
+    )
   
+  # transition matrix ------------------
+  d_tran <- data.table()
+  if(include_tran_m){
+    m_post <- as.matrix(d_post_par)
+  l_spec_mod <- copy(l_cfg)
+  t_days <- l_cfg$visit_days[-1]
+  t_gaps <- diff(l_cfg$visit_days)
+  # gaps are indexing
+  t_gaps[t_gaps == 7] <- 2
+  ii <- jj <- kk <- 1
   
+  d_tran <- rbindlist(lapply(1:nrow(m_post), function(ii){
+    
+    # calculate sop based on parameter estimates at their post mean
+    l_spec_mod$alpha <- as.numeric(m_post[ii , c("a[1]", "a[2]")])
+    l_spec_mod$b_trt <- as.numeric(m_post[ii , c("b_trt[1]", "b_trt[2]", "b_trt[3]")])  
+    l_spec_mod$b_prev <- as.numeric(m_post[ii , c("b_prev[1]", "b_prev[2]", "b_prev[3]")])  
+    l_spec_mod$b_time_1 <- as.numeric(m_post[ii , c("b_time_1")])  
+    l_spec_mod$b_time_2 <- as.numeric(m_post[ii , c("b_time_2")]) 
+    l_spec_mod$b_gap <- as.numeric(m_post[ii , c("b_gap[1]", "b_gap[2]")])
+    l_spec_mod$b_trt_time <- as.numeric(
+      m_post[ii , c("b_trt_time[1]", "b_trt_time[2]", "b_trt_time[3]")])  
+
+    names(l_spec_mod$b_trt) <- l_spec_mod$trt_lab
+    names(l_spec_mod$b_trt_time) <- l_spec_mod$trt_lab
+      
+    d_tran_trt <- data.table()
+    for(jj in seq_along(l_cfg$trt_lab)){
+      for(kk in seq_along(t_days)){
+      
+        
+        d_pr <- data.table(
+          sim18_transition_matrix(t_days[kk], t_gaps[kk], l_cfg$trt_lab[jj], l_spec_mod)
+          )
+        d_pr[, `:=`(
+          from = l_spec_mod$state_lab, 
+          trt = l_cfg$trt_lab[jj],
+          day = t_days[kk])]
+        d_pr <- melt(
+          d_pr, id.vars = c("trt", "from", "day"), 
+          variable.name = "to", value.name = "p_tran"
+        )
+        d_tran_trt <- rbind(
+          d_tran_trt, d_pr
+        )
+      }
+    }
+    d_tran_trt
+    
+    }), idcol = "id_draw" )
+  
+    d_tran <- dcast(d_tran[, .(
+      mu = mean(p_tran)
+    ), keyby = .(day, trt, from, to)], day + trt + from ~ to, value.var = "mu")
+    d_tran[, from := factor(from, levels = l_cfg$state_lab)]
+    setkey(d_tran, day, trt, from)
+  }
   
   
   # durations and trt effects -------------
@@ -398,7 +472,7 @@ ex_trial_plots <- function(id_scen = 1, id_ex = 1){
       
   # posterior days in each state
   d_dur <- melt(
-    d_post_sop[day > 0, .(
+    d_post_sop[day > 0 & ic == max(d_post_sop$ic), .(
       none = sum(none * gap),
       mild = sum(mild * gap),
       severe = sum(severe * gap)
@@ -412,14 +486,14 @@ ex_trial_plots <- function(id_scen = 1, id_ex = 1){
   d_fig_2 <- melt(d_fig_1, id.vars = c("state", "id_draw"), 
                   variable.name = "par")
     
-  p_3 <- ggplot(
+  p_4 <- ggplot(
     d_fig_2[!(par %like% "delta")], aes(x = value, group = par)) +
     geom_density(lwd = 0.3) +
     scale_x_continuous("") +
     scale_y_continuous("Density") +
     facet_grid(par ~ state, scales = "free_x") 
   
-  p_4 <- ggplot(
+  p_5 <- ggplot(
     d_fig_2[par %like% "delta"], aes(x = value, group = par)) +
     geom_density(lwd = 0.3) +
     scale_x_continuous("") +
@@ -435,11 +509,13 @@ ex_trial_plots <- function(id_scen = 1, id_ex = 1){
     d_post_smry_2 = d_post_smry_2,
     d_post_smry_3 = d_post_smry_3,
     d_post_smry_4 = d_post_smry_4,
+    d_tran = d_tran,
     d_post_sop = d_post_sop,
     p_obs = p_1,
-    p_cmp = p_2,
-    p_dur = p_3 ,
-    p_del = p_4
+    p_cmp_1 = p_2,
+    p_cmp_2 = p_3,
+    p_dur = p_4 ,
+    p_del = p_5
   )
   
 }
@@ -451,7 +527,9 @@ ex_trial_plots <- function(id_scen = 1, id_ex = 1){
 
 ```{r, echo = F}
 id_scen <- 1
-l_ex <- ex_trial_plots(id_scen, 1)
+id_ex <- 1
+include_tran_m <- F
+l_ex <- ex_trial_plots(id_scen, id_ex, include_tran_m)
 
 ```
 
@@ -475,10 +553,36 @@ print(l_ex$p_obs)
 ```
 
 
+### Transition Matrices
+
+Transition matricies only reported if `include_tran_m` is set to `TRUE`, current value is `r include_tran_m`.
+
+```{r, eval = include_tran_m}
+#| label: tbl-ex-1-tran
+#| tbl-cap: 'Transition matrices'
+
+if(nrow(l_ex$d_tran) > 0){
+  options(knitr.kable.NA = "-")
+  kableExtra::kbl(
+    l_ex$d_tran[day <= 14], 
+    booktabs = TRUE, align = c("lllccc"), longtable = TRUE,
+    linesep = c(rep("", 8), "\\addlinespace"),
+    col.names=c("Day", "Treatment", "From", "none", "mild", "severe"), 
+    digits = 3)  |>
+    kableExtra::kable_styling(
+      font_size = 8,
+      latex_options = c("scale_down", "repeat_header")) |>
+    kableExtra::column_spec(1:6, width = "2cm")
+}
+
+
+```
+
+
 ### SOPs
 
 ```{r}
-#| label: fig-ex-1-sop
+#| label: fig-ex-1-sop-1
 #| fig-cap: 'Summary of trial data vs model SOP'
 #| fig-height: 4
 #| fig-width: 6
@@ -489,9 +593,22 @@ print(l_ex$p_obs)
 #| fig-pos: H
 
 
+print(l_ex$p_cmp_1)
+```
 
 
-print(l_ex$p_cmp)
+```{r}
+#| label: fig-ex-1-sop-2
+#| fig-cap: 'Summary of trial model SOP by treatment and state'
+#| fig-height: 4
+#| fig-width: 6
+#| out-height: 4in
+#| out-width: 6in
+#| fig-dpi: 240
+#| fig-align: "center"
+#| fig-pos: H
+
+print(l_ex$p_cmp_2)
 ```
 
 
@@ -499,7 +616,7 @@ print(l_ex$p_cmp)
 
 ```{r}
 #| label: fig-ex-1-soujourn
-#| fig-cap: 'Posterior density of duration in each state'
+#| fig-cap: 'Posterior density of duration in each state at last analysis completed'
 #| fig-height: 5
 #| fig-width: 6
 #| out-height: 5in
@@ -517,7 +634,7 @@ print(l_ex$p_dur)
 
 ```{r}
 #| label: fig-ex-1-trt-eff
-#| fig-cap: 'Posterior density of difference in duration in each state (trt - soc)'
+#| fig-cap: 'Posterior density of difference in duration in each state (trt - soc) at last analysis completed'
 #| fig-height: 5
 #| fig-width: 6
 #| out-height: 5in
@@ -556,7 +673,7 @@ kableExtra::kbl(
   booktabs = TRUE, align = c("llccc"), longtable = TRUE,
   linesep = c(rep("", 1), "\\addlinespace"),
   col.names=c("Analysis", "Par", "Mean (CrI)", "Pr(NI)", "Pr(fut)"), 
-  digits = 1)  |>
+  digits = 3)  |>
   kableExtra::kable_styling(
     font_size = 8,
     latex_options = c("scale_down", "repeat_header")) |>
@@ -574,7 +691,8 @@ kableExtra::kbl(
 
 ```{r, echo = F}
 id_scen <- 1
-l_ex <- ex_trial_plots(id_scen, 3)
+include_tran_m <- F
+l_ex <- ex_trial_plots(id_scen, 3, include_tran_m)
 
 ```
 
@@ -598,10 +716,35 @@ print(l_ex$p_obs)
 ```
 
 
+### Transition Matrices
+
+Transition matricies only reported if `include_tran_m` is set to `TRUE`, current value is `r include_tran_m`.
+
+```{r, eval = include_tran_m}
+#| label: tbl-ex-2-tran
+#| tbl-cap: 'Transition matrices'
+
+if(nrow(l_ex$d_tran) > 0){
+  options(knitr.kable.NA = "-")
+  kableExtra::kbl(
+    l_ex$d_tran[day <= 14], 
+    booktabs = TRUE, align = c("lllccc"), longtable = TRUE,
+    linesep = c(rep("", 8), "\\addlinespace"),
+    col.names=c("Day", "Treatment", "From", "none", "mild", "severe"), 
+    digits = 3)  |>
+    kableExtra::kable_styling(
+      font_size = 8,
+      latex_options = c("scale_down", "repeat_header")) |>
+    kableExtra::column_spec(1:6, width = "2cm")
+}
+
+```
+
 ### SOPs
 
+
 ```{r}
-#| label: fig-ex-2-sop
+#| label: fig-ex-2-sop-1
 #| fig-cap: 'Summary of trial data vs model SOP'
 #| fig-height: 4
 #| fig-width: 6
@@ -611,14 +754,31 @@ print(l_ex$p_obs)
 #| fig-align: "center"
 #| fig-pos: H
 
-print(l_ex$p_cmp)
+
+print(l_ex$p_cmp_1)
+```
+
+
+```{r}
+#| label: fig-ex-2-sop-2
+#| fig-cap: 'Summary of trial model SOP by treatment and state'
+#| fig-height: 4
+#| fig-width: 6
+#| out-height: 4in
+#| out-width: 6in
+#| fig-dpi: 240
+#| fig-align: "center"
+#| fig-pos: H
+
+
+print(l_ex$p_cmp_2)
 ```
 
 ### Soujourn Times
 
 ```{r}
 #| label: fig-ex-2-soujourn
-#| fig-cap: 'Posterior density of duration in each state'
+#| fig-cap: 'Posterior density of duration in each state at last analysis completed'
 #| fig-height: 5
 #| fig-width: 6
 #| out-height: 5in
@@ -634,7 +794,7 @@ print(l_ex$p_dur)
 
 ```{r}
 #| label: fig-ex-2-trt-eff
-#| fig-cap: 'Posterior density of difference in duration in each state (trt - soc)'
+#| fig-cap: 'Posterior density of difference in duration in each state (trt - soc) at last analysis completed'
 #| fig-height: 5
 #| fig-width: 6
 #| out-height: 5in
@@ -674,7 +834,7 @@ kableExtra::kbl(
   booktabs = TRUE, align = c("llccc"), longtable = TRUE,
   linesep = c(rep("", 1), "\\addlinespace"),
   col.names=c("Analysis", "Par", "Mean (CrI)", "Pr(NI)", "Pr(fut)"), 
-  digits = 1)  |>
+  digits = 3)  |>
   kableExtra::kable_styling(
     font_size = 8,
     latex_options = c("scale_down", "repeat_header")) |>
@@ -689,11 +849,11 @@ kableExtra::kbl(
 
 ## Parameters 
 
-@tbl-par-comp summarises the model parameter estimates, by scenario and analysis, averged over the simulations.
+@tbl-par-cmp-1 summarises the model parameter estimates, by scenario and analysis, averged over the simulations.
 
 ```{r, eval = T}
-#| label: tbl-par-comp
-#| tbl-cap: 'Posterior parameter summary'
+#| label: tbl-par-cmp-1
+#| tbl-cap: 'Posterior parameter summary (model parameters)'
 
 i <- 1
 d_par <- data.table()
@@ -739,10 +899,11 @@ for(i in 1:length(l)){
   )
 }
 
-d_par[, stat := sprintf("%.2f (%.2f, %.2f)", mu, lo, hi)]
+# d_par[, stat := sprintf("%.3f \\n (%.3f, %.3f)", mu, lo, hi)]
 
+d_par[, stat := sprintf("\\makecell[c]{%.3f\\\\(%.3f, %.3f)}", mu, lo, hi)]
 
-
+# d_par[, stat := sprintf("%.3f\\newline(%.3f, %.3f)",mu, lo, hi)]
 
 d_tbl <- dcast(d_par, desc + par ~ N, value.var = "stat")
 d_tbl <- base::merge(
@@ -756,25 +917,195 @@ d_tbl <- base::merge(
 d_tbl[, par := factor(par, levels = l_spec_1$non_zero_pars)]
 d_tbl[, desc := factor(desc, levels = desc_labs)]
 d_tbl <- d_tbl[order(desc, par)]
+d_tbl[, par := gsub("_", "\\\\_", par)]
+
 
 kableExtra::kbl(
   d_tbl, 
   booktabs = TRUE, align = c("llcccc"), longtable = TRUE,
   linesep = c(rep("", 10), "\\addlinespace"),
   col.names=c("Scenario", "Parameter", cumsum(l_cfg$N_pt), "True value"), 
-  digits = 1)  |>
+  digits = 3,
+  escape = F)  |>
   kableExtra::kable_styling(
     font_size = 8,
     latex_options = c("scale_down", "repeat_header")) |>
   kableExtra::column_spec(1, width = "3.5cm")|>
   kableExtra::column_spec(2, width = "2cm")|>
-  kableExtra::column_spec(3:5, width = "2.5cm") |>
+  kableExtra::column_spec(3:5, width = "2cm") |>
   kableExtra::column_spec(6, width = "1.5cm")
 
 ```
 
 {{< pagebreak >}}
 
+```{r, eval = T}
+#| label: tbl-par-cmp-2
+#| tbl-cap: 'Posterior parameter summary (model parameters)'
+
+i <- 1
+d_par <- data.table()
+d_par_tru <- data.table()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  # extract the decision matrix - sim, analysis, quantity, domain level decision
+  d_tmp <- copy(l[[i]]$d_post_smry_3[par %in% c("soc", "def", "dis") & state == "none"])
+  
+  l_cfg <- copy(l[[i]]$l_spec)
+  
+  # extrapolate to impute the effects in those sims that had
+  # early stopping
+  d_tmp[, mu := nafill(mu, type = "locf"), keyby = .(sim, par)]
+  
+  d_smry <- d_tmp[, .(
+    mu = mean(mu),
+    lo = quantile(mu, prob = 0.025),
+    hi = quantile(mu, prob = 0.975)
+    ), keyby = .(ic, par)]
+  
+  d_smry[, N := cumsum(l_cfg$N_pt)[ic]]
+    
+  d_par <- rbind(
+    d_par,
+    cbind(scenario = i, desc = l_cfg$desc, d_smry)
+  )
+  
+  d_tmp <- data.table(
+    desc = l_cfg$desc, 
+    par = l_spec_1$trt_lab,
+    tru = c(
+      l_cfg$dur_tru
+      )
+    )
+  
+  d_par_tru <- rbind(
+    d_par_tru,
+    d_tmp
+  )
+}
+
+
+d_par[, stat := sprintf("\\makecell[c]{%.3f\\\\(%.3f, %.3f)}", mu, lo, hi)]
+
+
+d_tbl <- dcast(d_par, desc + par ~ N, value.var = "stat")
+d_tbl <- base::merge(
+  d_tbl, 
+  d_par_tru, 
+  by = c("desc", "par"),
+  all.x = T
+)
+
+
+d_tbl[, par := factor(par, levels = l_spec_1$trt_lab)]
+d_tbl[, desc := factor(desc, levels = desc_labs)]
+d_tbl <- d_tbl[order(desc, par)]
+d_tbl[, par := gsub("_", "\\\\_", par)]
+
+
+kableExtra::kbl(
+  d_tbl, 
+  booktabs = TRUE, align = c("llcccc"), longtable = TRUE,
+  linesep = c(rep("", 10), "\\addlinespace"),
+  col.names=c("Scenario", "Parameter", cumsum(l_cfg$N_pt), "True value"), 
+  digits = 3,
+  escape = F)  |>
+  kableExtra::kable_styling(
+    font_size = 8,
+    latex_options = c("scale_down", "repeat_header")) |>
+  kableExtra::column_spec(1, width = "3.5cm")|>
+  kableExtra::column_spec(2, width = "2cm")|>
+  kableExtra::column_spec(3:5, width = "2.25cm") |>
+  kableExtra::column_spec(6, width = "1.5cm")
+
+```
+
+{{< pagebreak >}}
+
+```{r, eval = T}
+#| label: tbl-par-cmp-3
+#| tbl-cap: 'Posterior parameter summary (model parameters)'
+
+i <- 1
+d_par <- data.table()
+d_par_tru <- data.table()
+
+# For each scenario that was simulated
+for(i in 1:length(l)){
+  
+  # extract the decision matrix - sim, analysis, quantity, domain level decision
+  d_tmp <- copy(l[[i]]$d_post_smry_3[par %in% c("delta_def", "delta_dis") & state == "none"])
+  
+  l_cfg <- copy(l[[i]]$l_spec)
+  
+  # extrapolate to impute the effects in those sims that had
+  # early stopping
+  d_tmp[, mu := nafill(mu, type = "locf"), keyby = .(sim, par)]
+  
+  d_smry <- d_tmp[, .(
+    mu = mean(mu),
+    lo = quantile(mu, prob = 0.025),
+    hi = quantile(mu, prob = 0.975)
+    ), keyby = .(ic, par)]
+  
+  d_smry[, N := cumsum(l_cfg$N_pt)[ic]]
+    
+  d_par <- rbind(
+    d_par,
+    cbind(scenario = i, desc = l_cfg$desc, d_smry)
+  )
+  
+  d_tmp <- data.table(
+    desc = l_cfg$desc, 
+    par = l_spec_1$delta_lab,
+    tru = c(
+      l_cfg$delta_dur_tru
+      )
+    )
+  
+  d_par_tru <- rbind(
+    d_par_tru,
+    d_tmp
+  )
+}
+
+
+d_par[, stat := sprintf("\\makecell[c]{%.3f\\\\(%.3f, %.3f)}", mu, lo, hi)]
+
+
+d_tbl <- dcast(d_par, desc + par ~ N, value.var = "stat")
+d_tbl <- base::merge(
+  d_tbl, 
+  d_par_tru, 
+  by = c("desc", "par"),
+  all.x = T
+)
+
+
+d_tbl[, par := factor(par, levels = c("delta_def", "delta_dis"))]
+d_tbl[, desc := factor(desc, levels = desc_labs)]
+d_tbl <- d_tbl[order(desc, par)]
+d_tbl[, par := gsub("_", "\\\\_", par)]
+
+
+kableExtra::kbl(
+  d_tbl, 
+  booktabs = TRUE, align = c("llcccc"), longtable = TRUE,
+  linesep = c(rep("", 10), "\\addlinespace"),
+  col.names=c("Scenario", "Parameter", cumsum(l_cfg$N_pt), "True value"), 
+  digits = 3,
+  escape = F)  |>
+  kableExtra::kable_styling(
+    font_size = 8,
+    latex_options = c("scale_down", "repeat_header")) |>
+  kableExtra::column_spec(1, width = "3.5cm")|>
+  kableExtra::column_spec(2, width = "2cm")|>
+  kableExtra::column_spec(3:5, width = "2cm") |>
+  kableExtra::column_spec(6, width = "1.5cm")
+
+```
 
 ## Decision Probability
 

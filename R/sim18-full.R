@@ -430,8 +430,19 @@ update_sim18_cfg <- function(l_spec){
   # convert to the induced expected difference in sojourn times
   l_spec$delta_lab <- c("delta_def", "delta_dis")
   d_sop <- sim18_sop(1:28, l_spec)
+  # > head(d_sop)
+  # trt   day      none      mild    severe
+  # <char> <num>     <num>     <num>     <num>
+  # 1:    soc     0 0.0000000 0.4000000 0.6000000
+  # 2:    soc     1 0.1812229 0.3472623 0.4715148
+  # 3:    soc     2 0.2817170 0.3612885 0.3569945
+  # 4:    soc     3 0.3624679 0.3520739 0.2854582
+  # 5:    soc     4 0.4457867 0.3313124 0.2229009
+  # 6:    soc     5 0.5316597 0.2991043 0.1692360
+  # only reference the no-symptoms col
   d_tbl <- dcast(d_sop, day ~ trt, value.var = "none")
   
+  # prob of no symptoms at onset is zero but condition anyway
   l_spec$dur_tru <- c( 
     d_tbl[day > 0, sum(soc)],
     d_tbl[day > 0, sum(def)],
@@ -440,8 +451,8 @@ update_sim18_cfg <- function(l_spec){
   names(l_spec$dur_tru) <- l_spec$trt_lab
   
   l_spec$delta_dur_tru <- c( 
-    d_tbl[, sum(def - soc)],
-    d_tbl[, sum(dis - soc)]
+    d_tbl[day > 0, sum(def - soc)],
+    d_tbl[day > 0, sum(dis - soc)]
   )
   names(l_spec$delta_dur_tru) <- l_spec$delta_lab
   

@@ -103,9 +103,7 @@ run_trial <- function(
   d_post_smry_3 <- CJ(
     ic = 1:N_analys,
     state = l_spec$state_lab,
-    par = c(
-      "soc", "def", "dis", "delta_def", "delta_dis"
-    )
+    par = c(l_spec$trt_lab, l_spec$delta_lab)
   )
   d_post_smry_3[, mu := NA_real_]
   d_post_smry_3[, lo := NA_real_]
@@ -115,7 +113,7 @@ run_trial <- function(
   d_post_smry_4 <- CJ(
     ic = 1:N_analys,
     rule = c("ni", "fut"),
-    par = c("delta_def", "delta_dis"),
+    par = l_spec$delta_lab,
     p = NA_real_,
     dec = NA_integer_
   )
@@ -175,6 +173,14 @@ run_trial <- function(
     
     f_1_optim <- m_1$optimize(data = l_mod, jacobian = TRUE)
     f_1 <- m_1$laplace(data = l_mod, mode = f_1_optim, draws = 2000, refresh = 0)
+    
+    # f_1 <- m_1$sample(
+    #   l_mod,
+    #   iter_warmup = l_spec$mcmc_warmup, iter_sampling = l_spec$mcmc_iter,
+    #   parallel_chains = l_spec$mcmc_chain, chains = l_spec$mcmc_chain,
+    #   refresh = 0, show_exceptions = T,
+    #   max_treedepth = 11
+    # )
     
     m_post <- f_1$draws(variables = l_spec$smry_pars, format = "matrix")
     
@@ -236,6 +242,9 @@ run_trial <- function(
     d_dur <- dcast(d_dur, state + id_draw ~ trt, value.var = "days")
     d_dur[, delta_def := def - soc]
     d_dur[, delta_dis := dis - soc]
+    
+    # sd(d_dur$delta_def)
+    # sd(d_dur$delta_dis)
     
     # posterior summary (did the model recover the data generating pars)
     d_post <- data.table(m_post)
