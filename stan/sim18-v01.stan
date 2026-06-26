@@ -14,8 +14,8 @@ data {
   int  ix_gap_2 ;
   int  ix_gap_3 ;
   int  ix_gap_4 ;
-  // int  ix_trt_gap_2;
-  // int  ix_trt_gap_3;
+  int  ix_prev_time_2;
+  int  ix_prev_time_3;
   int  ix_trt_time_2;
   int  ix_trt_time_3;
   
@@ -47,9 +47,9 @@ model {
 generated quantities{
   
   // see sim18-back-transform-note.qmd
-  vector[2] a;
+    vector[2] a;
   for (k in 1:2) {
-    a[k] = alpha[k] - ((b[ix_time_2] * pow(mu_days,2)) / pow(sd_days, 2) - (b[ix_time_1] * mu_days) / sd_days);
+    a[k] = alpha[k] - ( (b[ix_time_2] * mu_days^2) / sd_days^2 - (b[ix_time_1] * mu_days) / sd_days );
   }
 
   vector[3] b_trt;
@@ -59,11 +59,11 @@ generated quantities{
   
   vector[3] b_prev;
   b_prev[1] = 0.0;
-  b_prev[2] = b[ix_prev_2];
-  b_prev[3] = b[ix_prev_3];
+  b_prev[2] = b[ix_prev_2] - (b[ix_prev_time_2] * mu_days) / sd_days;
+  b_prev[3] = b[ix_prev_3] - (b[ix_prev_time_3] * mu_days) / sd_days;
   
-  real b_time_1 = (b[ix_time_1] / sd_days) - (2.0 * mu_days * b[ix_time_2]) / pow(sd_days, 2);
-  real b_time_2 = b[ix_time_2] / pow(sd_days, 2);
+  real b_time_1 = (b[ix_time_1] / sd_days) - (2 * b[ix_time_2] * mu_days) / sd_days^2;
+  real b_time_2 = b[ix_time_2] / sd_days^2;
   
   vector[4] b_gap;
   b_gap[1] = 0.0;
@@ -71,14 +71,15 @@ generated quantities{
   b_gap[3] = b[ix_gap_3];
   b_gap[4] = b[ix_gap_4];
   
-  // vector[3] b_trt_gap;
-  // b_trt_gap[1] = 0.0;
-  // b_trt_gap[2] = b[ix_trt_gap_2];
-  // b_trt_gap[3] = b[ix_trt_gap_3];
+  vector[3] b_prev_time;
+  b_prev_time[1] = 0.0;
+  b_prev_time[2] = b[ix_prev_time_2] / sd_days;
+  b_prev_time[3] = b[ix_prev_time_3] / sd_days;
   
   vector[3] b_trt_time;
   b_trt_time[1] = 0.0;
   b_trt_time[2] = b[ix_trt_time_2] / sd_days;
   b_trt_time[3] = b[ix_trt_time_3] / sd_days;
+  
   
 }

@@ -26,7 +26,6 @@ source(paste0(prefix_r, '/util.R'))
 
 #' Wrapper to invoke state transition simulation for individual patients used
 #' to create cohort
-#' 
 sim18_cohort <- function(l_spec){
   
   id_cohort <- l_spec$is:l_spec$ie
@@ -44,6 +43,7 @@ sim18_cohort <- function(l_spec){
   d_cohort[, state := NA_integer_]
   d_cohort[day==0, state:= sample(l_spec$state_opts, .N, replace = TRUE, prob = l_spec$p_init)]
   
+  i <- 1; j <- 2
   for(i in seq_len(N_cohort))
   {
     
@@ -69,17 +69,13 @@ sim18_cohort <- function(l_spec){
         # time (quadratic)
         l_spec$b_time_1*tt +
         l_spec$b_time_2*tt^2 +
-        # time by treatment (linear)
+        l_spec$b_prev_time[prev]*tt +
+        # time by treatment
         l_spec$b_trt_time[trt]*tt +
         # gap length - structurally zero and is only relevant in model
         # where we have gaps in observation and it constitutes a nuissance param
         l_spec$b_gap[interval] 
-      # +
-        # trt x gap is similarly structurally zero and is only relevant in 
-        # the model to account for differential progression across trt arms
-        # as.numeric(interval != 1) * l_spec$b_trt_gap[trt] 
         
-      
       # not very efficient but it will do
       d_cohort$state[rows[j]] <- sim18_rord_pom_3(lp,l_spec$alpha)
       
@@ -99,7 +95,6 @@ sim18_cohort <- function(l_spec){
 
 
 #' Convert sample data.table into lists suitable for stan models
-#' 
 sim18_stan_data <- function(dd, l_spec){
   
   setorder(dd, id, day)
@@ -133,7 +128,8 @@ sim18_stan_data <- function(dd, l_spec){
   
   X <- model.matrix(~ x_trt + x_prev +
                       x_time + I(x_time^2) +
-                      x_gap_time +
+                      x_gap_time + 
+                      x_prev * x_time +
                       x_trt * x_time, 
                     data = dd)
   X_mod <- X[, -1]
@@ -154,8 +150,10 @@ sim18_stan_data <- function(dd, l_spec){
     ix_gap_2 = 7,
     ix_gap_3 = 8,
     ix_gap_4 = 9,
-    ix_trt_time_2 = 10,
-    ix_trt_time_3 = 11,
+    ix_prev_time_2 = 10,
+    ix_prev_time_3 = 11,
+    ix_trt_time_2 = 12,
+    ix_trt_time_3 = 13,
     mu_days = mean(dd$day),
     sd_days = sd(dd$day)
   )
@@ -168,6 +166,8 @@ sim18_stan_data <- function(dd, l_spec){
   stopifnot(names(X_mod)[ld$ix_gap_2] == "x_gap_time2")
   stopifnot(names(X_mod)[ld$ix_gap_3] == "x_gap_time3")
   stopifnot(names(X_mod)[ld$ix_gap_4] == "x_gap_time4")
+  stopifnot(names(X_mod)[ld$ix_prev_time_2] == "x_prev2:x_time")
+  stopifnot(names(X_mod)[ld$ix_prev_time_3] == "x_prev3:x_time")
   stopifnot(names(X_mod)[ld$ix_trt_time_2] == "x_trt2:x_time")
   stopifnot(names(X_mod)[ld$ix_trt_time_3] == "x_trt3:x_time")
   
@@ -199,10 +199,9 @@ sim18_transition_matrix <- function(day, gap_ix = 1, trt, l_spec)
       l_spec$b_prev[prev] +
       l_spec$b_time_1 * day +
       l_spec$b_time_2 * day^2 +
+      l_spec$b_prev_time[prev] * day +
       l_spec$b_trt_time[trt] * day +
-      l_spec$b_gap[gap_ix]
-    # +
-      # as.numeric(gap_ix != 1) * l_spec$b_trt_gap[trt]
+      l_spec$b_gap[gap_ix] 
     
     p1 <- plogis(l_spec$alpha[1] - lp)
     p2 <- plogis(l_spec$alpha[2] - lp) - p1
@@ -308,6 +307,8 @@ update_sim18_cfg <- function(l_spec){
   l_spec$b_trt_time <- unlist(l_spec$b_trt_time)
   names(l_spec$b_trt_time) <- l_spec$trt_lab
   
+  l_spec$b_prev_time <- unlist(l_spec$b_prev_time)
+  
   l_spec$b_gap <- unlist(l_spec$b_gap)
   
   # l_spec$b_trt_gap <- unlist(l_spec$b_trt_gap)
@@ -316,13 +317,15 @@ update_sim18_cfg <- function(l_spec){
   l_spec$p_init <- unlist(l_spec$p_init)
   
   l_spec$smry_pars <- c(
-    "a", "b_trt", "b_prev", "b_time_1", "b_time_2", "b_gap", "b_trt_time")
+    "a", "b_trt", "b_prev", "b_time_1", "b_time_2", "b_gap", 
+    "b_prev_time", "b_trt_time")
   
   l_spec$full_pars <- c("a[1]", "a[2]",
                         "b_trt[1]", "b_trt[2]", "b_trt[3]",
                         "b_prev[1]", "b_prev[2]", "b_prev[3]",
                         "b_time_1", "b_time_2",
                         "b_gap[1]", "b_gap[2]", "b_gap[3]",  "b_gap[4]",
+                        "b_prev_time[1]", "b_prev_time[2]", "b_prev_time[3]",
                         "b_trt_time[1]", "b_trt_time[2]", "b_trt_time[3]")
   
   l_spec$non_zero_pars <- c("a[1]", "a[2]",
@@ -330,6 +333,7 @@ update_sim18_cfg <- function(l_spec){
                         "b_prev[2]", "b_prev[3]",
                         "b_time_1", "b_time_2",
                         "b_gap[2]", "b_gap[3]",  "b_gap[4]",
+                        "b_prev_time[2]", "b_prev_time[3]",
                         "b_trt_time[2]", "b_trt_time[3]")
   
   if(l_spec$nex > 0){
@@ -379,8 +383,8 @@ sim18_calibrate_trt <- function(l_spec){
   m_test_range = matrix(NA, ncol = 2, nrow = 10000)
   # treatment effects to consider on the log odds scale
   # start with 0 to 0.5 and then refine from there
-  b_trt_lo <- 0.3
-  b_trt_hi <- 0.35
+  b_trt_lo <- 0.15
+  b_trt_hi <- 0.20
   m_test_range[, 1] <- seq(b_trt_lo, b_trt_hi, length = nrow(m_test_range))
   i <- 1
   
@@ -453,4 +457,48 @@ sim18_example_data <- function(){
     )
   print(p_1)
   
+  
+  
+  # 
+  
+  t_days <- 1:max(l_spec$visit_days)
+  t_gaps <- rep(1, length = max(l_spec$visit_days))
+  
+  d_tran_trt <- data.table()
+  jj <- kk <- 1
+  for(jj in seq_along(l_spec$trt_lab)){
+    for(kk in seq_along(t_days)){
+      
+      d_pr <- data.table(
+        sim18_transition_matrix(t_days[kk], t_gaps[kk], l_spec$trt_lab[jj], l_spec)
+      )
+      d_pr[, `:=`(
+        from = l_spec$state_lab, 
+        trt = l_spec$trt_lab[jj],
+        day = t_days[kk])]
+      d_pr <- melt(
+        d_pr, id.vars = c("trt", "from", "day"), 
+        variable.name = "to", value.name = "p_tran"
+      )
+      d_tran_trt <- rbind(
+        d_tran_trt, d_pr
+      )
+    }
+  }
+  d_tran_trt[, from := factor(from, levels = l_spec$state_lab)]
+  d_tran_trt[, to := factor(to, levels = l_spec$state_lab)]
+  d_tran_trt[, trt := factor(trt, levels = l_spec$trt_lab)]
+  
+  ggplot(
+    data = d_tran_trt[day %in% c(1, 4, 7, 14, 21, 28)], 
+    aes(x = from, y = to, size = p_tran)) +
+    geom_point() +
+    scale_x_discrete("Previous State") +
+    scale_y_discrete("State") +
+    scale_size_continuous("") +
+    facet_wrap(trt~day, labeller = label_both, nrow = 3) +
+    theme(
+      legend.position = "bottom"
+    )
+    
 }

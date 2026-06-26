@@ -167,7 +167,8 @@ run_trial <- function(
       # we include participants that have had an exacerbation and for whom
       # we have completed the subsequent 90 day follow up
       incl_ids <- d_all[t_0 + l_spec$followup_dec < t_now, unique(id)]
-      l_mod <- sim18_stan_data(dd = copy(d_all[id %in% incl_ids]), l_spec)
+      dd <- copy(d_all[id %in% incl_ids])
+      l_mod <- sim18_stan_data(dd, l_spec)
     
     }
     
@@ -183,6 +184,7 @@ run_trial <- function(
     # )
     
     m_post <- f_1$draws(variables = l_spec$smry_pars, format = "matrix")
+    colMeans(m_post)
     ii <- 1
     l_spec_mod <- copy(l_spec)
     d_sop <- rbindlist(lapply(1:nrow(m_post), function(ii){
@@ -194,14 +196,12 @@ run_trial <- function(
       l_spec_mod$b_time_1 <- as.numeric(m_post[ii , c("b_time_1")])  
       l_spec_mod$b_time_2 <- as.numeric(m_post[ii , c("b_time_2")]) 
       l_spec_mod$b_gap <- as.numeric(m_post[ii , c("b_gap[1]", "b_gap[2]", "b_gap[3]", "b_gap[4]")])
-      # l_spec_mod$b_trt_gap <- as.numeric(m_post[ii , c("b_trt_gap[1]", "b_trt_gap[2]", "b_trt_gap[3]")])  
+      l_spec_mod$b_prev_time <- as.numeric(m_post[ii , c("b_prev_time[1]", "b_prev_time[2]", "b_prev_time[3]")])  
       l_spec_mod$b_trt_time <- as.numeric(m_post[ii , c("b_trt_time[1]", "b_trt_time[2]", "b_trt_time[3]")])  
 
       names(l_spec_mod$b_trt) <- l_spec_mod$trt_lab
-      # names(l_spec_mod$b_trt_gap) <- l_spec_mod$trt_lab
       names(l_spec_mod$b_trt_time) <- l_spec_mod$trt_lab
       
-
       d_tmp <- sim18_sop(days = 1:max(l_spec$visit_days), l_spec_mod)
       d_tmp
       
@@ -408,6 +408,8 @@ run_trial <- function(
 #' Entry point for running trial simulation in parallel.
 run_sim18 <- function(){
   
+  tic()
+  
   log_info(paste0(match.call()[[1]]))
   
   if(unname(Sys.info()[1]) == "Darwin"){
@@ -481,6 +483,7 @@ run_sim18 <- function(){
     r[[i]]$d_post_sop
   } ), idcol = "sim")
   
+  l_spec$toc <- toc()
   l <- list(
     l_spec = l_spec,
     d_all = d_all,
