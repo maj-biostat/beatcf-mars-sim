@@ -1,6 +1,6 @@
 default:
   desc: "Defer worse for recovery"
-  nsim: 500
+  nsim: 200
   mc_cores: 40
   mcmc_warmup: 1000
   mcmc_iter: 1000
@@ -18,7 +18,7 @@ default:
   # administrative censor
   followup: 720
   followup_dec: 28
-  visit_days: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 21, 28]
+  visit_days: [0, 1, 2, 3, 4, 5, 6, 7, 14, 21, 28]
   
   # Weakly informative priors, set with reference to the natural scale: 
   # log acceleration factors beyond +-3 (i.e. AF outside
@@ -50,7 +50,7 @@ default:
   
   # will not tolerate expected total time in exacerbation to be more than 
   # dec_eh_delta_ni days longer over the follow up
-  dec_delta_ni: 0.5
+  dec_delta_ni: 0.3
   
   # could equivalently say that we will not tolerate the same amount of days
   # less of health.
@@ -58,6 +58,6 @@ default:
   # decision probability thresholds - 
   
   # level of certainty we require to make claims
-  dec_thresh_ni: 0.975
+  dec_thresh_ni: 0.985
   dec_thresh_fut: 0.80
     

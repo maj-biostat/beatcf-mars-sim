@@ -39,12 +39,16 @@ default:
   # 0.1592559 -0.4499971 -0.4500000 corresponds to an NI of 0.45
   # 0.1765427 -0.5000003 -0.5000000 corresponds to an NI of 0.50
   # 0.1937544 -0.5498294 -0.5500000 corresponds to an NI of 0.55 
-  b_trt: [0.0, 0.1765427, 0.0]   
+  # 0.2108871 -0.5999984 -0.6000000 corresponds to an NI of 0.60 
+  # 0.2279478 -0.6499934 -0.6500000 corresponds to an NI of 0.65 
+  # 0.3454595 -1.0000036 -1.0000000 corresponds to an NI of 1.0 
+  b_trt: [0.0, 0.3454595, 0.0]   
   b_prev: [0.0, 2.0, 1.0]  # orig [0.0, 1.5, 0.1]
   b_time_1: -0.32  # orig -0.4
   b_time_2: 0.003  # orig 0.002
-  b_gap: [0.0, 0.0]
-  b_trt_gap: [0.0, 0.0, 0.0]
+  # gap for 8-13, 15-20, 22-27
+  b_gap: [0.0, 0.0, 0.0, 0.0]
+  # b_trt_gap: [0.0, 0.0, 0.0]
   b_trt_time: [0.0, 0.0, 0.0]
   
   # decision reference values - think of these as the non-inferiority margins
@@ -52,7 +56,7 @@ default:
   # will not tolerate expected total time in exacerbation to be more than 
   # NOTE - for type i error evaluation this has to align with a treatment 
   # effect that induces an appropriate change in sojourn times across trt.
-  dec_delta_ni: 0.5
+  dec_delta_ni: 1.0
   
   # could equivalently say that we will not tolerate the same amount of days
   # less of health.
@@ -60,6 +64,6 @@ default:
   # decision probability thresholds - 
   
   # level of certainty we require to make claims
-  dec_thresh_ni: 0.975
+  dec_thresh_ni: 0.985
   dec_thresh_fut: 0.80
     

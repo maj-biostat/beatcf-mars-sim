@@ -893,14 +893,18 @@ for(i in 1:length(l)){
     tru = c(
       l_cfg$alpha, l_cfg$b_trt[-1], l_cfg$b_prev[-1],
       l_cfg$b_time_1, l_cfg$b_time_2, l_cfg$b_gap[-1], 
+      l_cfg$b_trt_gap[-1],
       l_cfg$b_trt_time[-1]
-  ))
+      )
+    )
   
   d_par_tru <- rbind(
     d_par_tru,
     d_tmp
   )
 }
+
+
 
 # d_par[, stat := sprintf("%.3f \\n (%.3f, %.3f)", mu, lo, hi)]
 

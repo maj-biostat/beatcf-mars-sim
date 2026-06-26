@@ -178,7 +178,7 @@ run_trial <- function(
     #   l_mod,
     #   iter_warmup = l_spec$mcmc_warmup, iter_sampling = l_spec$mcmc_iter,
     #   parallel_chains = l_spec$mcmc_chain, chains = l_spec$mcmc_chain,
-    #   refresh = 0, show_exceptions = T,
+    #   refresh = 0, show_exceptions = F,
     #   max_treedepth = 11
     # )
     
@@ -193,12 +193,12 @@ run_trial <- function(
       l_spec_mod$b_prev <- as.numeric(m_post[ii , c("b_prev[1]", "b_prev[2]", "b_prev[3]")])  
       l_spec_mod$b_time_1 <- as.numeric(m_post[ii , c("b_time_1")])  
       l_spec_mod$b_time_2 <- as.numeric(m_post[ii , c("b_time_2")]) 
-      l_spec_mod$b_gap <- as.numeric(m_post[ii , c("b_gap[1]", "b_gap[2]")])
-      l_spec_mod$b_trt_gap <- as.numeric(m_post[ii , c("b_trt_gap[1]", "b_trt_gap[2]", "b_trt_gap[3]")])  
+      l_spec_mod$b_gap <- as.numeric(m_post[ii , c("b_gap[1]", "b_gap[2]", "b_gap[3]", "b_gap[4]")])
+      # l_spec_mod$b_trt_gap <- as.numeric(m_post[ii , c("b_trt_gap[1]", "b_trt_gap[2]", "b_trt_gap[3]")])  
       l_spec_mod$b_trt_time <- as.numeric(m_post[ii , c("b_trt_time[1]", "b_trt_time[2]", "b_trt_time[3]")])  
 
       names(l_spec_mod$b_trt) <- l_spec_mod$trt_lab
-      names(l_spec_mod$b_trt_gap) <- l_spec_mod$trt_lab
+      # names(l_spec_mod$b_trt_gap) <- l_spec_mod$trt_lab
       names(l_spec_mod$b_trt_time) <- l_spec_mod$trt_lab
       
 
