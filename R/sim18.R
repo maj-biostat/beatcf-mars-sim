@@ -405,8 +405,6 @@ run_trial <- function(
 
 
 
-
-
 #' Entry point for running trial simulation in parallel.
 run_sim18 <- function(){
   
