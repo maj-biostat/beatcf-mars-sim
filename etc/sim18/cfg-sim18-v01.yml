@@ -45,21 +45,21 @@ default:
   # induce the same NI margin in terms of diff in times.
   # See function sim18_calibrate_trt
 
-  b_trt: [0.0, 1.04480918, 0.0]   
-  b_prev: [0.0, 1, 0.1]  # orig [0.0, 1.5, 0.1]
-  b_time_1: -0.3   # -0.32
-  b_time_2: 0.002 # 0.003 # 0.003  
+  b_trt: [0.0, -0.03682139, 0.0]   
+  b_prev: [0.0, 2.2, 1.0]  # orig [0.0, 1.5, 0.1]
+  b_time_1: -0.23   # -0.32
+  b_time_2: 0.003 # 0.003 # 0.003  
   # estimate a parameter for each of the gaps, i.e. for 8-13, 15-20, 22-27 days
   # as the change between each one of the intervals would be different and 
   # we will not be able to recover the true parameters if we only estimate a
   # single gap (irrespective of whether they are all the same length or not)
   # b_gap: [0.0, 0.0, 0.0, 0.0]
   # negative values here for trt arms decrease the time in none state for those arms
-  b_trt_time: [0.0, -0.1, 0.0]
+  b_trt_time: [0.0, 0.02, 0.0]
   # prev state x time interaction 
   # positive values (e.g. in severe) mean that severe pts improve more slowly than
   # the overall time trend.
-  b_prev_time: [0.0, 0.0, 0.0]   # [0.0, -0.5, -0.2]
+  b_prev_time: [0.0, 0.05, 0.0]   # [0.0, -0.5, -0.2]
   
   # decision reference values - think of these as the non-inferiority margins
   

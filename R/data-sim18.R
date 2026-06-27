@@ -409,7 +409,7 @@ sim18_calibrate_trt <- function(l_spec){
   
   
   l_spec$dec_delta_ni <- 1
-  explr_interval <- c(0, 5)
+  explr_interval <- c(-5, 5)
   message("Traget NI margin  : ", l_spec$dec_delta_ni)
   
   f_obj <- function(b_trt) {
@@ -455,7 +455,8 @@ sim18_example_data <- function(){
   # PLOT
   d_daily <- sim18_cohort(l_spec)$d_cohort
   d_tbl_1 <- copy(d_daily)
-  d_tbl_1[, state := factor(state, levels = l_spec$state_opts, labels = names(l_spec$state_opts))]
+  d_tbl_1[, state := factor(
+    state, levels = l_spec$state_opts, labels = names(l_spec$state_opts))]
   d_tbl_1[, trt := factor(trt, levels = l_spec$trt_lab)]
   d_tbl_2 <- d_tbl_1[, .(.N), keyby = .(state, trt, day)]
   d_tbl_2 <- base::merge(
@@ -464,16 +465,26 @@ sim18_example_data <- function(){
     by = "trt", all.x = T
   )
   d_tbl_2[, prop := N/N_unit]
-  p_1 <- ggplot(d_tbl_1, aes(fill = state, x = day)) +
+  p_1 <- ggplot(
+    d_tbl_2, aes(x = day, y = prop, group = trt, lty = trt)) +
+    geom_line(lwd = 0.4) +
+    scale_linetype_discrete("") +
+    scale_x_continuous("", breaks = seq(1, max(d_tbl_1$day), by = 5)) +
+    scale_y_continuous("Proportion", breaks = seq(0, 1, by = 0.1)) +
+    facet_wrap(~state, ncol = 1) +
+    theme(
+      legend.position = "bottom"
+    )
+  p_2 <- ggplot(d_tbl_1, aes(fill = state, x = day)) +
     geom_bar(position = "fill") +
     scale_fill_discrete("") +
-    scale_x_continuous("", breaks = 1:max(d_tbl_1$day)) +
+    scale_x_continuous("", breaks = seq(1, max(d_tbl_1$day), by = 5)) +
     scale_y_continuous("", breaks = seq(0, 1, by = 0.1)) +
     facet_wrap(~trt, ncol = 1) +
     theme(
       legend.position = "bottom"
     )
-  print(p_1)
+  p_1 + p_2
   
   # MODEL
   d_daily <- sim18_cohort(l_spec)$d_cohort
