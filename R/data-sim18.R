@@ -29,65 +29,97 @@ source(paste0(prefix_r, '/util.R'))
 sim18_cohort <- function(l_spec){
   
   id_cohort <- l_spec$is:l_spec$ie
-  N_cohort <- length(id_cohort)
+  N_cohort  <- length(id_cohort)
+  n_day     <- l_spec$max_day + 1
   
-  # produce data for every day and then chop it down to what we observe
-  d_cohort <- data.table(
-    id  = l_spec$is:l_spec$ie,
-    day = rep(0:l_spec$max_day, N_cohort),
-    trt = sample(l_spec$trt_lab[l_spec$trt_active], N_cohort, replace = T)
+  ## subject-level quantities
+  trt_subj <- sample(
+    l_spec$trt_lab[l_spec$trt_active],
+    N_cohort,
+    replace = TRUE
   )
-  setorder(d_cohort, id, day)
+  
+  ## cohort data
+  d_cohort <- data.table(
+    id  = rep(id_cohort, each = n_day),
+    day = rep(0:l_spec$max_day, times = N_cohort),
+    trt = rep(trt_subj, each = n_day)
+  )
+  
   d_cohort[, t_0 := l_spec$t_0[id]]
   
-  d_cohort[, state := NA_integer_]
-  d_cohort[day==0, state:= sample(l_spec$state_opts, .N, replace = TRUE, prob = l_spec$p_init)]
+  ## work directly on vectors
+  state <- integer(nrow(d_cohort))
   
-  i <- 1; j <- 2
-  for(i in seq_len(N_cohort))
-  {
+  ## initial states
+  state[seq(1L, by = n_day, length.out = N_cohort)] <-
+    sample(
+      l_spec$state_opts,
+      N_cohort,
+      replace = TRUE,
+      prob = l_spec$p_init
+    )
+  
+  ## cache coefficients
+  b_trt      <- l_spec$b_trt
+  b_prev     <- l_spec$b_prev
+  b_trt_time <- l_spec$b_trt_time
+  alpha       <- l_spec$alpha
+  gap_effect  <- l_spec$b_gap[1]
+  
+  ## precompute time effect
+  day_vals <- 0:l_spec$max_day
+  time_eff <- l_spec$b_time_1 * day_vals + l_spec$b_time_2 * day_vals^2
+  i <- 1
+  
+  for(i in seq_len(N_cohort)) {
     
-    rows <- which(d_cohort$id == id_cohort[i])
+    first <- (i - 1L) * n_day + 1L
+    last  <- first + n_day - 1L
     
-    for(j in 2:length(rows))
-    {
+    trt_i <- trt_subj[i]
+    
+    for(r in (first + 1L):last) {
       
-      prev <- d_cohort$state[rows[j-1]]
-      
-      # all intervals are structurally 1 because we simulate daily and then 
-      # subset to the survey days
-      interval <- 1
-      
-      tt <- d_cohort$day[rows[j]]
-      trt <- d_cohort$trt[rows[j]]
+      prev <- state[r - 1L]
+      tt   <- d_cohort$day[r]
       
       lp <-
-        # treatment
-        l_spec$b_trt[trt] +
-        # previous state
-        l_spec$b_prev[prev] +
-        # time (quadratic)
-        l_spec$b_time_1*tt +
-        l_spec$b_time_2*tt^2 +
-        # l_spec$b_prev_time[prev]*tt +
-        # time by treatment
-        l_spec$b_trt_time[trt]*tt +
-        # gap length - structurally zero and is only relevant in model
-        # where we have gaps in observation and it constitutes a nuissance param
-        l_spec$b_gap[interval] 
-        
-      # not very efficient but it will do
-      d_cohort$state[rows[j]] <- sim18_rord_pom_3(lp,l_spec$alpha)
+        b_trt[trt_i] +
+        b_prev[prev] +
+        time_eff[tt + 1L] +
+        b_trt_time[trt_i] * tt +
+        gap_effect
       
+      p0 <- plogis(alpha[1] - lp)
+      p1 <- plogis(alpha[2] - lp)
+      
+      u <- runif(1)
+      
+      # state[r] <- fcase(
+      #   u < p0, 1L,
+      #   u < p1, 2L,
+      #   u >= p1, 3L
+      # )
+      
+      state[r] <-
+        if (u < p0) {
+          1L
+        } else if (u < p1) {
+          2L
+        } else {
+          3L
+        }
     }
-    
   }
+  
+  d_cohort[, state := state]
   
   d_obs <- d_cohort[day %in% l_spec$visit_days]
   
   list(
     d_cohort = d_cohort,
-    d_obs = d_obs
+    d_obs    = d_obs
   )
   
 }
@@ -381,35 +413,36 @@ sim18_calibrate_trt <- function(l_spec){
   l_spec$is <- 1
   l_spec$ie <- sum(l_spec$N_pt)
   
-  m_test_range = matrix(NA, ncol = 2, nrow = 10000)
-  # treatment effects to consider on the log odds scale
-  # start with 0 to 0.5 and then refine from there
-  b_trt_lo <- 0.2
-  b_trt_hi <- 0.25
-  m_test_range[, 1] <- seq(b_trt_lo, b_trt_hi, length = nrow(m_test_range))
-  i <- 1
+  # where are we at the moment
+  l_spec$b_trt
+  d_sop <- sim18_sop(days, l_spec)
+  dcast(d_sop[day > 0], day ~ trt, value.var = "none" )[day %in% c(1, 4, 7, 14, 21, 28)]
+  
   
   l_spec$dec_delta_ni <- 1
+  explr_interval <- c(0, 5)
+  days <- 1:max(l_spec$visit_days)
   message("Traget NI margin  : ", l_spec$dec_delta_ni)
   
-  for(i in 1:nrow(m_test_range)){
-    l_spec$b_trt["def"] = m_test_range[i, 1]
-    
-    # convert to the induced expected difference in sojourn times
-    d_sop <- sim18_sop(1:28, l_spec)
-     
+  f_obj <- function(b_trt) {
+    l_spec$b_trt["def"] <- b_trt
+    d_sop <- sim18_sop(days, l_spec)
     d_tbl <- dcast(d_sop[day > 0], day ~ trt, value.var = "none")
-    
-    m_test_range[i, 2] = d_tbl[, sum(def - soc)]
+    delta <- d_tbl[, sum(def - soc)]
+    (delta + l_spec$dec_delta_ni)^2
   }
-  m_test_range <- cbind(m_test_range, -l_spec$dec_delta_ni)
-  # what magnitude of treatment effect results in a difference in sojourn times
-  # equal to the NI margin?
-  # it may be worth doing this multiple times for progressively more constrained
-  # ranges for the treatment effect range to explore.
-  m_test_range[which.min(abs(m_test_range[, 2] - m_test_range[, 3])), ]
   
-
+  f_trt <- stats::optimise(f = f_obj, interval = explr_interval)
+  # nominated treatment effect
+  message("Trt effect to induce NI  : ", f_trt$minimum)
+  
+  # Recompute as a sanity check
+  l_spec$b_trt["def"] <- f_trt$minimum
+  d_sop <- sim18_sop(days, l_spec)
+  
+  d_tbl <- dcast(d_sop[day > 0], day ~ trt, value.var = "none" )
+  # Duration in no symptom state by trt
+  d_tbl[, .(def = sum(def), dis = sum(dis), soc = sum(soc), delta_def = sum(def - soc))]
   
   
 }
@@ -421,25 +454,19 @@ sim18_example_data <- function(){
   source("R/init.R")
   source("R/util.R")
   
+  # CFG
   f_cfgsc <- file.path("./etc/sim18/cfg-sim18-v01.yml")
   l_spec <- config::get(file = f_cfgsc)
-  
   l_spec <- update_sim18_cfg(l_spec)
   l_spec$t_0 <- seq_along(1:sum(l_spec$N_pt)) 
-  
-  
   l_spec$is <- 1
   l_spec$ie <- sum(l_spec$N_pt)
+  message("N: ", paste0(cumsum(l_spec$N_pt), collapse = ", "))
   
-  d_daily <- sim18_cohort(l_spec)$d_cohort
-  
-  
-  
+  # PLOT
   d_tbl_1 <- copy(d_daily)
-  d_tbl_1[, state := factor(
-    state, levels = l_spec$state_opts, labels = names(l_spec$state_opts))]
+  d_tbl_1[, state := factor(state, levels = l_spec$state_opts, labels = names(l_spec$state_opts))]
   d_tbl_1[, trt := factor(trt, levels = l_spec$trt_lab)]
-  
   d_tbl_2 <- d_tbl_1[, .(.N), keyby = .(state, trt, day)]
   d_tbl_2 <- base::merge(
     d_tbl_2, 
@@ -447,7 +474,6 @@ sim18_example_data <- function(){
     by = "trt", all.x = T
   )
   d_tbl_2[, prop := N/N_unit]
-  
   p_1 <- ggplot(d_tbl_1, aes(fill = state, x = day)) +
     geom_bar(position = "fill") +
     scale_fill_discrete("") +
@@ -459,10 +485,30 @@ sim18_example_data <- function(){
     )
   print(p_1)
   
-  
-  
+  # MODEL
+  d_daily <- sim18_cohort(l_spec)$d_cohort
+  m_1 <- cmdstanr::cmdstan_model("stan/sim18-v01.stan")
+  l_mod <- sim18_stan_data(d_daily, l_spec)
+  f_1_optim <- m_1$optimize(data = l_mod, jacobian = TRUE)
+  f_1 <- m_1$laplace(data = l_mod, mode = f_1_optim, draws = 2000, refresh = 0)
+  m_post <- f_1$draws(variables = l_spec$non_zero_pars, format = "matrix")
+  d_mu_v_tru <- data.table(
+    par = l_spec$non_zero_pars,
+    tru = c(l_spec$alpha, l_spec$b_trt[-1],  l_spec$b_prev[-1], 
+            l_spec$b_time_1, l_spec$b_time_2, 
+            l_spec$b_gap[-1], l_spec$b_trt_time[-1]
+    ),
+    mu = colMeans(m_post), 
+    lo = apply(m_post, 2, function(z){quantile(z, prob = 0.025)}),
+    hi = apply(m_post, 2, function(z){quantile(z, prob = 0.975)})
+  )
+  d_mu_v_tru[, cover := lo < tru & tru < hi]
+  kableExtra::kbl(d_mu_v_tru[], format = "simple", digits = 4)
   # 
   
+  
+  
+  # TRANSITION PROBS
   t_days <- 1:max(l_spec$visit_days)
   t_gaps <- rep(1, length = max(l_spec$visit_days))
   
@@ -502,5 +548,29 @@ sim18_example_data <- function(){
     theme(
       legend.position = "bottom"
     )
+  
+  
+  ## SIM SUMMARY
+  l_res <- qs::qread(file.path("data/sim18-03/sim18-v01-20260627-122654.qs"))
+  l_spec_res <- l_res$l_spec
+  d_par <- data.table()
+  d_tmp <- copy(l_res$d_post_smry_1[par %in% l_spec_res$non_zero_pars])
+  d_tmp[, mu := nafill(mu, type = "locf"), keyby = .(sim, par)]
+  
+  d_smry <- d_tmp[, .(
+    mu = mean(mu),
+    lo = quantile(mu, prob = 0.025),
+    hi = quantile(mu, prob = 0.975)
+    ), keyby = .(ic, par)]
+
+  d_smry[, N := cumsum(l_spec_res$N_pt)[ic]]
+  d_smry[, stat := sprintf("%.3f (%.3f, %.3f)", mu, lo, hi)]
+  d_smry[, par := factor(par, levels = l_spec_res$non_zero_pars)]
+  d_tbl <- dcast(d_smry, par ~ N, value.var = "stat")  
+  d_tbl[, tru := c(l_spec$alpha, l_spec$b_trt[-1],  l_spec$b_prev[-1], 
+                   l_spec$b_time_1, l_spec$b_time_2, 
+                   l_spec$b_gap[-1], l_spec$b_trt_time[-1]
+  )]
+  kableExtra::kbl(d_tbl, format = "simple", digits = 4)
     
 }

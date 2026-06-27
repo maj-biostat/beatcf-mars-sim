@@ -11,7 +11,7 @@ default:
   # example trials
   nex: 10
   # enrolment
-  N_pt: [5000, 100, 100]
+  N_pt: [400, 100, 100]
   pt_per_day: 1.2
   ramp_up_days: 60
   
@@ -35,21 +35,25 @@ default:
   # probably a bit of a problem as it could lead to both under or over estimates.
   
   # *******
-  # These values will have to change if other aspects of the simulation cfg
-  # are revised:
-  # 0.2292979 -1.0000073 -1.0000000 corresponds to an NI of 1.0 
+  # For type one evaluation we want a treatment effect that would induce
+  # a diff in expected sojourn times in the none state equal to the NI margin.
+  # However, if any other simulation parameter changes, the treatment effect
+  # on the log odds scale will need to be revised in order to continue to
+  # induce the same NI margin in terms of diff in times.
+  # See function sim18_calibrate_trt
 
-  b_trt: [0.0, 0.2292979, 0.0]   
-  b_prev: [0.0, 1.7, 1.1]  # orig [0.0, 1.5, 0.1]
-  b_time_1: -0.22   # -0.32
+  b_trt: [0.0, 1.044809, 0.0]   
+  b_prev: [0.0, 1, 0.1]  # orig [0.0, 1.5, 0.1]
+  b_time_1: -0.3   # -0.32
   b_time_2: 0.002 # 0.003 # 0.003  
   # estimate a parameter for each of the gaps, i.e. for 8-13, 15-20, 22-27 days
   # as the change between each one of the intervals would be different and 
   # we will not be able to recover the true parameters if we only estimate a
   # single gap (irrespective of whether they are all the same length or not)
   b_gap: [0.0, 0.0, 0.0, 0.0]
-  b_trt_time: [0.0, 0.0, 0.0]
-  # prev state x time interaction 
+  # negative values here for trt arms decrease the time in none state for those arms
+  b_trt_time: [0.0, -0.1, 0.0]
+  # prev state x time interaction - not used at the moment
   b_prev_time: [0.0, -0.2, -0.1]   # [0.0, -0.5, -0.2]
   
   # decision reference values - think of these as the non-inferiority margins
