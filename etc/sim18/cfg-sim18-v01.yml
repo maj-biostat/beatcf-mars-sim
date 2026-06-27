@@ -59,7 +59,7 @@ default:
   # prev state x time interaction 
   # positive values (e.g. in severe) mean that severe pts improve more slowly than
   # the overall time trend.
-  b_prev_time: [0.0, 0.0, 0.1]   # [0.0, -0.5, -0.2]
+  b_prev_time: [0.0, 0.0, 0.0]   # [0.0, -0.5, -0.2]
   
   # decision reference values - think of these as the non-inferiority margins
   

@@ -306,6 +306,7 @@ l_spec_1$b_prev
 l_spec_1$b_time_1
 l_spec_1$b_time_2
 l_spec_1$b_gap
+l_spec_1$b_prev_time
 l_spec_1$b_trt_time
 l_spec_1$dec_delta_ni
 l_spec_1$dec_thresh_ni
@@ -910,7 +911,7 @@ for(i in 1:length(l)){
       l_cfg$b_prev[-1],
       l_cfg$b_time_1, l_cfg$b_time_2, 
       l_cfg$b_gap[-1], 
-      # l_cfg$b_prev_time[-1],
+      l_cfg$b_prev_time[-1],
       l_cfg$b_trt_time[-1]
       )
     )
