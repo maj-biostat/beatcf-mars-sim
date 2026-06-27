@@ -542,7 +542,7 @@ sim18_example_data <- function(){
   
   
   ## SIM SUMMARY
-  l_res <- qs::qread(file.path("data/sim18-03/sim18-v01-20260627-160846.qs"))
+  l_res <- qs::qread(file.path("data/sim18-03/sim18-v01-20260627-175948.qs"))
   l_spec_res <- l_res$l_spec
   d_par <- data.table()
   d_tmp <- copy(l_res$d_post_smry_1[par %in% l_spec_res$non_zero_pars])

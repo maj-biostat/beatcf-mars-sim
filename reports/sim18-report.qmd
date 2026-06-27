@@ -305,7 +305,6 @@ l_spec_1$b_trt
 l_spec_1$b_prev
 l_spec_1$b_time_1
 l_spec_1$b_time_2
-l_spec_1$b_gap
 l_spec_1$b_prev_time
 l_spec_1$b_trt_time
 l_spec_1$dec_delta_ni
@@ -381,7 +380,9 @@ ex_trial_plots <- function(id_scen = 1, id_ex = 1, include_tran_m = F){
   
   stopifnot(
     nrow(d_fig_2) == 
-      length(l_cfg$state_lab) * length(l_cfg$trt_lab) * length(l_cfg$visit_days[-1]))
+      length(l_cfg$state_lab) * 
+      length(l_cfg$trt_lab) * 
+      length(l_cfg$visit_days[-1]))
     
   # Summary from model parameters
   d_fig_3 <- d_post_smry_2[ic == d_post_smry_2[!is.na(mu), max(ic)]]
@@ -439,11 +440,12 @@ ex_trial_plots <- function(id_scen = 1, id_ex = 1, include_tran_m = F){
     
     # calculate sop based on parameter estimates at their post mean
     l_spec_mod$alpha <- as.numeric(m_post[ii , c("a[1]", "a[2]")])
-    l_spec_mod$b_trt <- as.numeric(m_post[ii , c("b_trt[1]", "b_trt[2]", "b_trt[3]")])  
-    l_spec_mod$b_prev <- as.numeric(m_post[ii , c("b_prev[1]", "b_prev[2]", "b_prev[3]")])  
+    l_spec_mod$b_trt <- as.numeric(
+      m_post[ii , c("b_trt[1]", "b_trt[2]", "b_trt[3]")])  
+    l_spec_mod$b_prev <- as.numeric(
+      m_post[ii , c("b_prev[1]", "b_prev[2]", "b_prev[3]")])  
     l_spec_mod$b_time_1 <- as.numeric(m_post[ii , c("b_time_1")])  
     l_spec_mod$b_time_2 <- as.numeric(m_post[ii , c("b_time_2")]) 
-    l_spec_mod$b_gap <- as.numeric(m_post[ii , c("b_gap[1]", "b_gap[2]")])
     l_spec_mod$b_trt_time <- as.numeric(
       m_post[ii , c("b_trt_time[1]", "b_trt_time[2]", "b_trt_time[3]")])  
 
@@ -456,7 +458,8 @@ ex_trial_plots <- function(id_scen = 1, id_ex = 1, include_tran_m = F){
       
         
         d_pr <- data.table(
-          sim18_transition_matrix(t_days[kk], t_gaps[kk], l_cfg$trt_lab[jj], l_spec_mod)
+          sim18_transition_matrix(
+            t_days[kk], l_cfg$trt_lab[jj], l_spec_mod)
           )
         d_pr[, `:=`(
           from = l_spec_mod$state_lab, 
@@ -484,7 +487,8 @@ ex_trial_plots <- function(id_scen = 1, id_ex = 1, include_tran_m = F){
   
   
   # durations and trt effects -------------
-  d_post_sop[, gap := day - data.table::shift(day, type = "lag"), keyby = .(id_draw, trt, ic)]
+  d_post_sop[, gap := day - data.table::shift(day, type = "lag"), 
+             keyby = .(id_draw, trt, ic)]
 
   # posterior days in each state
   d_dur <- melt(
@@ -909,8 +913,7 @@ for(i in 1:length(l)){
       l_cfg$alpha, 
       l_cfg$b_trt[-1], 
       l_cfg$b_prev[-1],
-      l_cfg$b_time_1, l_cfg$b_time_2, 
-      l_cfg$b_gap[-1], 
+      l_cfg$b_time_1, l_cfg$b_time_2,
       l_cfg$b_prev_time[-1],
       l_cfg$b_trt_time[-1]
       )
@@ -958,8 +961,6 @@ kableExtra::kbl(
   kableExtra::column_spec(1, width = "3.5cm")|>
   kableExtra::column_spec(2, width = "2cm")|>
   kableExtra::column_spec(3:5, width = "2cm") 
-# |>
-  # kableExtra::column_spec(6, width = "1.5cm")
 
 ```
 
