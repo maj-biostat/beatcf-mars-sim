@@ -302,6 +302,9 @@ l_spec_1$dec_delta_ni
 l_spec_1$dec_thresh_ni
 l_spec_1$dec_thresh_fut
 l_spec_1$visit_days
+l_spec_1$smry_pars
+l_spec_1$full_pars
+l_spec_1$non_zero_pars
 ```
 \normalsize
 
@@ -858,6 +861,8 @@ kableExtra::kbl(
 #| label: tbl-par-cmp-1
 #| tbl-cap: 'Posterior parameter summary (model parameters)'
 
+# l_spec_1$non_zero_pars
+
 i <- 1
 d_par <- data.table()
 d_par_tru <- data.table()
@@ -891,9 +896,12 @@ for(i in 1:length(l)){
     desc = l_cfg$desc, 
     par = l_spec_1$non_zero_pars,
     tru = c(
-      l_cfg$alpha, l_cfg$b_trt[-1], l_cfg$b_prev[-1],
-      l_cfg$b_time_1, l_cfg$b_time_2, l_cfg$b_gap[-1], 
-      l_cfg$b_trt_gap[-1],
+      l_cfg$alpha, 
+      l_cfg$b_trt[-1], 
+      l_cfg$b_prev[-1],
+      l_cfg$b_time_1, l_cfg$b_time_2, 
+      l_cfg$b_gap[-1], 
+      # l_cfg$b_prev_time[-1],
       l_cfg$b_trt_time[-1]
       )
     )
@@ -904,7 +912,7 @@ for(i in 1:length(l)){
   )
 }
 
-
+# d_par_tru
 
 # d_par[, stat := sprintf("%.3f \\n (%.3f, %.3f)", mu, lo, hi)]
 
@@ -914,8 +922,8 @@ d_par[, stat := sprintf("\\makecell[c]{%.3f\\\\(%.3f, %.3f)}", mu, lo, hi)]
 
 d_tbl <- dcast(d_par, desc + par ~ N, value.var = "stat")
 d_tbl <- base::merge(
-  d_tbl, 
-  d_par_tru, 
+  d_tbl,
+  d_par_tru,
   by = c("desc", "par"),
   all.x = T
 )
@@ -931,7 +939,7 @@ kableExtra::kbl(
   d_tbl, 
   booktabs = TRUE, align = c("llcccc"), longtable = TRUE,
   linesep = c(rep("", 10), "\\addlinespace"),
-  col.names=c("Scenario", "Parameter", cumsum(l_cfg$N_pt), "True value"), 
+  col.names=c("Scenario", "Parameter", cumsum(l_cfg$N_pt), "True Value"), 
   digits = 3,
   escape = F)  |>
   kableExtra::kable_styling(
@@ -939,8 +947,9 @@ kableExtra::kbl(
     latex_options = c("scale_down", "repeat_header")) |>
   kableExtra::column_spec(1, width = "3.5cm")|>
   kableExtra::column_spec(2, width = "2cm")|>
-  kableExtra::column_spec(3:5, width = "2cm") |>
-  kableExtra::column_spec(6, width = "1.5cm")
+  kableExtra::column_spec(3:5, width = "2cm") 
+# |>
+  # kableExtra::column_spec(6, width = "1.5cm")
 
 ```
 

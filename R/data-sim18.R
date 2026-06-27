@@ -69,7 +69,7 @@ sim18_cohort <- function(l_spec){
         # time (quadratic)
         l_spec$b_time_1*tt +
         l_spec$b_time_2*tt^2 +
-        l_spec$b_prev_time[prev]*tt +
+        # l_spec$b_prev_time[prev]*tt +
         # time by treatment
         l_spec$b_trt_time[trt]*tt +
         # gap length - structurally zero and is only relevant in model
@@ -129,7 +129,7 @@ sim18_stan_data <- function(dd, l_spec){
   X <- model.matrix(~ x_trt + x_prev +
                       x_time + I(x_time^2) +
                       x_gap_time + 
-                      x_prev * x_time +
+                      # x_prev * x_time +
                       x_trt * x_time, 
                     data = dd)
   X_mod <- X[, -1]
@@ -150,10 +150,10 @@ sim18_stan_data <- function(dd, l_spec){
     ix_gap_2 = 7,
     ix_gap_3 = 8,
     ix_gap_4 = 9,
-    ix_prev_time_2 = 10,
-    ix_prev_time_3 = 11,
-    ix_trt_time_2 = 12,
-    ix_trt_time_3 = 13,
+    # ix_prev_time_2 = 10,
+    # ix_prev_time_3 = 11,
+    ix_trt_time_2 = 10,
+    ix_trt_time_3 = 11,
     mu_days = mean(dd$day),
     sd_days = sd(dd$day)
   )
@@ -166,8 +166,8 @@ sim18_stan_data <- function(dd, l_spec){
   stopifnot(names(X_mod)[ld$ix_gap_2] == "x_gap_time2")
   stopifnot(names(X_mod)[ld$ix_gap_3] == "x_gap_time3")
   stopifnot(names(X_mod)[ld$ix_gap_4] == "x_gap_time4")
-  stopifnot(names(X_mod)[ld$ix_prev_time_2] == "x_prev2:x_time")
-  stopifnot(names(X_mod)[ld$ix_prev_time_3] == "x_prev3:x_time")
+  # stopifnot(names(X_mod)[ld$ix_prev_time_2] == "x_prev2:x_time")
+  # stopifnot(names(X_mod)[ld$ix_prev_time_3] == "x_prev3:x_time")
   stopifnot(names(X_mod)[ld$ix_trt_time_2] == "x_trt2:x_time")
   stopifnot(names(X_mod)[ld$ix_trt_time_3] == "x_trt3:x_time")
   
@@ -199,7 +199,7 @@ sim18_transition_matrix <- function(day, gap_ix = 1, trt, l_spec)
       l_spec$b_prev[prev] +
       l_spec$b_time_1 * day +
       l_spec$b_time_2 * day^2 +
-      l_spec$b_prev_time[prev] * day +
+      # l_spec$b_prev_time[prev] * day +
       l_spec$b_trt_time[trt] * day +
       l_spec$b_gap[gap_ix] 
     
@@ -318,14 +318,15 @@ update_sim18_cfg <- function(l_spec){
   
   l_spec$smry_pars <- c(
     "a", "b_trt", "b_prev", "b_time_1", "b_time_2", "b_gap", 
-    "b_prev_time", "b_trt_time")
+    # "b_prev_time", 
+    "b_trt_time")
   
   l_spec$full_pars <- c("a[1]", "a[2]",
                         "b_trt[1]", "b_trt[2]", "b_trt[3]",
                         "b_prev[1]", "b_prev[2]", "b_prev[3]",
                         "b_time_1", "b_time_2",
                         "b_gap[1]", "b_gap[2]", "b_gap[3]",  "b_gap[4]",
-                        "b_prev_time[1]", "b_prev_time[2]", "b_prev_time[3]",
+                        # "b_prev_time[1]", "b_prev_time[2]", "b_prev_time[3]",
                         "b_trt_time[1]", "b_trt_time[2]", "b_trt_time[3]")
   
   l_spec$non_zero_pars <- c("a[1]", "a[2]",
@@ -333,7 +334,7 @@ update_sim18_cfg <- function(l_spec){
                         "b_prev[2]", "b_prev[3]",
                         "b_time_1", "b_time_2",
                         "b_gap[2]", "b_gap[3]",  "b_gap[4]",
-                        "b_prev_time[2]", "b_prev_time[3]",
+                        # "b_prev_time[2]", "b_prev_time[3]",
                         "b_trt_time[2]", "b_trt_time[3]")
   
   if(l_spec$nex > 0){
@@ -383,8 +384,8 @@ sim18_calibrate_trt <- function(l_spec){
   m_test_range = matrix(NA, ncol = 2, nrow = 10000)
   # treatment effects to consider on the log odds scale
   # start with 0 to 0.5 and then refine from there
-  b_trt_lo <- 0.15
-  b_trt_hi <- 0.20
+  b_trt_lo <- 0.2
+  b_trt_hi <- 0.25
   m_test_range[, 1] <- seq(b_trt_lo, b_trt_hi, length = nrow(m_test_range))
   i <- 1
   
@@ -451,6 +452,7 @@ sim18_example_data <- function(){
     geom_bar(position = "fill") +
     scale_fill_discrete("") +
     scale_x_continuous("", breaks = 1:max(d_tbl_1$day)) +
+    scale_y_continuous("", breaks = seq(0, 1, by = 0.1)) +
     facet_wrap(~trt, ncol = 1) +
     theme(
       legend.position = "bottom"

@@ -32,20 +32,15 @@ l_spec <- list(
   state_lab = c("none", "mild", "severe"),
   trt_active = c(1, 1, 1),
   trt_lab = c("soc", "def", "dis"),
-  alpha = c(-0.5, 1.2),
-  # 0.1418942 -0.4000009 -0.4000000 corresponds to an NI of 0.40
-  # 0.1592559 -0.4499971 -0.4500000 corresponds to an NI of 0.45
-  # 0.1765427 -0.5000003 -0.5000000 corresponds to an NI of 0.50
-  # 0.1937544 -0.5498294 -0.5500000 corresponds to an NI of 0.55 
-  b_trt = c(0.0, 0.1592559, 0.0)   ,
-  b_prev = c(0, 2, 1),
-  b_time_1 = -0.32,
-  b_time_2 = 0.003,
-  b_gap = c(0, 0),
-  b_trt_gap = c(0.0, 0.0, 0.0),
+  alpha = c(-0.5, 1.2), 
+  b_trt = c(0.0, 0.2292979, 0.0)   ,
+  b_prev = c(0, 1.7, 1.1),
+  b_time_1 = -0.22,
+  b_time_2 = 0.002,
+  b_gap = c(0, 0, 0, 0),
   b_trt_time = c(0, 0, 0),
   dec_delta_ni = 0.5,
-  dec_thresh_ni = 0.975,
+  dec_thresh_ni = 0.985,
   dec_thresh_fut = 0.8
   
 )
@@ -70,8 +65,8 @@ data {
   int  ix_gap_2 ;
   int  ix_gap_3 ;
   int  ix_gap_4 ;
-  // int  ix_trt_gap_2;
-  // int  ix_trt_gap_3;
+  // int  ix_prev_time_2;
+  // int  ix_prev_time_3;
   int  ix_trt_time_2;
   int  ix_trt_time_3;
   
@@ -92,7 +87,7 @@ model {
 
   // priors
   alpha ~ normal(0, 2);
-  b ~ normal(0, 1);
+  b ~ normal(0, 1.5);
 
   // likelihood
   
@@ -103,7 +98,7 @@ model {
 generated quantities{
   
   // see sim18-back-transform-note.qmd
-  vector[2] a;
+    vector[2] a;
   for (k in 1:2) {
     a[k] = alpha[k] - ((b[ix_time_2] * pow(mu_days,2)) / pow(sd_days, 2) - (b[ix_time_1] * mu_days) / sd_days);
   }
@@ -115,8 +110,8 @@ generated quantities{
   
   vector[3] b_prev;
   b_prev[1] = 0.0;
-  b_prev[2] = b[ix_prev_2];
-  b_prev[3] = b[ix_prev_3];
+  b_prev[2] = b[ix_prev_2]; // - (b[ix_prev_time_2] * mu_days) / sd_days;
+  b_prev[3] = b[ix_prev_3]; // - (b[ix_prev_time_3] * mu_days) / sd_days;
   
   real b_time_1 = (b[ix_time_1] / sd_days) - (2.0 * mu_days * b[ix_time_2]) / pow(sd_days, 2);
   real b_time_2 = b[ix_time_2] / pow(sd_days, 2);
@@ -127,15 +122,16 @@ generated quantities{
   b_gap[3] = b[ix_gap_3];
   b_gap[4] = b[ix_gap_4];
   
-  // vector[3] b_trt_gap;
-  // b_trt_gap[1] = 0.0;
-  // b_trt_gap[2] = b[ix_trt_gap_2];
-  // b_trt_gap[3] = b[ix_trt_gap_3];
+  // vector[3] b_prev_time;
+  // b_prev_time[1] = 0.0;
+  // b_prev_time[2] = b[ix_prev_time_2] / sd_days;
+  // b_prev_time[3] = b[ix_prev_time_3] / sd_days;
   
   vector[3] b_trt_time;
   b_trt_time[1] = 0.0;
   b_trt_time[2] = b[ix_trt_time_2] / sd_days;
   b_trt_time[3] = b[ix_trt_time_3] / sd_days;
+  
   
 }
 "
@@ -164,6 +160,7 @@ sim18_cohort <- function(l_spec){
   d_cohort[, state := NA_integer_]
   d_cohort[day==0, state:= sample(l_spec$state_opts, .N, replace = TRUE, prob = l_spec$p_init)]
   
+  i <- 1; j <- 2
   for(i in seq_len(N_cohort))
   {
     
@@ -189,16 +186,12 @@ sim18_cohort <- function(l_spec){
         # time (quadratic)
         l_spec$b_time_1*tt +
         l_spec$b_time_2*tt^2 +
-        # time by treatment (linear)
+        # l_spec$b_prev_time[prev]*tt +
+        # time by treatment
         l_spec$b_trt_time[trt]*tt +
         # gap length - structurally zero and is only relevant in model
         # where we have gaps in observation and it constitutes a nuissance param
         l_spec$b_gap[interval] 
-      # +
-      # trt x gap is similarly structurally zero and is only relevant in 
-      # the model to account for differential progression across trt arms
-      # as.numeric(interval != 1) * l_spec$b_trt_gap[trt] 
-      
       
       # not very efficient but it will do
       d_cohort$state[rows[j]] <- sim18_rord_pom_3(lp,l_spec$alpha)
@@ -252,7 +245,8 @@ sim18_stan_data <- function(dd, l_spec){
   
   X <- model.matrix(~ x_trt + x_prev +
                       x_time + I(x_time^2) +
-                      x_gap_time +
+                      x_gap_time + 
+                      # x_prev * x_time +
                       x_trt * x_time, 
                     data = dd)
   X_mod <- X[, -1]
@@ -273,6 +267,8 @@ sim18_stan_data <- function(dd, l_spec){
     ix_gap_2 = 7,
     ix_gap_3 = 8,
     ix_gap_4 = 9,
+    # ix_prev_time_2 = 10,
+    # ix_prev_time_3 = 11,
     ix_trt_time_2 = 10,
     ix_trt_time_3 = 11,
     mu_days = mean(dd$day),
@@ -287,6 +283,8 @@ sim18_stan_data <- function(dd, l_spec){
   stopifnot(names(X_mod)[ld$ix_gap_2] == "x_gap_time2")
   stopifnot(names(X_mod)[ld$ix_gap_3] == "x_gap_time3")
   stopifnot(names(X_mod)[ld$ix_gap_4] == "x_gap_time4")
+  # stopifnot(names(X_mod)[ld$ix_prev_time_2] == "x_prev2:x_time")
+  # stopifnot(names(X_mod)[ld$ix_prev_time_3] == "x_prev3:x_time")
   stopifnot(names(X_mod)[ld$ix_trt_time_2] == "x_trt2:x_time")
   stopifnot(names(X_mod)[ld$ix_trt_time_3] == "x_trt3:x_time")
   
@@ -318,10 +316,9 @@ sim18_transition_matrix <- function(day, gap_ix = 1, trt, l_spec)
       l_spec$b_prev[prev] +
       l_spec$b_time_1 * day +
       l_spec$b_time_2 * day^2 +
+      # l_spec$b_prev_time[prev] * day +
       l_spec$b_trt_time[trt] * day +
-      l_spec$b_gap[gap_ix]
-    # +
-    # as.numeric(gap_ix != 1) * l_spec$b_trt_gap[trt]
+      l_spec$b_gap[gap_ix] 
     
     p1 <- plogis(l_spec$alpha[1] - lp)
     p2 <- plogis(l_spec$alpha[2] - lp) - p1
@@ -338,6 +335,7 @@ sim18_transition_matrix <- function(day, gap_ix = 1, trt, l_spec)
   P
   
 }
+
 
 
 
@@ -427,6 +425,8 @@ update_sim18_cfg <- function(l_spec){
   l_spec$b_trt_time <- unlist(l_spec$b_trt_time)
   names(l_spec$b_trt_time) <- l_spec$trt_lab
   
+  l_spec$b_prev_time <- unlist(l_spec$b_prev_time)
+  
   l_spec$b_gap <- unlist(l_spec$b_gap)
   
   # l_spec$b_trt_gap <- unlist(l_spec$b_trt_gap)
@@ -435,13 +435,16 @@ update_sim18_cfg <- function(l_spec){
   l_spec$p_init <- unlist(l_spec$p_init)
   
   l_spec$smry_pars <- c(
-    "a", "b_trt", "b_prev", "b_time_1", "b_time_2", "b_gap", "b_trt_time")
+    "a", "b_trt", "b_prev", "b_time_1", "b_time_2", "b_gap", 
+    # "b_prev_time", 
+    "b_trt_time")
   
   l_spec$full_pars <- c("a[1]", "a[2]",
                         "b_trt[1]", "b_trt[2]", "b_trt[3]",
                         "b_prev[1]", "b_prev[2]", "b_prev[3]",
                         "b_time_1", "b_time_2",
                         "b_gap[1]", "b_gap[2]", "b_gap[3]",  "b_gap[4]",
+                        # "b_prev_time[1]", "b_prev_time[2]", "b_prev_time[3]",
                         "b_trt_time[1]", "b_trt_time[2]", "b_trt_time[3]")
   
   l_spec$non_zero_pars <- c("a[1]", "a[2]",
@@ -449,6 +452,7 @@ update_sim18_cfg <- function(l_spec){
                             "b_prev[2]", "b_prev[3]",
                             "b_time_1", "b_time_2",
                             "b_gap[2]", "b_gap[3]",  "b_gap[4]",
+                            # "b_prev_time[2]", "b_prev_time[3]",
                             "b_trt_time[2]", "b_trt_time[3]")
   
   if(l_spec$nex > 0){
@@ -612,7 +616,8 @@ run_trial <- function(
       # we include participants that have had an exacerbation and for whom
       # we have completed the subsequent 90 day follow up
       incl_ids <- d_all[t_0 + l_spec$followup_dec < t_now, unique(id)]
-      l_mod <- sim18_stan_data(dd = copy(d_all[id %in% incl_ids]), l_spec)
+      dd <- copy(d_all[id %in% incl_ids])
+      l_mod <- sim18_stan_data(dd, l_spec)
       
     }
     
@@ -628,6 +633,7 @@ run_trial <- function(
     # )
     
     m_post <- f_1$draws(variables = l_spec$smry_pars, format = "matrix")
+    colMeans(m_post)
     ii <- 1
     l_spec_mod <- copy(l_spec)
     d_sop <- rbindlist(lapply(1:nrow(m_post), function(ii){
@@ -639,13 +645,11 @@ run_trial <- function(
       l_spec_mod$b_time_1 <- as.numeric(m_post[ii , c("b_time_1")])  
       l_spec_mod$b_time_2 <- as.numeric(m_post[ii , c("b_time_2")]) 
       l_spec_mod$b_gap <- as.numeric(m_post[ii , c("b_gap[1]", "b_gap[2]", "b_gap[3]", "b_gap[4]")])
-      # l_spec_mod$b_trt_gap <- as.numeric(m_post[ii , c("b_trt_gap[1]", "b_trt_gap[2]", "b_trt_gap[3]")])  
+      # l_spec_mod$b_prev_time <- as.numeric(m_post[ii , c("b_prev_time[1]", "b_prev_time[2]", "b_prev_time[3]")])  
       l_spec_mod$b_trt_time <- as.numeric(m_post[ii , c("b_trt_time[1]", "b_trt_time[2]", "b_trt_time[3]")])  
       
       names(l_spec_mod$b_trt) <- l_spec_mod$trt_lab
-      # names(l_spec_mod$b_trt_gap) <- l_spec_mod$trt_lab
       names(l_spec_mod$b_trt_time) <- l_spec_mod$trt_lab
-      
       
       d_tmp <- sim18_sop(days = 1:max(l_spec$visit_days), l_spec_mod)
       d_tmp
@@ -855,6 +859,8 @@ run_trial <- function(
 #' Entry point for running trial simulation in parallel.
 run_sim18 <- function(){
   
+  tic()
+  
   log_info(paste0(match.call()[[1]]))
   
   if(unname(Sys.info()[1]) == "Darwin"){
@@ -897,7 +903,7 @@ run_sim18 <- function(){
     })
   
   
-  
+  Sys.sleep(10)
   
   # data from each simulated trial
   d_all <- rbindlist(lapply(1:length(r), function(i){ 
@@ -928,6 +934,7 @@ run_sim18 <- function(){
     r[[i]]$d_post_sop
   } ), idcol = "sim")
   
+  l_spec$toc <- toc()
   l <- list(
     l_spec = l_spec,
     d_all = d_all,
@@ -939,8 +946,10 @@ run_sim18 <- function(){
     d_post_sop = d_post_sop
   )
   
+  toks <- unlist(tstrsplit(args[2], "[-.]"))
+  log_info("Tokens ", paste(toks, collapse = ", "))
   
-  fname <- paste0("sim18-", format(Sys.time(), "%Y%m%d-%H%M%S"), ".qs")
+  fname <- paste0("data/sim18/sim18-", toks[5],  "-", format(Sys.time(), "%Y%m%d-%H%M%S"), ".qs")
   
   message("fname is ", fname)
   qs::qsave(l, file = fname)
@@ -957,13 +966,13 @@ run_sim18 <- function(){
 # [1] -0.5  1.2
 # > l_spec_1$b_trt
 # soc       def       dis 
-# 0.0000000 0.3454595 0.0000000 
+# 0.0000000 0.2292979 0.0000000 
 # > l_spec_1$b_prev
-# [1] 0 2 1
+# [1] 0 1.7 1.1
 # > l_spec_1$b_time_1
-# [1] -0.32
+# [1] -0.22
 # > l_spec_1$b_time_2
-# [1] 0.003
+# [1] 0.002
 # > l_spec_1$b_gap
 # [1] 0 0 0 0
 # > l_spec_1$b_trt_time
@@ -982,76 +991,76 @@ run_sim18 <- function(){
 # Results from simulation - model parameters (posterior mean and 95CrI) by interim
 # Source for Table 6.3
 # > d_par
-# scenario                 desc    ic           par           mu            lo           hi     N
-# <int>               <char> <int>        <char>        <num>         <num>        <num> <int>
-#   1:        1 Defer at NI Boundary     1          a[1] -0.523173993 -0.8241685775 -0.207089388   400
-# 2:        1 Defer at NI Boundary     1          a[2]  1.167401610  0.8790347244  1.485632231   400
-# 3:        1 Defer at NI Boundary     1      b_gap[2] -0.652543475 -1.3106005083 -0.116994958   400
-# 4:        1 Defer at NI Boundary     1      b_gap[3] -0.203804014 -1.0054558156  0.551481206   400
-# 5:        1 Defer at NI Boundary     1      b_gap[4] -0.169540753 -0.6006017450  0.300285951   400
-# 6:        1 Defer at NI Boundary     1     b_prev[2]  1.894582271  1.6868358303  2.069371767   400
-# 7:        1 Defer at NI Boundary     1     b_prev[3]  0.925259434  0.7241459444  1.095676661   400
-# 8:        1 Defer at NI Boundary     1      b_time_1 -0.307140661 -0.3697619318 -0.235395448   400
-# 9:        1 Defer at NI Boundary     1      b_time_2  0.002697248 -0.0008668781  0.005455167   400
-# 10:        1 Defer at NI Boundary     1      b_trt[2]  0.396664649  0.0854976990  0.724496284   400
-# 11:        1 Defer at NI Boundary     1      b_trt[3]  0.048072903 -0.2530956542  0.367252642   400
-# 12:        1 Defer at NI Boundary     1 b_trt_time[2] -0.014989439 -0.0670088706  0.034278437   400
-# 13:        1 Defer at NI Boundary     1 b_trt_time[3] -0.014506896 -0.0691268961  0.038538654   400
-# 14:        1 Defer at NI Boundary     2          a[1] -0.527132358 -0.8151084758 -0.250148358   500
-# 15:        1 Defer at NI Boundary     2          a[2]  1.161774585  0.8727989820  1.430787681   500
-# 16:        1 Defer at NI Boundary     2      b_gap[2] -0.657244070 -1.2327386813 -0.138609233   500
-# 17:        1 Defer at NI Boundary     2      b_gap[3] -0.218092515 -1.0380152406  0.472043887   500
-# 18:        1 Defer at NI Boundary     2      b_gap[4] -0.160171617 -0.6051322400  0.327850607   500
-# 19:        1 Defer at NI Boundary     2     b_prev[2]  1.898449885  1.7192910445  2.056962517   500
-# 20:        1 Defer at NI Boundary     2     b_prev[3]  0.929923189  0.7472633505  1.095794469   500
-# 21:        1 Defer at NI Boundary     2      b_time_1 -0.309381095 -0.3668044325 -0.245393783   500
-# 22:        1 Defer at NI Boundary     2      b_time_2  0.002695929 -0.0007389179  0.005349361   500
-# 23:        1 Defer at NI Boundary     2      b_trt[2]  0.385358012  0.1204337880  0.641597774   500
-# 24:        1 Defer at NI Boundary     2      b_trt[3]  0.036816241 -0.2337744296  0.311703273   500
-# 25:        1 Defer at NI Boundary     2 b_trt_time[2] -0.011687124 -0.0611091198  0.031093929   500
-# 26:        1 Defer at NI Boundary     2 b_trt_time[3] -0.011782214 -0.0648717998  0.038679715   500
-# 27:        1 Defer at NI Boundary     3          a[1] -0.532789757 -0.7616026651 -0.276470200   600
-# 28:        1 Defer at NI Boundary     3          a[2]  1.156433589  0.9127320591  1.405165000   600
-# 29:        1 Defer at NI Boundary     3      b_gap[2] -0.664449919 -1.1948022139 -0.208420757   600
-# 30:        1 Defer at NI Boundary     3      b_gap[3] -0.222367632 -0.9985761306  0.491571540   600
-# 31:        1 Defer at NI Boundary     3      b_gap[4] -0.164604482 -0.6151274552  0.349908500   600
-# 32:        1 Defer at NI Boundary     3     b_prev[2]  1.901802722  1.7329697416  2.049412829   600
-# 33:        1 Defer at NI Boundary     3     b_prev[3]  0.932752982  0.7624264946  1.088590862   600
-# 34:        1 Defer at NI Boundary     3      b_time_1 -0.312038722 -0.3605304972 -0.258480568   600
-# 35:        1 Defer at NI Boundary     3      b_time_2  0.002771418  0.0002320965  0.005223605   600
-# 36:        1 Defer at NI Boundary     3      b_trt[2]  0.376710441  0.1487211093  0.605603938   600
-# 37:        1 Defer at NI Boundary     3      b_trt[3]  0.031265480 -0.2410228527  0.297216299   600
-# 38:        1 Defer at NI Boundary     3 b_trt_time[2] -0.008971421 -0.0506693538  0.031282769   600
-# 39:        1 Defer at NI Boundary     3 b_trt_time[3] -0.010373457 -0.0616905335  0.037039843   600
-# scenario                 desc    ic           par           mu            lo           hi     N
-# <int>               <char> <int>        <char>        <num>         <num>        <num> <int>
+# scenario                 desc    ic           par            mu            lo           hi     N
+# <int>               <char> <int>        <char>         <num>         <num>        <num> <int>
+#   1:        1 Defer at NI Boundary     1          a[1] -0.6413932619 -9.433147e-01 -0.356185441   400
+# 2:        1 Defer at NI Boundary     1          a[2]  1.0385516805  7.363047e-01  1.310696650   400
+# 3:        1 Defer at NI Boundary     1      b_gap[2] -0.4394659073 -8.871356e-01 -0.021508645   400
+# 4:        1 Defer at NI Boundary     1      b_gap[3] -0.2805707241 -9.092273e-01  0.354387846   400
+# 5:        1 Defer at NI Boundary     1      b_gap[4] -0.1607502767 -7.828421e-01  0.408801912   400
+# 6:        1 Defer at NI Boundary     1     b_prev[2]  1.4861096954  1.291407e+00  1.675487104   400
+# 7:        1 Defer at NI Boundary     1     b_prev[3]  0.9398809258  7.671439e-01  1.113427352   400
+# 8:        1 Defer at NI Boundary     1      b_time_1 -0.2233247072 -2.850149e-01 -0.167125381   400
+# 9:        1 Defer at NI Boundary     1      b_time_2  0.0019860915 -5.602582e-04  0.004446495   400
+# 10:        1 Defer at NI Boundary     1      b_trt[2]  0.2459016230 -6.500527e-03  0.550193749   400
+# 11:        1 Defer at NI Boundary     1      b_trt[3]  0.0095677313 -2.695799e-01  0.284783813   400
+# 12:        1 Defer at NI Boundary     1 b_trt_time[2] -0.0026890288 -4.253707e-02  0.031155638   400
+# 13:        1 Defer at NI Boundary     1 b_trt_time[3] -0.0018205926 -4.130581e-02  0.036525263   400
+# 14:        1 Defer at NI Boundary     2          a[1] -0.6474910558 -9.223708e-01 -0.408802694   500
+# 15:        1 Defer at NI Boundary     2          a[2]  1.0318844014  7.498621e-01  1.285540233   500
+# 16:        1 Defer at NI Boundary     2      b_gap[2] -0.4405945312 -8.254728e-01 -0.052527499   500
+# 17:        1 Defer at NI Boundary     2      b_gap[3] -0.2775400813 -7.993070e-01  0.318335078   500
+# 18:        1 Defer at NI Boundary     2      b_gap[4] -0.1679186405 -7.765219e-01  0.508100726   500
+# 19:        1 Defer at NI Boundary     2     b_prev[2]  1.4888718976  1.329664e+00  1.646354364   500
+# 20:        1 Defer at NI Boundary     2     b_prev[3]  0.9414462071  7.732100e-01  1.102283285   500
+# 21:        1 Defer at NI Boundary     2      b_time_1 -0.2250920142 -2.813353e-01 -0.172652905   500
+# 22:        1 Defer at NI Boundary     2      b_time_2  0.0020503094 -2.526873e-04  0.004516546   500
+# 23:        1 Defer at NI Boundary     2      b_trt[2]  0.2412642377  2.550051e-02  0.490810754   500
+# 24:        1 Defer at NI Boundary     2      b_trt[3]  0.0053949354 -2.090560e-01  0.257348076   500
+# 25:        1 Defer at NI Boundary     2 b_trt_time[2] -0.0017592415 -3.872062e-02  0.029899680   500
+# 26:        1 Defer at NI Boundary     2 b_trt_time[3] -0.0012874847 -3.955130e-02  0.030925243   500
+# 27:        1 Defer at NI Boundary     3          a[1] -0.6502279100 -8.971618e-01 -0.449601852   600
+# 28:        1 Defer at NI Boundary     3          a[2]  1.0303184233  7.780010e-01  1.232758385   600
+# 29:        1 Defer at NI Boundary     3      b_gap[2] -0.4413114529 -7.987731e-01 -0.061796879   600
+# 30:        1 Defer at NI Boundary     3      b_gap[3] -0.2798224701 -7.860234e-01  0.288328249   600
+# 31:        1 Defer at NI Boundary     3      b_gap[4] -0.1765011164 -8.455909e-01  0.547550020   600
+# 32:        1 Defer at NI Boundary     3     b_prev[2]  1.4900619709  1.355229e+00  1.635178832   600
+# 33:        1 Defer at NI Boundary     3     b_prev[3]  0.9430588155  7.969928e-01  1.106740137   600
+# 34:        1 Defer at NI Boundary     3      b_time_1 -0.2261592905 -2.761437e-01 -0.178824457   600
+# 35:        1 Defer at NI Boundary     3      b_time_2  0.0021078864 -4.039405e-05  0.004232343   600
+# 36:        1 Defer at NI Boundary     3      b_trt[2]  0.2381017653  4.080681e-02  0.447127479   600
+# 37:        1 Defer at NI Boundary     3      b_trt[3]  0.0031045552 -2.119366e-01  0.222234583   600
+# 38:        1 Defer at NI Boundary     3 b_trt_time[2] -0.0009795637 -2.879013e-02  0.029197526   600
+# 39:        1 Defer at NI Boundary     3 b_trt_time[3] -0.0015195315 -3.634631e-02  0.028668345   600
+# scenario                 desc    ic           par            mu            lo           hi     N
+# <int>               <char> <int>        <char>         <num>         <num>        <num> <int>
 
 # Results from simulation - model parameters (posterior mean and 95CrI) by interim
 # Posterior parameter summary (derived parameters - sojourn times)
 # Source for Table 6.4
-# > d_par
+#   > d_par
 # scenario                 desc    ic    par       mu       lo       hi     N
 # <int>               <char> <int> <char>    <num>    <num>    <num> <int>
-#   1:        1 Defer at NI Boundary     1    def 22.12247 21.51575 22.66995   400
-# 2:        1 Defer at NI Boundary     1    dis 23.11383 22.56909 23.57459   400
-# 3:        1 Defer at NI Boundary     1    soc 22.97896 22.40274 23.42677   400
-# 4:        1 Defer at NI Boundary     2    def 22.12756 21.52770 22.61849   500
-# 5:        1 Defer at NI Boundary     2    dis 23.12810 22.60243 23.56209   500
-# 6:        1 Defer at NI Boundary     2    soc 23.01778 22.53618 23.40375   500
-# 7:        1 Defer at NI Boundary     3    def 22.12274 21.55715 22.55242   600
-# 8:        1 Defer at NI Boundary     3    dis 23.13820 22.68453 23.57121   600
-# 9:        1 Defer at NI Boundary     3    soc 23.04313 22.58472 23.39890   600
+#   1:        1 Defer at NI Boundary     1    def 19.66929 18.56785 20.69144   400
+# 2:        1 Defer at NI Boundary     1    dis 20.68180 19.80865 21.55664   400
+# 3:        1 Defer at NI Boundary     1    soc 20.65694 19.75184 21.48124   400
+# 4:        1 Defer at NI Boundary     2    def 19.67092 18.62879 20.56665   500
+# 5:        1 Defer at NI Boundary     2    dis 20.69946 19.83604 21.50717   500
+# 6:        1 Defer at NI Boundary     2    soc 20.67774 19.82064 21.46097   500
+# 7:        1 Defer at NI Boundary     3    def 19.65300 18.62438 20.52942   600
+# 8:        1 Defer at NI Boundary     3    dis 20.72406 19.84129 21.51134   600
+# 9:        1 Defer at NI Boundary     3    soc 20.68612 19.85761 21.36437   600
 
 # Results from simulation - model parameters (posterior mean and 95CrI) by interim
 # Posterior parameter summary (derived parameters - difference in sojourn times)
 # Source for Table 6.5
 # > d_par
-# scenario                 desc    ic       par          mu         lo         hi     N
-# <int>               <char> <int>    <char>       <num>      <num>      <num> <int>
-#   1:        1 Defer at NI Boundary     1 delta_def -0.85648856 -1.5428642 -0.1737428   400
-# 2:        1 Defer at NI Boundary     1 delta_dis  0.13487171 -0.5137383  0.8188785   400
-# 3:        1 Defer at NI Boundary     2 delta_def -0.89022237 -1.6034427 -0.2594010   500
-# 4:        1 Defer at NI Boundary     2 delta_dis  0.11032128 -0.4267192  0.6773814   500
-# 5:        1 Defer at NI Boundary     3 delta_def -0.92039426 -1.6062616 -0.2887149   600
-# 6:        1 Defer at NI Boundary     3 delta_dis  0.09506669 -0.3947958  0.6829708   600
+# scenario                 desc    ic       par          mu         lo          hi     N
+# <int>               <char> <int>    <char>       <num>      <num>       <num> <int>
+#   1:        1 Defer at NI Boundary     1 delta_def -0.98765056 -2.1272998  0.07877057   400
+# 2:        1 Defer at NI Boundary     1 delta_dis  0.02486131 -1.1615970  1.07388184   400
+# 3:        1 Defer at NI Boundary     2 delta_def -1.00682272 -2.0632848 -0.04126690   500
+# 4:        1 Defer at NI Boundary     2 delta_dis  0.02171608 -0.9573078  1.00547207   500
+# 5:        1 Defer at NI Boundary     3 delta_def -1.03312431 -1.9800049 -0.16563734   600
+# 6:        1 Defer at NI Boundary     3 delta_dis  0.03793833 -0.7977147  0.86120423   600
 
