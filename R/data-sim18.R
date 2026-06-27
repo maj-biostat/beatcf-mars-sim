@@ -91,8 +91,6 @@ sim18_cohort <- function(l_spec){
         time_eff[tt + 1L] +
         b_prev_time[prev] * tt + 
         b_trt_time[trt_i] * tt 
-      # +
-      #   gap_effect
       
       p0 <- plogis(alpha[1] - lp)
       p1 <- plogis(alpha[2] - lp)
@@ -146,18 +144,12 @@ sim18_stan_data <- function(dd, l_spec){
   # for linear predictors with interactions
   # additionally means you need to back scale intercepts
   dd[, x_time := scale(x_time)]
-  dd[gap_len == 1, gap_time := 1]
-  dd[gap_len == 7 & day == 14, gap_time := 2]
-  dd[gap_len == 7 & day == 21, gap_time := 3]
-  dd[gap_len == 7 & day == 28, gap_time := 4]
-  dd[, x_gap_time := factor(gap_time, levels = 1:4)]
   
   dd[, x_trt := factor(trt_idx)]
   dd[, x_prev := factor(prev_state, levels = l_spec$state_opts)]
   
   X <- model.matrix(~ x_trt + x_prev +
                       x_time + I(x_time^2) +
-                      # x_gap_time + 
                       x_prev * x_time +
                       x_trt * x_time, 
                     data = dd)
@@ -176,9 +168,6 @@ sim18_stan_data <- function(dd, l_spec){
     ix_prev_3 = 4,
     ix_time_1 = 5,
     ix_time_2 = 6,
-    # ix_gap_2 = 7,
-    # ix_gap_3 = 8,
-    # ix_gap_4 = 9,
     ix_prev_time_2 = 7,
     ix_prev_time_3 = 8,
     ix_trt_time_2 = 9,
@@ -192,9 +181,6 @@ sim18_stan_data <- function(dd, l_spec){
   stopifnot(names(X_mod)[ld$ix_prev_3] == "x_prev3")
   stopifnot(names(X_mod)[ld$ix_time_1] == "x_time")
   stopifnot(names(X_mod)[ld$ix_time_2] == "I(x_time^2)")
-  # stopifnot(names(X_mod)[ld$ix_gap_2] == "x_gap_time2")
-  # stopifnot(names(X_mod)[ld$ix_gap_3] == "x_gap_time3")
-  # stopifnot(names(X_mod)[ld$ix_gap_4] == "x_gap_time4")
   stopifnot(names(X_mod)[ld$ix_prev_time_2] == "x_prev2:x_time")
   stopifnot(names(X_mod)[ld$ix_prev_time_3] == "x_prev3:x_time")
   stopifnot(names(X_mod)[ld$ix_trt_time_2] == "x_trt2:x_time")
@@ -219,8 +205,6 @@ sim18_transition_matrix <- function(day, trt, l_spec)
       l_spec$b_time_2 * day^2 +
       l_spec$b_prev_time[prev] * day +
       l_spec$b_trt_time[trt] * day 
-    # +
-    #   l_spec$b_gap[gap_ix] 
     
     p1 <- plogis(l_spec$alpha[1] - lp)
     p2 <- plogis(l_spec$alpha[2] - lp) - p1
@@ -248,40 +232,20 @@ sim18_sop <- function(days = 1:28, l_spec)
   stopifnot(days[1] == 1)
   
   out <- matrix(NA, length(days) + 1, 3)
-  
   out[1,] <- l_spec$p_init
-  
   d_sop <- data.table()
   
   for(trt in l_spec$trt_lab){
-    
     # starting point
     pi <- l_spec$p_init
     
     for(i in seq_along(days)){
       
       day = days[i]
-      
-      if(day == 1){
-        gap_ix = 1;
-      } 
-      
-      # if(day > 1){
-      #   
-      #   gap_ix <- fcase(
-      #     days[i] - days[i-1] == 1, 1,
-      #     days[i] - days[i-1] == 7 & day == 14, 2,
-      #     days[i] - days[i-1] == 7 & day == 21, 3,
-      #     days[i] - days[i-1] == 7 & day == 28, 4
-      #   )
-      # }
-      
       Pt <- sim18_transition_matrix(day, trt, l_spec)
-      
       pi <- drop(pi %*% Pt)
       
       out[i + 1,] <- pi
-      
     }
     
     d_sop <- rbind(
@@ -436,7 +400,7 @@ sim18_calibrate_trt <- function(l_spec){
 }
 
 
-sim18_example_data <- function(){
+sim18_ex_fig <- function(){
   
   source("R/libs.R")
   source("R/init.R")
@@ -486,30 +450,6 @@ sim18_example_data <- function(){
     )
   p_1 + p_2
   
-  # MODEL
-  d_daily <- sim18_cohort(l_spec)$d_cohort
-  m_1 <- cmdstanr::cmdstan_model("stan/sim18-v01.stan")
-  l_mod <- sim18_stan_data(d_daily, l_spec)
-  f_1_optim <- m_1$optimize(data = l_mod, jacobian = TRUE)
-  f_1 <- m_1$laplace(data = l_mod, mode = f_1_optim, draws = 2000, refresh = 0)
-  m_post <- f_1$draws(variables = l_spec$non_zero_pars, format = "matrix")
-  d_mu_v_tru <- data.table(
-    par = l_spec$non_zero_pars,
-    tru = c(l_spec$alpha, l_spec$b_trt[-1],  l_spec$b_prev[-1], 
-            l_spec$b_time_1, l_spec$b_time_2, 
-            # l_spec$b_gap[-1], 
-            l_spec$b_prev_time[-1], l_spec$b_trt_time[-1]
-    ),
-    mu = colMeans(m_post), 
-    lo = apply(m_post, 2, function(z){quantile(z, prob = 0.025)}),
-    hi = apply(m_post, 2, function(z){quantile(z, prob = 0.975)})
-  )
-  d_mu_v_tru[, cover := lo < tru & tru < hi]
-  kableExtra::kbl(d_mu_v_tru[], format = "simple", digits = 4)
-  # 
-  
-  
-  
   # TRANSITION PROBS
   t_days <- 1:max(l_spec$visit_days)
   t_gaps <- rep(1, length = max(l_spec$visit_days))
@@ -552,6 +492,149 @@ sim18_example_data <- function(){
     )
   
   
+    
+  
+}
+
+
+sim18_ex_mod <- function(){
+  
+  source("R/libs.R")
+  source("R/init.R")
+  source("R/util.R")
+  
+  # CFG
+  f_cfgsc <- file.path("./etc/sim18/cfg-sim18-v01.yml")
+  l_spec <- config::get(file = f_cfgsc)
+  l_spec <- update_sim18_cfg(l_spec)
+  l_spec$N_pt <- c(4000, 100, 100)
+  l_spec$t_0 <- seq_along(1:sum(l_spec$N_pt)) 
+  l_spec$is <- 1
+  l_spec$ie <- sum(l_spec$N_pt)
+  message("N: ", paste0(cumsum(l_spec$N_pt), collapse = ", "))
+  
+  # MODEL
+  d_obs <- sim18_cohort(l_spec)$d_obs
+  m_1 <- cmdstanr::cmdstan_model("stan/sim18-v01.stan")
+  l_mod <- sim18_stan_data(d_obs, l_spec)
+  # f_1_optim <- m_1$optimize(data = l_mod, jacobian = TRUE)
+  # f_1 <- m_1$laplace(data = l_mod, mode = f_1_optim, draws = 2000, refresh = 0)
+  f_1 <- m_1$sample(
+    l_mod,
+    iter_warmup = l_spec$mcmc_warmup, iter_sampling = l_spec$mcmc_iter,
+    parallel_chains = l_spec$mcmc_chain, chains = l_spec$mcmc_chain,
+    refresh = 100, show_exceptions = F,
+    max_treedepth = 11
+  )
+  m_post <- f_1$draws(variables = l_spec$non_zero_pars, format = "matrix")
+  d_mu_v_tru <- data.table(
+    par = l_spec$non_zero_pars,
+    tru = c(l_spec$alpha, l_spec$b_trt[-1],  l_spec$b_prev[-1], 
+            l_spec$b_time_1, l_spec$b_time_2, 
+            # l_spec$b_gap[-1], 
+            l_spec$b_prev_time[-1], l_spec$b_trt_time[-1]
+    ),
+    mu = colMeans(m_post), 
+    lo = apply(m_post, 2, function(z){quantile(z, prob = 0.025)}),
+    hi = apply(m_post, 2, function(z){quantile(z, prob = 0.975)})
+  )
+  d_mu_v_tru[, cover := lo < tru & tru < hi]
+  kableExtra::kbl(d_mu_v_tru[], format = "simple", digits = 4)
+  # 
+  
+  
+  
+  
+  # print(l_spec)
+  # >   print(l_spec)
+  # $p_init
+  # [1] 0.0 0.4 0.6
+  # $desc
+  # [1] "Defer at NI Boundary"
+  # $nsim
+  # [1] 500
+  # $mc_cores
+  # [1] 40
+  # $mcmc_warmup
+  # [1] 1000
+  # $mcmc_iter
+  # [1] 1000
+  # $mcmc_chain
+  # [1] 1
+  # $mcmc_B
+  # [1] 1000
+  # $nex
+  # [1] 10
+  # $N_pt
+  # [1] 4000  100  100
+  # $pt_per_day
+  # [1] 1.2
+  # $ramp_up_days
+  # [1] 60
+  # $followup
+  # [1] 720
+  # $followup_dec
+  # [1] 28
+  # $visit_days
+  # [1]  0  1  2  3  4  5  6  7 14 21 28
+  # $state_lab
+  # [1] "none"   "mild"   "severe"
+  # $trt_active
+  # soc  def  dis 
+  # TRUE TRUE TRUE 
+  # $trt_lab
+  # [1] "soc" "def" "dis"
+  # $alpha
+  # [1] -0.5  1.2
+  # $b_trt
+  # soc         def         dis 
+  # 0.00000000 -0.03682139  0.00000000 
+  # $b_prev
+  # [1] 0.0 2.2 1.0
+  # $b_time_1
+  # [1] -0.23
+  # $b_time_2
+  # [1] 0.003
+  # $b_trt_time
+  # soc  def  dis 
+  # 0.00 0.02 0.00 
+  # $b_prev_time
+  # [1] 0.00 0.05 0.00
+  # $dec_delta_ni
+  # [1] 1
+  # $dec_thresh_ni
+  # [1] 0.985
+  # $dec_thresh_fut
+  # [1] 0.8
+  # $state_opts
+  # none   mild severe 
+  # 1      2      3 
+  # $max_day
+  # [1] 28
+  # $smry_pars
+  # [1] "a"           "b_trt"       "b_prev"      "b_time_1"    "b_time_2"    "b_prev_time" "b_trt_time" 
+  # $full_pars
+  # [1] "a[1]"           "a[2]"           "b_trt[1]"       "b_trt[2]"       "b_trt[3]"       "b_prev[1]"     
+  # [7] "b_prev[2]"      "b_prev[3]"      "b_time_1"       "b_time_2"       "b_prev_time[1]" "b_prev_time[2]"
+  # [13] "b_prev_time[3]" "b_trt_time[1]"  "b_trt_time[2]"  "b_trt_time[3]" 
+  # $non_zero_pars
+  # [1] "a[1]"           "a[2]"           "b_trt[2]"       "b_trt[3]"       "b_prev[2]"      "b_prev[3]"     
+  # [7] "b_time_1"       "b_time_2"       "b_prev_time[2]" "b_prev_time[3]" "b_trt_time[2]"  "b_trt_time[3]" 
+  # $ex_trial_ix
+  # [1]   1  49 105 113 165 179 286 294 464 470
+  # $delta_lab
+  # [1] "delta_def" "delta_dis"
+  # $dur_tru
+  # soc      def      dis 
+  # 19.79151 18.79142 19.79151 
+  # $delta_dur_tru
+  # delta_def delta_dis 
+  # -1.000094  0.000000 
+}
+
+
+sim18_ex_sim <- function(){
+  
   ## SIM SUMMARY
   l_res <- qs::qread(file.path("data/sim18-03/sim18-v01-20260627-175948.qs"))
   l_spec_res <- l_res$l_spec
@@ -563,8 +646,8 @@ sim18_example_data <- function(){
     mu = mean(mu),
     lo = quantile(mu, prob = 0.025),
     hi = quantile(mu, prob = 0.975)
-    ), keyby = .(ic, par)]
-
+  ), keyby = .(ic, par)]
+  
   d_smry[, N := cumsum(l_spec_res$N_pt)[ic]]
   d_smry[, stat := sprintf("%.3f (%.3f, %.3f)", mu, lo, hi)]
   d_smry[, par := factor(par, levels = l_spec_res$non_zero_pars)]
@@ -576,5 +659,4 @@ sim18_example_data <- function(){
                    l_spec_res$b_trt_time[-1]
   )]
   kableExtra::kbl(d_tbl, format = "simple", digits = 4)
-    
 }
