@@ -61,8 +61,9 @@ sim18_cohort <- function(l_spec){
     )
   
   ## cache coefficients
-  b_trt      <- l_spec$b_trt
-  b_prev     <- l_spec$b_prev
+  b_trt        <- l_spec$b_trt
+  b_prev       <- l_spec$b_prev
+  b_prev_time  <- l_spec$b_prev_time
   b_trt_time <- l_spec$b_trt_time
   alpha       <- l_spec$alpha
   gap_effect  <- l_spec$b_gap[1]
@@ -88,6 +89,7 @@ sim18_cohort <- function(l_spec){
         b_trt[trt_i] +
         b_prev[prev] +
         time_eff[tt + 1L] +
+        b_prev_time[prev] * tt + 
         b_trt_time[trt_i] * tt +
         gap_effect
       
@@ -95,12 +97,6 @@ sim18_cohort <- function(l_spec){
       p1 <- plogis(alpha[2] - lp)
       
       u <- runif(1)
-      
-      # state[r] <- fcase(
-      #   u < p0, 1L,
-      #   u < p1, 2L,
-      #   u >= p1, 3L
-      # )
       
       state[r] <-
         if (u < p0) {
@@ -161,7 +157,7 @@ sim18_stan_data <- function(dd, l_spec){
   X <- model.matrix(~ x_trt + x_prev +
                       x_time + I(x_time^2) +
                       x_gap_time + 
-                      # x_prev * x_time +
+                      x_prev * x_time +
                       x_trt * x_time, 
                     data = dd)
   X_mod <- X[, -1]
@@ -182,10 +178,10 @@ sim18_stan_data <- function(dd, l_spec){
     ix_gap_2 = 7,
     ix_gap_3 = 8,
     ix_gap_4 = 9,
-    # ix_prev_time_2 = 10,
-    # ix_prev_time_3 = 11,
-    ix_trt_time_2 = 10,
-    ix_trt_time_3 = 11,
+    ix_prev_time_2 = 10,
+    ix_prev_time_3 = 11,
+    ix_trt_time_2 = 12,
+    ix_trt_time_3 = 13,
     mu_days = mean(dd$day),
     sd_days = sd(dd$day)
   )
@@ -198,8 +194,8 @@ sim18_stan_data <- function(dd, l_spec){
   stopifnot(names(X_mod)[ld$ix_gap_2] == "x_gap_time2")
   stopifnot(names(X_mod)[ld$ix_gap_3] == "x_gap_time3")
   stopifnot(names(X_mod)[ld$ix_gap_4] == "x_gap_time4")
-  # stopifnot(names(X_mod)[ld$ix_prev_time_2] == "x_prev2:x_time")
-  # stopifnot(names(X_mod)[ld$ix_prev_time_3] == "x_prev3:x_time")
+  stopifnot(names(X_mod)[ld$ix_prev_time_2] == "x_prev2:x_time")
+  stopifnot(names(X_mod)[ld$ix_prev_time_3] == "x_prev3:x_time")
   stopifnot(names(X_mod)[ld$ix_trt_time_2] == "x_trt2:x_time")
   stopifnot(names(X_mod)[ld$ix_trt_time_3] == "x_trt3:x_time")
   
@@ -207,17 +203,6 @@ sim18_stan_data <- function(dd, l_spec){
 }
 
 
-
-# construct 3 state transition probs based on linear predictor and 
-# cutpoints from ordinal model
-sim18_rord_pom_3 <- function(lp, alpha)
-{
-  p0 <- plogis(alpha[1] - lp)
-  p1 <- plogis(alpha[2] - lp) - p0
-  p2 <- 1 - p0 - p1
-  
-  sample(1:3, 1, prob = c(p0, p1, p2)) 
-}
 
 sim18_transition_matrix <- function(day, gap_ix = 1, trt, l_spec)
 {
@@ -231,7 +216,7 @@ sim18_transition_matrix <- function(day, gap_ix = 1, trt, l_spec)
       l_spec$b_prev[prev] +
       l_spec$b_time_1 * day +
       l_spec$b_time_2 * day^2 +
-      # l_spec$b_prev_time[prev] * day +
+      l_spec$b_prev_time[prev] * day +
       l_spec$b_trt_time[trt] * day +
       l_spec$b_gap[gap_ix] 
     
@@ -350,7 +335,7 @@ update_sim18_cfg <- function(l_spec){
   
   l_spec$smry_pars <- c(
     "a", "b_trt", "b_prev", "b_time_1", "b_time_2", "b_gap", 
-    # "b_prev_time", 
+    "b_prev_time", 
     "b_trt_time")
   
   l_spec$full_pars <- c("a[1]", "a[2]",
@@ -358,7 +343,7 @@ update_sim18_cfg <- function(l_spec){
                         "b_prev[1]", "b_prev[2]", "b_prev[3]",
                         "b_time_1", "b_time_2",
                         "b_gap[1]", "b_gap[2]", "b_gap[3]",  "b_gap[4]",
-                        # "b_prev_time[1]", "b_prev_time[2]", "b_prev_time[3]",
+                        "b_prev_time[1]", "b_prev_time[2]", "b_prev_time[3]",
                         "b_trt_time[1]", "b_trt_time[2]", "b_trt_time[3]")
   
   l_spec$non_zero_pars <- c("a[1]", "a[2]",
@@ -366,7 +351,7 @@ update_sim18_cfg <- function(l_spec){
                         "b_prev[2]", "b_prev[3]",
                         "b_time_1", "b_time_2",
                         "b_gap[2]", "b_gap[3]",  "b_gap[4]",
-                        # "b_prev_time[2]", "b_prev_time[3]",
+                        "b_prev_time[2]", "b_prev_time[3]",
                         "b_trt_time[2]", "b_trt_time[3]")
   
   if(l_spec$nex > 0){
@@ -415,13 +400,13 @@ sim18_calibrate_trt <- function(l_spec){
   
   # where are we at the moment
   l_spec$b_trt
+  days <- 1:max(l_spec$visit_days)
   d_sop <- sim18_sop(days, l_spec)
   dcast(d_sop[day > 0], day ~ trt, value.var = "none" )[day %in% c(1, 4, 7, 14, 21, 28)]
   
   
   l_spec$dec_delta_ni <- 1
   explr_interval <- c(0, 5)
-  days <- 1:max(l_spec$visit_days)
   message("Traget NI margin  : ", l_spec$dec_delta_ni)
   
   f_obj <- function(b_trt) {
@@ -458,12 +443,14 @@ sim18_example_data <- function(){
   f_cfgsc <- file.path("./etc/sim18/cfg-sim18-v01.yml")
   l_spec <- config::get(file = f_cfgsc)
   l_spec <- update_sim18_cfg(l_spec)
+  l_spec$N_pt <- c(4000, 100, 100)
   l_spec$t_0 <- seq_along(1:sum(l_spec$N_pt)) 
   l_spec$is <- 1
   l_spec$ie <- sum(l_spec$N_pt)
   message("N: ", paste0(cumsum(l_spec$N_pt), collapse = ", "))
   
   # PLOT
+  d_daily <- sim18_cohort(l_spec)$d_cohort
   d_tbl_1 <- copy(d_daily)
   d_tbl_1[, state := factor(state, levels = l_spec$state_opts, labels = names(l_spec$state_opts))]
   d_tbl_1[, trt := factor(trt, levels = l_spec$trt_lab)]
@@ -496,7 +483,7 @@ sim18_example_data <- function(){
     par = l_spec$non_zero_pars,
     tru = c(l_spec$alpha, l_spec$b_trt[-1],  l_spec$b_prev[-1], 
             l_spec$b_time_1, l_spec$b_time_2, 
-            l_spec$b_gap[-1], l_spec$b_trt_time[-1]
+            l_spec$b_gap[-1], l_spec$b_prev_time[-1], l_spec$b_trt_time[-1]
     ),
     mu = colMeans(m_post), 
     lo = apply(m_post, 2, function(z){quantile(z, prob = 0.025)}),

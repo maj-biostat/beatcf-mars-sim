@@ -108,6 +108,13 @@ sim18 cfg:
 runsim18:
   just sim18 ../etc/sim18/cfg-sim18-v01.yml  
   #just sim18 ../etc/sim18/cfg-sim18-v02.yml  
+    
+sim19 cfg:
+  Rscript --vanilla ./R/sim19.R run_sim19 {{cfg}}
+  just cleantmp
+
+runsim19:
+  just sim19 ../etc/sim19/cfg-sim19-v01.yml 
   
 report rep:
   quarto render reports/{{rep}} --to pdf
