@@ -11,9 +11,9 @@ data {
   int  ix_prev_3;
   int  ix_time_1;
   int  ix_time_2;
-  int  ix_gap_2 ;
-  int  ix_gap_3 ;
-  int  ix_gap_4 ;
+  // int  ix_gap_2 ;
+  // int  ix_gap_3 ;
+  // int  ix_gap_4 ;
   int  ix_prev_time_2;
   int  ix_prev_time_3;
   int  ix_trt_time_2;
@@ -65,11 +65,11 @@ generated quantities{
   real b_time_1 = (b[ix_time_1] / sd_days) - (2.0 * mu_days * b[ix_time_2]) / pow(sd_days, 2);
   real b_time_2 = b[ix_time_2] / pow(sd_days, 2);
   
-  vector[4] b_gap;
-  b_gap[1] = 0.0;
-  b_gap[2] = b[ix_gap_2];
-  b_gap[3] = b[ix_gap_3];
-  b_gap[4] = b[ix_gap_4];
+  // vector[4] b_gap;
+  // b_gap[1] = 0.0;
+  // b_gap[2] = b[ix_gap_2];
+  // b_gap[3] = b[ix_gap_3];
+  // b_gap[4] = b[ix_gap_4];
   
   vector[3] b_prev_time;
   b_prev_time[1] = 0.0;

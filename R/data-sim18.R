@@ -66,7 +66,7 @@ sim18_cohort <- function(l_spec){
   b_prev_time  <- l_spec$b_prev_time
   b_trt_time <- l_spec$b_trt_time
   alpha       <- l_spec$alpha
-  gap_effect  <- l_spec$b_gap[1]
+  # gap_effect  <- l_spec$b_gap[1]
   
   ## precompute time effect
   day_vals <- 0:l_spec$max_day
@@ -90,8 +90,9 @@ sim18_cohort <- function(l_spec){
         b_prev[prev] +
         time_eff[tt + 1L] +
         b_prev_time[prev] * tt + 
-        b_trt_time[trt_i] * tt +
-        gap_effect
+        b_trt_time[trt_i] * tt 
+      # +
+      #   gap_effect
       
       p0 <- plogis(alpha[1] - lp)
       p1 <- plogis(alpha[2] - lp)
@@ -156,7 +157,7 @@ sim18_stan_data <- function(dd, l_spec){
   
   X <- model.matrix(~ x_trt + x_prev +
                       x_time + I(x_time^2) +
-                      x_gap_time + 
+                      # x_gap_time + 
                       x_prev * x_time +
                       x_trt * x_time, 
                     data = dd)
@@ -175,13 +176,13 @@ sim18_stan_data <- function(dd, l_spec){
     ix_prev_3 = 4,
     ix_time_1 = 5,
     ix_time_2 = 6,
-    ix_gap_2 = 7,
-    ix_gap_3 = 8,
-    ix_gap_4 = 9,
-    ix_prev_time_2 = 10,
-    ix_prev_time_3 = 11,
-    ix_trt_time_2 = 12,
-    ix_trt_time_3 = 13,
+    # ix_gap_2 = 7,
+    # ix_gap_3 = 8,
+    # ix_gap_4 = 9,
+    ix_prev_time_2 = 7,
+    ix_prev_time_3 = 8,
+    ix_trt_time_2 = 9,
+    ix_trt_time_3 = 10,
     mu_days = mean(dd$day),
     sd_days = sd(dd$day)
   )
@@ -191,9 +192,9 @@ sim18_stan_data <- function(dd, l_spec){
   stopifnot(names(X_mod)[ld$ix_prev_3] == "x_prev3")
   stopifnot(names(X_mod)[ld$ix_time_1] == "x_time")
   stopifnot(names(X_mod)[ld$ix_time_2] == "I(x_time^2)")
-  stopifnot(names(X_mod)[ld$ix_gap_2] == "x_gap_time2")
-  stopifnot(names(X_mod)[ld$ix_gap_3] == "x_gap_time3")
-  stopifnot(names(X_mod)[ld$ix_gap_4] == "x_gap_time4")
+  # stopifnot(names(X_mod)[ld$ix_gap_2] == "x_gap_time2")
+  # stopifnot(names(X_mod)[ld$ix_gap_3] == "x_gap_time3")
+  # stopifnot(names(X_mod)[ld$ix_gap_4] == "x_gap_time4")
   stopifnot(names(X_mod)[ld$ix_prev_time_2] == "x_prev2:x_time")
   stopifnot(names(X_mod)[ld$ix_prev_time_3] == "x_prev3:x_time")
   stopifnot(names(X_mod)[ld$ix_trt_time_2] == "x_trt2:x_time")
@@ -204,7 +205,7 @@ sim18_stan_data <- function(dd, l_spec){
 
 
 
-sim18_transition_matrix <- function(day, gap_ix = 1, trt, l_spec)
+sim18_transition_matrix <- function(day, trt, l_spec)
 {
   
   P <- matrix(0,3,3)
@@ -217,8 +218,9 @@ sim18_transition_matrix <- function(day, gap_ix = 1, trt, l_spec)
       l_spec$b_time_1 * day +
       l_spec$b_time_2 * day^2 +
       l_spec$b_prev_time[prev] * day +
-      l_spec$b_trt_time[trt] * day +
-      l_spec$b_gap[gap_ix] 
+      l_spec$b_trt_time[trt] * day 
+    # +
+    #   l_spec$b_gap[gap_ix] 
     
     p1 <- plogis(l_spec$alpha[1] - lp)
     p2 <- plogis(l_spec$alpha[2] - lp) - p1
@@ -264,17 +266,17 @@ sim18_sop <- function(days = 1:28, l_spec)
         gap_ix = 1;
       } 
       
-      if(day > 1){
-        
-        gap_ix <- fcase(
-          days[i] - days[i-1] == 1, 1,
-          days[i] - days[i-1] == 7 & day == 14, 2,
-          days[i] - days[i-1] == 7 & day == 21, 3,
-          days[i] - days[i-1] == 7 & day == 28, 4
-        )
-      }
+      # if(day > 1){
+      #   
+      #   gap_ix <- fcase(
+      #     days[i] - days[i-1] == 1, 1,
+      #     days[i] - days[i-1] == 7 & day == 14, 2,
+      #     days[i] - days[i-1] == 7 & day == 21, 3,
+      #     days[i] - days[i-1] == 7 & day == 28, 4
+      #   )
+      # }
       
-      Pt <- sim18_transition_matrix(day, gap_ix, trt, l_spec)
+      Pt <- sim18_transition_matrix(day, trt, l_spec)
       
       pi <- drop(pi %*% Pt)
       
@@ -326,7 +328,7 @@ update_sim18_cfg <- function(l_spec){
   
   l_spec$b_prev_time <- unlist(l_spec$b_prev_time)
   
-  l_spec$b_gap <- unlist(l_spec$b_gap)
+  # l_spec$b_gap <- unlist(l_spec$b_gap)
   
   # l_spec$b_trt_gap <- unlist(l_spec$b_trt_gap)
   # names(l_spec$b_trt_gap) <- l_spec$trt_lab
@@ -334,7 +336,8 @@ update_sim18_cfg <- function(l_spec){
   l_spec$p_init <- unlist(l_spec$p_init)
   
   l_spec$smry_pars <- c(
-    "a", "b_trt", "b_prev", "b_time_1", "b_time_2", "b_gap", 
+    "a", "b_trt", "b_prev", "b_time_1", "b_time_2", 
+    # "b_gap", 
     "b_prev_time", 
     "b_trt_time")
   
@@ -342,7 +345,7 @@ update_sim18_cfg <- function(l_spec){
                         "b_trt[1]", "b_trt[2]", "b_trt[3]",
                         "b_prev[1]", "b_prev[2]", "b_prev[3]",
                         "b_time_1", "b_time_2",
-                        "b_gap[1]", "b_gap[2]", "b_gap[3]",  "b_gap[4]",
+                        # "b_gap[1]", "b_gap[2]", "b_gap[3]",  "b_gap[4]",
                         "b_prev_time[1]", "b_prev_time[2]", "b_prev_time[3]",
                         "b_trt_time[1]", "b_trt_time[2]", "b_trt_time[3]")
   
@@ -350,7 +353,7 @@ update_sim18_cfg <- function(l_spec){
                         "b_trt[2]", "b_trt[3]",
                         "b_prev[2]", "b_prev[3]",
                         "b_time_1", "b_time_2",
-                        "b_gap[2]", "b_gap[3]",  "b_gap[4]",
+                        # "b_gap[2]", "b_gap[3]",  "b_gap[4]",
                         "b_prev_time[2]", "b_prev_time[3]",
                         "b_trt_time[2]", "b_trt_time[3]")
   
@@ -483,7 +486,8 @@ sim18_example_data <- function(){
     par = l_spec$non_zero_pars,
     tru = c(l_spec$alpha, l_spec$b_trt[-1],  l_spec$b_prev[-1], 
             l_spec$b_time_1, l_spec$b_time_2, 
-            l_spec$b_gap[-1], l_spec$b_prev_time[-1], l_spec$b_trt_time[-1]
+            # l_spec$b_gap[-1], 
+            l_spec$b_prev_time[-1], l_spec$b_trt_time[-1]
     ),
     mu = colMeans(m_post), 
     lo = apply(m_post, 2, function(z){quantile(z, prob = 0.025)}),
@@ -538,7 +542,7 @@ sim18_example_data <- function(){
   
   
   ## SIM SUMMARY
-  l_res <- qs::qread(file.path("data/sim18-03/sim18-v01-20260627-151521.qs"))
+  l_res <- qs::qread(file.path("data/sim18-03/sim18-v01-20260627-160846.qs"))
   l_spec_res <- l_res$l_spec
   d_par <- data.table()
   d_tmp <- copy(l_res$d_post_smry_1[par %in% l_spec_res$non_zero_pars])

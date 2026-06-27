@@ -45,7 +45,7 @@ default:
   # induce the same NI margin in terms of diff in times.
   # See function sim18_calibrate_trt
 
-  b_trt: [0.0, 1.014410769, 0.0]   
+  b_trt: [0.0, 1.04480918, 0.0]   
   b_prev: [0.0, 1, 0.1]  # orig [0.0, 1.5, 0.1]
   b_time_1: -0.3   # -0.32
   b_time_2: 0.002 # 0.003 # 0.003  
@@ -53,7 +53,7 @@ default:
   # as the change between each one of the intervals would be different and 
   # we will not be able to recover the true parameters if we only estimate a
   # single gap (irrespective of whether they are all the same length or not)
-  b_gap: [0.0, 0.0, 0.0, 0.0]
+  # b_gap: [0.0, 0.0, 0.0, 0.0]
   # negative values here for trt arms decrease the time in none state for those arms
   b_trt_time: [0.0, -0.1, 0.0]
   # prev state x time interaction 
