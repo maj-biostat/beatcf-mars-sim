@@ -7,9 +7,10 @@ default:
   mcmc_chain: 1
   # redraws for effect calculation
   mcmc_B: 1000
+  mcmc_type: "hmc" # or "laplace"
   
   # example trials
-  nex: 10
+  nex: 4
   # enrolment
   N_pt: [400, 100, 100]
   pt_per_day: 1.2

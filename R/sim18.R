@@ -172,16 +172,22 @@ run_trial <- function(
     
     }
     
-    f_1_optim <- m_1$optimize(data = l_mod, jacobian = TRUE)
-    f_1 <- m_1$laplace(data = l_mod, mode = f_1_optim, draws = 2000, refresh = 0)
+    stopifnot(l_spec$mcmc_type %in% c("laplace", "hmc"))
+    if(l_spec$mcmc_type == "laplace"){
+      f_1_optim <- m_1$optimize(data = l_mod, jacobian = TRUE)
+      f_1 <- m_1$laplace(data = l_mod, mode = f_1_optim, draws = 2000, refresh = 0)
+    } 
     
-    # f_1 <- m_1$sample(
-    #   l_mod,
-    #   iter_warmup = l_spec$mcmc_warmup, iter_sampling = l_spec$mcmc_iter,
-    #   parallel_chains = l_spec$mcmc_chain, chains = l_spec$mcmc_chain,
-    #   refresh = 0, show_exceptions = F,
-    #   max_treedepth = 11
-    # )
+    if(l_spec$mcmc_type == "hmc"){
+      f_1 <- m_1$sample(
+        l_mod,
+        iter_warmup = l_spec$mcmc_warmup, iter_sampling = l_spec$mcmc_iter,
+        parallel_chains = l_spec$mcmc_chain, chains = l_spec$mcmc_chain,
+        refresh = 0, show_exceptions = F,
+        max_treedepth = 11
+      )
+    }
+    
     
     # l_mod$y_f <- factor(l_mod$y)
     # f_2 <- MASS::polr(l_mod$y_f ~ l_mod$X, Hess=TRUE)
