@@ -538,7 +538,7 @@ sim18_example_data <- function(){
   
   
   ## SIM SUMMARY
-  l_res <- qs::qread(file.path("data/sim18-03/sim18-v01-20260627-122654.qs"))
+  l_res <- qs::qread(file.path("data/sim18-03/sim18-v01-20260627-151521.qs"))
   l_spec_res <- l_res$l_spec
   d_par <- data.table()
   d_tmp <- copy(l_res$d_post_smry_1[par %in% l_spec_res$non_zero_pars])
@@ -554,9 +554,11 @@ sim18_example_data <- function(){
   d_smry[, stat := sprintf("%.3f (%.3f, %.3f)", mu, lo, hi)]
   d_smry[, par := factor(par, levels = l_spec_res$non_zero_pars)]
   d_tbl <- dcast(d_smry, par ~ N, value.var = "stat")  
-  d_tbl[, tru := c(l_spec$alpha, l_spec$b_trt[-1],  l_spec$b_prev[-1], 
-                   l_spec$b_time_1, l_spec$b_time_2, 
-                   l_spec$b_gap[-1], l_spec$b_trt_time[-1]
+  d_tbl[, tru := c(l_spec_res$alpha, l_spec_res$b_trt[-1],  l_spec_res$b_prev[-1], 
+                   l_spec_res$b_time_1, l_spec_res$b_time_2, 
+                   l_spec_res$b_gap[-1], 
+                   l_spec_res$b_prev_time[-1],
+                   l_spec_res$b_trt_time[-1]
   )]
   kableExtra::kbl(d_tbl, format = "simple", digits = 4)
     
