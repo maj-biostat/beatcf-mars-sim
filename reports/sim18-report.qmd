@@ -286,6 +286,15 @@ kableExtra::kbl(
   kableExtra::column_spec(4:6, width = "1.5cm")
 ```
 
+Files used:
+
+```{r}
+for(i in 1:length(flist)){
+  cat("File: ", flist[i], "\n")
+}
+```
+
+
 Further configuration from first simulation scenario.
 
 \footnotesize
