@@ -343,7 +343,7 @@ sim18_calibrate_trt <- function(l_spec){
   source("R/init.R")
   source("R/util.R")
 
-  f_cfgsc <- file.path("./etc/sim18/cfg-sim18-v01.yml")
+  f_cfgsc <- file.path("./etc/sim18/cfg-sim18-v02.yml")
   l_spec <- config::get(file = f_cfgsc)
 
   l_spec <- update_sim18_cfg(l_spec)
@@ -356,10 +356,12 @@ sim18_calibrate_trt <- function(l_spec){
   l_spec$b_trt
   days <- 1:max(l_spec$visit_days)
   d_sop <- sim18_sop(days, l_spec)
+  # just a summary of sops
   dcast(d_sop[day > 0], day ~ trt, value.var = "none" )[day %in% c(1, 4, 7, 14, 21, 28)]
   
-  
-  l_spec$dec_delta_ni <- 1
+  # set this above 1 if you want to target effects that are materially
+  # worse than the NI of 1
+  l_spec$dec_delta_ni <- 1.0
   explr_interval <- c(-5, 5)
   message("Traget NI margin  : ", l_spec$dec_delta_ni)
   
@@ -394,7 +396,7 @@ sim18_ex_fig <- function(){
   source("R/util.R")
   
   # CFG
-  f_cfgsc <- file.path("./etc/sim18/cfg-sim18-v01.yml")
+  f_cfgsc <- file.path("./etc/sim18/cfg-sim18-v02.yml")
   l_spec <- config::get(file = f_cfgsc)
   l_spec <- update_sim18_cfg(l_spec)
   l_spec$N_pt <- c(4000, 100, 100)
@@ -491,7 +493,7 @@ sim18_ex_mod <- function(){
   source("R/util.R")
   
   # CFG
-  f_cfgsc <- file.path("./etc/sim18/cfg-sim18-v01.yml")
+  f_cfgsc <- file.path("./etc/sim18/cfg-sim18-v02.yml")
   l_spec <- config::get(file = f_cfgsc)
   l_spec <- update_sim18_cfg(l_spec)
   l_spec$N_pt <- c(4000, 100, 100)

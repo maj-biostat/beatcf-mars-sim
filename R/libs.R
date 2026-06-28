@@ -35,17 +35,9 @@ suppressPackageStartupMessages(library("patchwork"))
 suppressPackageStartupMessages(library(pander))
 suppressPackageStartupMessages(library(mvtnorm))
 
-suppressPackageStartupMessages(library(mgcv))
-suppressPackageStartupMessages(library(nlme))
-suppressPackageStartupMessages(library(INLA))
-suppressPackageStartupMessages(library(INLAjoint))
-
 # for weibullph
 suppressPackageStartupMessages(library(flexsurv))
-suppressPackageStartupMessages(library(lobstr))
 suppressPackageStartupMessages(library(patchwork))
-suppressPackageStartupMessages(library(DiagrammeR))
-
 # install.packages(
 #   c(
 #     "marginaleffects",
