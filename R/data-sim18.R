@@ -23,9 +23,6 @@ source(paste0(prefix_r, '/util.R'))
 
 
 
-
-#' Wrapper to invoke state transition simulation for individual patients used
-#' to create cohort
 sim18_cohort <- function(l_spec){
   
   id_cohort <- l_spec$is:l_spec$ie
@@ -66,7 +63,6 @@ sim18_cohort <- function(l_spec){
   b_prev_time  <- l_spec$b_prev_time
   b_trt_time <- l_spec$b_trt_time
   alpha       <- l_spec$alpha
-  # gap_effect  <- l_spec$b_gap[1]
   
   ## precompute time effect
   day_vals <- 0:l_spec$max_day
@@ -130,8 +126,6 @@ sim18_cohort <- function(l_spec){
 }
 
 
-
-#' Convert sample data.table into lists suitable for stan models
 sim18_stan_data <- function(dd, l_spec){
   
   # For the day zero of onset, we have no prev state. We can either assume that they
@@ -226,8 +220,6 @@ sim18_transition_matrix <- function(day, trt, l_spec)
 }
 
 
-
-
 sim18_sop <- function(days = 1:28, l_spec)
 {
   
@@ -295,16 +287,10 @@ update_sim18_cfg <- function(l_spec){
   
   l_spec$b_prev_time <- unlist(l_spec$b_prev_time)
   
-  # l_spec$b_gap <- unlist(l_spec$b_gap)
-  
-  # l_spec$b_trt_gap <- unlist(l_spec$b_trt_gap)
-  # names(l_spec$b_trt_gap) <- l_spec$trt_lab
-  
   l_spec$p_init <- unlist(l_spec$p_init)
   
   l_spec$smry_pars <- c(
     "a", "b_trt", "b_prev", "b_time_1", "b_time_2", 
-    # "b_gap", 
     "b_prev_time", 
     "b_trt_time")
   
@@ -312,7 +298,6 @@ update_sim18_cfg <- function(l_spec){
                         "b_trt[1]", "b_trt[2]", "b_trt[3]",
                         "b_prev[1]", "b_prev[2]", "b_prev[3]",
                         "b_time_1", "b_time_2",
-                        # "b_gap[1]", "b_gap[2]", "b_gap[3]",  "b_gap[4]",
                         "b_prev_time[1]", "b_prev_time[2]", "b_prev_time[3]",
                         "b_trt_time[1]", "b_trt_time[2]", "b_trt_time[3]")
   
@@ -320,7 +305,6 @@ update_sim18_cfg <- function(l_spec){
                         "b_trt[2]", "b_trt[3]",
                         "b_prev[2]", "b_prev[3]",
                         "b_time_1", "b_time_2",
-                        # "b_gap[2]", "b_gap[3]",  "b_gap[4]",
                         "b_prev_time[2]", "b_prev_time[3]",
                         "b_trt_time[2]", "b_trt_time[3]")
   
@@ -536,7 +520,6 @@ sim18_ex_mod <- function(){
     par = l_spec$non_zero_pars,
     tru = c(l_spec$alpha, l_spec$b_trt[-1],  l_spec$b_prev[-1], 
             l_spec$b_time_1, l_spec$b_time_2, 
-            # l_spec$b_gap[-1], 
             l_spec$b_prev_time[-1], l_spec$b_trt_time[-1]
     ),
     mu = colMeans(m_post), 
@@ -548,93 +531,10 @@ sim18_ex_mod <- function(){
   # 
   
   
+  d_l_spec <- sim18_ex_sim(l_spec)
+  kableExtra::kbl(d_l_spec[], format = "simple")
   
   
-  # print(l_spec)
-  # >   print(l_spec)
-  # $p_init
-  # [1] 0.0 0.4 0.6
-  # $desc
-  # [1] "Defer at NI Boundary"
-  # $nsim
-  # [1] 500
-  # $mc_cores
-  # [1] 40
-  # $mcmc_warmup
-  # [1] 1000
-  # $mcmc_iter
-  # [1] 1000
-  # $mcmc_chain
-  # [1] 1
-  # $mcmc_B
-  # [1] 1000
-  # $nex
-  # [1] 10
-  # $N_pt
-  # [1] 4000  100  100
-  # $pt_per_day
-  # [1] 1.2
-  # $ramp_up_days
-  # [1] 60
-  # $followup
-  # [1] 720
-  # $followup_dec
-  # [1] 28
-  # $visit_days
-  # [1]  0  1  2  3  4  5  6  7 14 21 28
-  # $state_lab
-  # [1] "none"   "mild"   "severe"
-  # $trt_active
-  # soc  def  dis 
-  # TRUE TRUE TRUE 
-  # $trt_lab
-  # [1] "soc" "def" "dis"
-  # $alpha
-  # [1] -0.5  1.2
-  # $b_trt
-  # soc         def         dis 
-  # 0.00000000 -0.03682139  0.00000000 
-  # $b_prev
-  # [1] 0.0 2.2 1.0
-  # $b_time_1
-  # [1] -0.23
-  # $b_time_2
-  # [1] 0.003
-  # $b_trt_time
-  # soc  def  dis 
-  # 0.00 0.02 0.00 
-  # $b_prev_time
-  # [1] 0.00 0.05 0.00
-  # $dec_delta_ni
-  # [1] 1
-  # $dec_thresh_ni
-  # [1] 0.985
-  # $dec_thresh_fut
-  # [1] 0.8
-  # $state_opts
-  # none   mild severe 
-  # 1      2      3 
-  # $max_day
-  # [1] 28
-  # $smry_pars
-  # [1] "a"           "b_trt"       "b_prev"      "b_time_1"    "b_time_2"    "b_prev_time" "b_trt_time" 
-  # $full_pars
-  # [1] "a[1]"           "a[2]"           "b_trt[1]"       "b_trt[2]"       "b_trt[3]"       "b_prev[1]"     
-  # [7] "b_prev[2]"      "b_prev[3]"      "b_time_1"       "b_time_2"       "b_prev_time[1]" "b_prev_time[2]"
-  # [13] "b_prev_time[3]" "b_trt_time[1]"  "b_trt_time[2]"  "b_trt_time[3]" 
-  # $non_zero_pars
-  # [1] "a[1]"           "a[2]"           "b_trt[2]"       "b_trt[3]"       "b_prev[2]"      "b_prev[3]"     
-  # [7] "b_time_1"       "b_time_2"       "b_prev_time[2]" "b_prev_time[3]" "b_trt_time[2]"  "b_trt_time[3]" 
-  # $ex_trial_ix
-  # [1]   1  49 105 113 165 179 286 294 464 470
-  # $delta_lab
-  # [1] "delta_def" "delta_dis"
-  # $dur_tru
-  # soc      def      dis 
-  # 19.79151 18.79142 19.79151 
-  # $delta_dur_tru
-  # delta_def delta_dis 
-  # -1.000094  0.000000 
 }
 
 
@@ -659,9 +559,52 @@ sim18_ex_sim <- function(){
   d_tbl <- dcast(d_smry, par ~ N, value.var = "stat")  
   d_tbl[, tru := c(l_spec_res$alpha, l_spec_res$b_trt[-1],  l_spec_res$b_prev[-1], 
                    l_spec_res$b_time_1, l_spec_res$b_time_2, 
-                   l_spec_res$b_gap[-1], 
                    l_spec_res$b_prev_time[-1],
                    l_spec_res$b_trt_time[-1]
   )]
   kableExtra::kbl(d_tbl, format = "simple", digits = 4)
 }
+
+
+
+sim18_cfg_to_dtb <- function(l_spec){
+  
+  d_l_spec <- data.table(
+    item = c("p_init", "nsim", "mcmc_type", "N_pt", "pt_per_day", 
+             "ramp_up_days", "followup", "followup_dec", "visit_days", 
+             "alpha", "b_trt", "b_prev", "b_time_1", "b_time_2", 
+             "b_trt_time", "b_prev_time", 
+             "dec_delta_ni", "dec_thresh_ni", "dec_thresh_fut", 
+             "dur_tru", "delta_dur_tru")
+  )
+  d_l_spec[item == "p_init", val := paste0(l_spec$p_init, collapse = ", ")]
+  d_l_spec[item == "nsim", val := paste0(l_spec$nsim, collapse = ", ")]
+  d_l_spec[item == "mcmc_type", val := paste0(l_spec$mcmc_type, collapse = ", ")]
+  d_l_spec[item == "N_pt", val := paste0(l_spec$N_pt, collapse = ", ")]
+  d_l_spec[item == "pt_per_day", val := paste0(l_spec$pt_per_day, collapse = ", ")]
+  d_l_spec[item == "ramp_up_days", val := paste0(l_spec$ramp_up_days, collapse = ", ")]
+  d_l_spec[item == "followup", val := paste0(l_spec$followup, collapse = ", ")]
+  d_l_spec[item == "followup_dec", val := paste0(l_spec$followup_dec, collapse = ", ")]
+  d_l_spec[item == "visit_days", val := paste0(l_spec$visit_days, collapse = ", ")]
+  d_l_spec[item == "alpha", val := paste0(l_spec$alpha, collapse = ", ")]
+  d_l_spec[item == "b_trt", val := paste0(l_spec$b_trt, collapse = ", ")]
+  d_l_spec[item == "b_prev", val := paste0(l_spec$b_prev, collapse = ", ")]
+  d_l_spec[item == "b_time_1", val := paste0(l_spec$b_time_1, collapse = ", ")]
+  d_l_spec[item == "b_time_2", val := paste0(l_spec$b_time_2, collapse = ", ")]
+  d_l_spec[item == "b_trt_time", val := paste0(l_spec$b_trt_time, collapse = ", ")]
+  d_l_spec[item == "b_prev_time", val := paste0(l_spec$b_prev_time, collapse = ", ")]
+  
+  d_l_spec[item == "dec_delta_ni", val := paste0(l_spec$dec_delta_ni, collapse = ", ")]
+  d_l_spec[item == "dec_thresh_ni", val := paste0(l_spec$dec_thresh_ni, collapse = ", ")]
+  d_l_spec[item == "dec_thresh_fut", val := paste0(l_spec$dec_thresh_fut, collapse = ", ")]
+  d_l_spec[item == "dur_tru", val := paste0(l_spec$dur_tru, collapse = ", ")]
+  d_l_spec[item == "delta_dur_tru", val := paste0(l_spec$delta_dur_tru, collapse = ", ")]
+  d_l_spec[]
+  
+  
+  
+  
+  
+}
+
+

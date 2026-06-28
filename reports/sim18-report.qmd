@@ -177,14 +177,14 @@ The model incorporates intercepts that reflect the cutpoints along with paramete
 + treatment assignment
 + symptoms at previous observation
 + time (quadratic)
-+ days between current and previous observation
 + treatment by time
++ previous state by time
 
 A markov assumption accounts for the repeat measure over time.
 
-Both previous state by time and previous state by treatment could be considered for the model.
-The former gives each previous state effect its own time trend, i.e. the effect of "where you came from yesterday" changes over the course of the exacerbation.
+Variation induced via a previous state by treatment could be considered for the model.
 The latter modifies tretament efficacy dependent on the patient's disease state.
+
 A participant level random effect would need to be included to account for re-randomisation.
 
 # Treatment Effects
@@ -297,25 +297,23 @@ for(i in 1:length(flist)){
 
 Further configuration from first simulation scenario.
 
-\footnotesize
-```{r, echo = T}
-l_spec_1$p_init
-l_spec_1$alpha
-l_spec_1$b_trt
-l_spec_1$b_prev
-l_spec_1$b_time_1
-l_spec_1$b_time_2
-l_spec_1$b_prev_time
-l_spec_1$b_trt_time
-l_spec_1$dec_delta_ni
-l_spec_1$dec_thresh_ni
-l_spec_1$dec_thresh_fut
-l_spec_1$visit_days
-l_spec_1$smry_pars
-l_spec_1$full_pars
-l_spec_1$non_zero_pars
+```{r, echo = F, eval = T}
+#| label: tbl-cfg-1
+#| tbl-cap: 'Scenarios 1 - selected config.'
+#| column: page
+#| out-width: 100%
+#| tbl-cap-location: bottom
+#| tbl-pos: H
+
+d_l_spec <- sim18_cfg_to_dtb(l_spec_1)
+
+kableExtra::kbl(
+  d_l_spec[], 
+  escape = TRUE, booktabs = TRUE, align = c("lr"),
+  linesep = "")  |>
+  kableExtra::kable_styling(font_size = 7)  
 ```
-\normalsize
+
 
 
 # Results
