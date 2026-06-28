@@ -837,7 +837,9 @@ kableExtra::kbl(
 
 {{< pagebreak >}}
 
-## Parameters 
+## Simulation Results
+
+### Parameters 
 
 @tbl-par-cmp-1 summarises the model parameter estimates, by scenario and analysis, averged over the simulations.
 
@@ -1134,7 +1136,7 @@ for(i in seq_ix){
 k_out
 ```
 
-## Decision Probability
+### Decision Probability
 
 @tbl-dec-pr-1 shows the cumulative probability of the non-inferiority and futility decisions based on the difference in the exacerbation sojourn times.
 
@@ -1209,7 +1211,7 @@ kableExtra::kbl(
 
 {{< pagebreak >}}
 
-## Sample Size
+### Sample Size
 
 Expected number of enrolments on each treatment arm under each scenario.
 
