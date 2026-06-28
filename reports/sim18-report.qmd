@@ -68,7 +68,7 @@ source(paste0(prefix_r, "/data-sim18.R"))
 # Load all the files into a single list.
 
 # files of interest
-sim_lab <- "sim18-03"
+sim_lab <- "sim18-04"
 
 flist <- list.files(paste0(prefix_data, "/", sim_lab), pattern = "sim18")
 toks <- list()
@@ -233,13 +233,14 @@ Treatment arms may be stopped for NI or futility but the soc remains the referen
 # Scenarios
 
 @tbl-scen-01 provides a summary of the key parameters used to configure the scenarios.
-The parameters enter into the longitudinal markov ordinal model and configure the transition probabilities.
+Given the model includes interaction terms, the treatment effects represent the true difference in sojourn times with no symptoms that are induced by the combination of all the parameters within the linear predictor.
 
 Each scenario was simulated `r l_spec_1$nsim` times with a cohort of `r sum(l_spec_1$N_pt)` participants with each trial having up to `r length(l_spec_1$N_pt)` analyses after `r paste0(cumsum(l_spec_1$N_pt), collapse = ", ")` are enrolled.
 The final analysis is run on all participants, i.e. we assume that followup was completed.
 
-The data generating process is equivalent to what was used in the previous designs.
-That is we use the same multi-state model, but make a variation to what data we assume is collected for the analyses, as discussed earlier in the design section.
+The data generating process assumes a Markov progression of state.
+We assume that data is collected over a subset of the entire followup.
+Importantly, for the days with gaps above one day (e.g. day 21) we assume that both the day 20 and day 21 data on state are collected. 
 
 ```{r, echo = F, eval = T}
 #| label: tbl-scen-01
@@ -260,7 +261,7 @@ for(i in 1:length(l)){
   
   d_tmp <- data.table(
     desc = l_cfg$desc,
-    b_trt = sprintf("%.2f, %.2f", l_cfg$b_trt[2], l_cfg$b_trt[3]),
+    b_trt = sprintf("%.2f, %.2f", l_cfg$delta_dur_tru[1], l_cfg$delta_dur_tru[2]),
     
     ni_margin = l_cfg$dec_delta_ni,
     dec_thresh_ni = l_cfg$dec_thresh_ni,
@@ -277,12 +278,13 @@ kableExtra::kbl(
   d_scen, 
   escape = TRUE, booktabs = TRUE, align = c("lccccc"),
   linesep = "",
-  col.names=c("Scenario", "Treatment effects", 
+  col.names=c("Scenario", "Treatment effects (diff in expected time with no symptom)", 
               "NI Margin", "NI Threshold", "Fut Threshold", "Dec FU Days"), 
   digits = 3)  |>
   kableExtra::kable_styling(font_size = 9)  |>
   kableExtra::column_spec(1, width = "3.5cm")|>
-  kableExtra::column_spec(2:3, width = "2cm")|>
+  kableExtra::column_spec(2, width = "3cm")|>
+  kableExtra::column_spec(3, width = "2cm")|>
   kableExtra::column_spec(4:6, width = "1.5cm")
 ```
 
@@ -392,19 +394,19 @@ ex_trial_plots <- function(id_scen = 1, id_ex = 1, include_tran_m = F){
   d_fig[, trt := factor(trt, levels = l_cfg$trt_lab)]
     
   p_2 <- ggplot(
-    d_fig[source == "Model"], aes(x = day, y = prop, group = state, col = state)) +
+    d_fig[source == "Model"], aes(x = day, y = prop, group = trt)) +
     # geom_linerange(aes(ymin = lo, ymax = hi), lwd = 0.3) +
-    geom_line(lwd = 0.3) +
-    geom_point(size = 0.5) +
+    geom_line(aes(lty = trt), lwd = 0.3) +
     geom_point(
       data =  d_fig[source == "Observed"], 
-      aes(x = day, y = prop, group = state, col = state),
-      inherit.aes = F, shape = 1
+      aes(x = day, y = prop, col = trt),
+      inherit.aes = F, shape = 1, size = 0.89
     ) +
     scale_x_continuous("", breaks = seq(1, max(d_fig_1$day), by = 2)) +
     scale_y_continuous("SOP", breaks = seq(0, 1, by = 0.1)) +
     scale_color_discrete("") +
-    facet_wrap(. ~ trt, ncol = 3) +
+    scale_linetype_discrete("") +
+    facet_wrap(. ~ state, ncol = 3) +
     theme(
       legend.position = "bottom"
     )
@@ -615,21 +617,6 @@ print(l_ex$p_cmp_1)
 ```
 
 
-```{r}
-#| label: fig-ex-1-sop-2
-#| fig-cap: 'Summary of trial model SOP by treatment and state'
-#| fig-height: 4
-#| fig-width: 6
-#| out-height: 4in
-#| out-width: 6in
-#| fig-dpi: 240
-#| fig-align: "center"
-#| fig-pos: H
-
-print(l_ex$p_cmp_2)
-```
-
-
 ### Soujourn Times
 
 ```{r}
@@ -776,21 +763,6 @@ if(nrow(l_ex$d_tran) > 0){
 print(l_ex$p_cmp_1)
 ```
 
-
-```{r}
-#| label: fig-ex-2-sop-2
-#| fig-cap: 'Summary of trial model SOP by treatment and state'
-#| fig-height: 4
-#| fig-width: 6
-#| out-height: 4in
-#| out-width: 6in
-#| fig-dpi: 240
-#| fig-align: "center"
-#| fig-pos: H
-
-
-print(l_ex$p_cmp_2)
-```
 
 ### Soujourn Times
 
@@ -946,10 +918,11 @@ d_tbl <- d_tbl[order(desc, par)]
 d_tbl[, par := gsub("_", "\\\\_", par)]
 
 
-kableExtra::kbl(
+k_out <- kableExtra::kbl(
   d_tbl, 
   booktabs = TRUE, align = c("llcccc"), longtable = TRUE,
-  linesep = c(rep("", 10), "\\addlinespace"),
+  # linesep = c(rep("", 11), "\\addlinespace"),
+  linesep = "",
   col.names=c("Scenario", "Parameter", cumsum(l_cfg$N_pt), "True Value"), 
   digits = 3,
   escape = F)  |>
@@ -960,6 +933,15 @@ kableExtra::kbl(
   kableExtra::column_spec(2, width = "2cm")|>
   kableExtra::column_spec(3:5, width = "2cm") 
 
+N_pars <- length(unique(d_tbl$par))
+hline_seq_ix <- seq(N_pars, nrow(d_tbl), by = N_pars)
+seq_ix <- seq_along(hline_seq_ix)[-length(hline_seq_ix)]
+
+for(i in seq_ix){
+  k_out <- k_out |>
+    kableExtra::row_spec(hline_seq_ix[i], hline_after = TRUE)
+}
+k_out
 ```
 
 {{< pagebreak >}}
@@ -1030,7 +1012,7 @@ d_tbl <- d_tbl[order(desc, par)]
 d_tbl[, par := gsub("_", "\\\\_", par)]
 
 
-kableExtra::kbl(
+k_out <- kableExtra::kbl(
   d_tbl, 
   booktabs = TRUE, align = c("llcccc"), longtable = TRUE,
   linesep = c(rep("", 10), "\\addlinespace"),
@@ -1045,6 +1027,15 @@ kableExtra::kbl(
   kableExtra::column_spec(3:5, width = "2.25cm") |>
   kableExtra::column_spec(6, width = "1.5cm")
 
+N_pars <- length(unique(d_tbl$par))
+hline_seq_ix <- seq(N_pars, nrow(d_tbl), by = N_pars)
+seq_ix <- seq_along(hline_seq_ix)[-length(hline_seq_ix)]
+
+for(i in seq_ix){
+  k_out <- k_out |>
+    kableExtra::row_spec(hline_seq_ix[i], hline_after = TRUE)
+}
+k_out
 ```
 
 {{< pagebreak >}}
@@ -1115,7 +1106,7 @@ d_tbl <- d_tbl[order(desc, par)]
 d_tbl[, par := gsub("_", "\\\\_", par)]
 
 
-kableExtra::kbl(
+k_out <- kableExtra::kbl(
   d_tbl, 
   booktabs = TRUE, align = c("llcccc"), longtable = TRUE,
   linesep = c(rep("", 10), "\\addlinespace"),
@@ -1130,6 +1121,17 @@ kableExtra::kbl(
   kableExtra::column_spec(3:5, width = "2cm") |>
   kableExtra::column_spec(6, width = "1.5cm")
 
+
+
+N_pars <- length(unique(d_tbl$par))
+hline_seq_ix <- seq(N_pars, nrow(d_tbl), by = N_pars)
+seq_ix <- seq_along(hline_seq_ix)[-length(hline_seq_ix)]
+
+for(i in seq_ix){
+  k_out <- k_out |>
+    kableExtra::row_spec(hline_seq_ix[i], hline_after = TRUE)
+}
+k_out
 ```
 
 ## Decision Probability

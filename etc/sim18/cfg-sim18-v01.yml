@@ -1,6 +1,6 @@
 default:
   desc: "Defer at NI Boundary"
-  nsim: 500
+  nsim: 1000
   mc_cores: 40
   mcmc_warmup: 1000
   mcmc_iter: 1000
@@ -76,5 +76,5 @@ default:
   
   # level of certainty we require to make claims
   dec_thresh_ni: 0.98
-  dec_thresh_fut: 0.70
+  dec_thresh_fut: 0.65
     
