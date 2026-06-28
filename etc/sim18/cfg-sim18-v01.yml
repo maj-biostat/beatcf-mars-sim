@@ -7,7 +7,7 @@ default:
   mcmc_chain: 1
   # redraws for effect calculation
   mcmc_B: 1000
-  mcmc_type: "hmc" # or "laplace"
+  mcmc_type: "laplace" # "hmc" or "laplace"
   
   # example trials
   nex: 4

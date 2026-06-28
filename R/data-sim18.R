@@ -110,7 +110,17 @@ sim18_cohort <- function(l_spec){
   
   d_cohort[, state := state]
   
-  d_obs <- d_cohort[day %in% l_spec$visit_days]
+  d_obs <- copy(d_cohort)
+  setorder(d_obs, id, day)
+  
+  # Need to compute previous state and previous day before we subset
+  # otherwise we will end up referencing day 7 as the previous day from day 14
+  d_obs[, `:=`(
+    prev_state = data.table::shift(state, 1L),
+    prev_day   = data.table::shift(day, 1L)
+  ), by = id]
+  
+  d_obs <- d_obs[day %in% l_spec$visit_days]
   
   list(
     d_cohort = d_cohort,
@@ -123,13 +133,6 @@ sim18_cohort <- function(l_spec){
 
 #' Convert sample data.table into lists suitable for stan models
 sim18_stan_data <- function(dd, l_spec){
-  
-  setorder(dd, id, day)
-  
-  dd[, `:=`(
-    prev_state = data.table::shift(state, 1L),
-    prev_day   = data.table::shift(day, 1L)
-  ), by = id]
   
   # For the day zero of onset, we have no prev state. We can either assume that they
   # were well the day before or just drop that observation and include it in day 1
@@ -417,8 +420,8 @@ sim18_ex_fig <- function(){
   message("N: ", paste0(cumsum(l_spec$N_pt), collapse = ", "))
   
   # PLOT
-  d_daily <- sim18_cohort(l_spec)$d_cohort
-  d_tbl_1 <- copy(d_daily)
+  d_cohort <- sim18_cohort(l_spec)$d_cohort
+  d_tbl_1 <- copy(d_cohort)
   d_tbl_1[, state := factor(
     state, levels = l_spec$state_opts, labels = names(l_spec$state_opts))]
   d_tbl_1[, trt := factor(trt, levels = l_spec$trt_lab)]
@@ -514,7 +517,9 @@ sim18_ex_mod <- function(){
   message("N: ", paste0(cumsum(l_spec$N_pt), collapse = ", "))
   
   # MODEL
-  d_obs <- sim18_cohort(l_spec)$d_obs
+  l_dat <- sim18_cohort(l_spec)
+  d_cohort <- l_dat$d_cohort
+  d_obs <- l_dat$d_obs
   m_1 <- cmdstanr::cmdstan_model("stan/sim18-v01.stan")
   l_mod <- sim18_stan_data(d_obs, l_spec)
   # f_1_optim <- m_1$optimize(data = l_mod, jacobian = TRUE)
