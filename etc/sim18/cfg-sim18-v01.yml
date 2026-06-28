@@ -19,7 +19,7 @@ default:
   # administrative censor
   followup: 720
   followup_dec: 28
-  visit_days: [0, 1, 2, 3, 4, 5, 6, 7, 14, 21, 28]
+  visit_days: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 21, 28]
   
   state_lab: ["none", "mild", "severe"]
   # controls which trt can be allocated
@@ -75,6 +75,6 @@ default:
   # decision probability thresholds - 
   
   # level of certainty we require to make claims
-  dec_thresh_ni: 0.985
+  dec_thresh_ni: 0.98
   dec_thresh_fut: 0.80
     
