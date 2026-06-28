@@ -76,5 +76,5 @@ default:
   
   # level of certainty we require to make claims
   dec_thresh_ni: 0.98
-  dec_thresh_fut: 0.80
+  dec_thresh_fut: 0.70
     
